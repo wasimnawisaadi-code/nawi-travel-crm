@@ -98,7 +98,7 @@ export function logout(): void {
   if (session) {
     // Record logout in attendance
     const today = new Date().toISOString().split('T')[0];
-    const attendance = storage.getAll<any>(KEYS.ATTENDANCE);
+    const attendance = storage.getAll(KEYS.ATTENDANCE);
     const todayRecord = attendance.find(
       (a: any) => a.employeeId === session.userId && a.date === today
     );
