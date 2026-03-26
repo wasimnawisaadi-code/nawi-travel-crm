@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Edit, Save, X } from 'lucide-react';
+import { ArrowLeft, Edit, Save, X, Camera } from 'lucide-react';
 import { storage, KEYS, formatCurrency, formatDate } from '@/lib/storage';
 import StatusBadge from '@/components/ui/StatusBadge';
 
@@ -22,7 +22,6 @@ export default function EmployeeProfile() {
   const tasks = storage.getAll(KEYS.TASKS).filter((t: any) => t.assignedTo === emp.id);
   const attendance = storage.getAll(KEYS.ATTENDANCE).filter((a: any) => a.employeeId === emp.id);
   const leave = storage.getAll(KEYS.LEAVE).filter((l: any) => l.employeeId === emp.id);
-  const payroll = storage.getAll(KEYS.PAYROLL).filter((p: any) => p.employeeId === emp.id);
 
   const handleSave = () => {
     storage.update(KEYS.EMPLOYEES, emp.id, form);
@@ -30,14 +29,37 @@ export default function EmployeeProfile() {
     setEditing(false);
   };
 
-  const tabs = ['overview', 'clients', 'tasks', 'attendance', 'leave', 'payroll'];
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const photo = reader.result as string;
+      setForm({ ...form, photo });
+      storage.update(KEYS.EMPLOYEES, emp.id, { photo });
+      setEmp({ ...emp, photo });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const tabs = ['overview', 'clients', 'tasks', 'attendance', 'leave'];
 
   return (
     <div className="space-y-4 animate-fade-in">
       <Link to="/admin/employees" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="w-4 h-4" /> Back</Link>
       <div className="card-nawi flex flex-col sm:flex-row items-start sm:items-center gap-4">
-        <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center text-xl font-bold text-primary-foreground">
-          {emp.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+        <div className="relative">
+          {emp.photo ? (
+            <img src={emp.photo} alt="" className="w-16 h-16 rounded-full object-cover" />
+          ) : (
+            <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-xl font-bold text-primary-foreground">
+              {emp.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+            </div>
+          )}
+          <label className="absolute bottom-0 right-0 w-6 h-6 bg-secondary rounded-full flex items-center justify-center cursor-pointer">
+            <Camera className="w-3 h-3 text-secondary-foreground" />
+            <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+          </label>
         </div>
         <div className="flex-1">
           <h1 className="text-xl font-bold text-foreground font-display">{emp.name}</h1>
@@ -67,16 +89,15 @@ export default function EmployeeProfile() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[
               { label: 'Full Name', key: 'name' }, { label: 'Email', key: 'email' },
-              { label: 'Mobile', key: 'mobile' }, { label: 'Base Salary', key: 'baseSalary' },
-              { label: 'Passport No.', key: 'passportNo' }, { label: 'Emirates ID', key: 'emiratesId' },
-              { label: 'Leave Balance', key: 'leaveBalance' },
+              { label: 'Mobile', key: 'mobile' }, { label: 'Passport No.', key: 'passportNo' },
+              { label: 'Emirates ID', key: 'emiratesId' },
             ].map(({ label, key }) => (
               <div key={key}>
                 <label className="block text-xs text-muted-foreground mb-1">{label}</label>
                 {editing ? (
-                  <input value={form[key] || ''} onChange={(e) => setForm({ ...form, [key]: key === 'baseSalary' || key === 'leaveBalance' ? Number(e.target.value) : e.target.value })} className="input-nawi" />
+                  <input value={form[key] || ''} onChange={(e) => setForm({ ...form, [key]: e.target.value })} className="input-nawi" />
                 ) : (
-                  <p className="text-sm font-medium text-foreground">{key === 'baseSalary' ? formatCurrency(emp[key] || 0) : (emp[key] || '—')}</p>
+                  <p className="text-sm font-medium text-foreground">{emp[key] || '—'}</p>
                 )}
               </div>
             ))}
@@ -123,17 +144,6 @@ export default function EmployeeProfile() {
             <table className="table-nawi w-full">
               <thead><tr><th>Dates</th><th>Days</th><th>Reason</th><th>Status</th></tr></thead>
               <tbody>{leave.map((l: any) => <tr key={l.id}><td>{formatDate(l.startDate)} - {formatDate(l.endDate)}</td><td>{l.days}</td><td>{l.reason}</td><td><StatusBadge status={l.status} /></td></tr>)}</tbody>
-            </table>
-          )}
-        </div>
-      )}
-
-      {tab === 'payroll' && (
-        <div className="card-nawi p-0 overflow-x-auto">
-          {payroll.length === 0 ? <p className="text-sm text-muted-foreground text-center py-8">No payroll records</p> : (
-            <table className="table-nawi w-full">
-              <thead><tr><th>Month</th><th>Base</th><th>Deductions</th><th>Bonus</th><th>Final</th><th>Status</th></tr></thead>
-              <tbody>{payroll.map((p: any) => <tr key={p.id}><td>{p.yearMonth}</td><td>{formatCurrency(p.baseSalary)}</td><td>{formatCurrency((p.leaveDeduction || 0) + (p.absenceDeduction || 0))}</td><td>{formatCurrency(p.bonus || 0)}</td><td className="font-semibold">{formatCurrency(p.finalSalary)}</td><td><StatusBadge status={p.status} /></td></tr>)}</tbody>
             </table>
           )}
         </div>
