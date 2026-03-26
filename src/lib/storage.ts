@@ -12,19 +12,19 @@ export const storage = {
     localStorage.setItem(key, JSON.stringify(value));
   },
 
-  getAll<T>(key: string): T[] {
-    return this.get<T[]>(key) || [];
+  getAll(key: string): any[] {
+    return this.get(key) || [];
   },
 
-  push<T extends { id: string }>(key: string, item: T): void {
-    const arr = this.getAll<T>(key);
+  push(key: string, item: any): void {
+    const arr = this.getAll(key);
     arr.push(item);
     this.set(key, arr);
   },
 
-  update<T extends { id: string }>(key: string, id: string, changes: Partial<T>): void {
-    const arr = this.getAll<T>(key);
-    const idx = arr.findIndex((i) => i.id === id);
+  update(key: string, id: string, changes: any): void {
+    const arr = this.getAll(key);
+    const idx = arr.findIndex((i: any) => i.id === id);
     if (idx !== -1) {
       arr[idx] = { ...arr[idx], ...changes };
       this.set(key, arr);
@@ -32,14 +32,14 @@ export const storage = {
   },
 
   delete(key: string, id: string): void {
-    const arr = this.getAll<{ id: string }>(key);
-    this.set(key, arr.filter((i) => i.id !== id));
+    const arr = this.getAll(key);
+    this.set(key, arr.filter((i: any) => i.id !== id));
   },
 
-  search<T extends Record<string, unknown>>(key: string, query: string, fields: string[]): T[] {
-    const arr = this.getAll<T>(key);
+  search(key: string, query: string, fields: string[]): any[] {
+    const arr = this.getAll(key);
     const q = query.toLowerCase();
-    return arr.filter((item) =>
+    return arr.filter((item: any) =>
       fields.some((f) => String(item[f] || '').toLowerCase().includes(q))
     );
   },
