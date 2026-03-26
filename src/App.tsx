@@ -10,21 +10,18 @@ import AppLayout from "./components/layout/AppLayout";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import EmployeeList from "./pages/admin/EmployeeList";
 import EmployeeProfile from "./pages/admin/EmployeeProfile";
-import GoalsManagement from "./pages/admin/GoalsManagement";
+import AdminAttendance from "./pages/admin/AdminAttendance";
 import PayrollManagement from "./pages/admin/PayrollManagement";
 import AuditLog from "./pages/admin/AuditLog";
 import ReportsPage from "./pages/admin/ReportsPage";
-import SettingsPage from "./pages/admin/SettingsPage";
 import EmployeeDashboard from "./pages/employee/EmployeeDashboard";
 import AttendancePage from "./pages/employee/AttendancePage";
-import BulkUpload from "./pages/employee/BulkUpload";
 import ClientList from "./pages/shared/ClientList";
 import ClientProfile from "./pages/shared/ClientProfile";
 import AddClientWizard from "./pages/shared/AddClientWizard";
 import OperationsCalendar from "./pages/shared/OperationsCalendar";
 import LeaveManagement from "./pages/shared/LeaveManagement";
-import NotificationsPage from "./pages/shared/NotificationsPage";
-import QuotationGenerator from "./pages/shared/QuotationGenerator";
+import TeamChat from "./pages/shared/TeamChat";
 import NotFound from "./pages/NotFound";
 
 initializeApp();
@@ -51,13 +48,12 @@ const App = () => (
             <Route path="/admin/clients/new" element={<AddClientWizard />} />
             <Route path="/admin/clients/:id" element={<ClientProfile />} />
             <Route path="/admin/calendar" element={<OperationsCalendar />} />
-            <Route path="/admin/goals" element={<GoalsManagement />} />
+            <Route path="/admin/attendance" element={<AdminAttendance />} />
             <Route path="/admin/leave" element={<LeaveManagement />} />
             <Route path="/admin/payroll" element={<PayrollManagement />} />
             <Route path="/admin/reports" element={<ReportsPage />} />
             <Route path="/admin/audit-log" element={<AuditLog />} />
-            <Route path="/admin/notifications" element={<NotificationsPage />} />
-            <Route path="/admin/settings" element={<SettingsPage />} />
+            <Route path="/admin/chat" element={<TeamChat />} />
 
             {/* Employee Routes */}
             <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
@@ -65,11 +61,9 @@ const App = () => (
             <Route path="/employee/clients/new" element={<AddClientWizard />} />
             <Route path="/employee/clients/:id" element={<ClientProfile />} />
             <Route path="/employee/calendar" element={<OperationsCalendar />} />
-            <Route path="/employee/quotations" element={<QuotationGenerator />} />
-            <Route path="/employee/leave" element={<LeaveManagement isEmployee />} />
             <Route path="/employee/attendance" element={<AttendancePage />} />
-            <Route path="/employee/bulk-upload" element={<BulkUpload />} />
-            <Route path="/employee/notifications" element={<NotificationsPage />} />
+            <Route path="/employee/leave" element={<LeaveManagement isEmployee />} />
+            <Route path="/employee/chat" element={<TeamChat />} />
           </Route>
 
           <Route path="*" element={<NotFound />} />

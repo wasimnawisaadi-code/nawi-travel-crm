@@ -63,6 +63,8 @@ export const KEYS = {
   NOTIFICATIONS: 'nawi_notifications',
   AUDIT_LOG: 'nawi_audit_log',
   SESSION: 'nawi_session',
+  CHAT: 'nawi_chat',
+  CHAT_GROUPS: 'nawi_chat_groups',
 };
 
 // ID generators
@@ -79,6 +81,7 @@ export function generateId(prefix: string): string {
 export interface Session {
   userId: string;
   userName: string;
+  userPhoto?: string;
   role: 'admin' | 'employee';
   loginTime: string;
   token: string;
@@ -96,13 +99,12 @@ export function isAdmin(): boolean {
 export function logout(): void {
   const session = getCurrentUser();
   if (session) {
-    // Record logout in attendance
     const today = new Date().toISOString().split('T')[0];
     const attendance = storage.getAll(KEYS.ATTENDANCE);
     const todayRecord = attendance.find(
       (a: any) => a.employeeId === session.userId && a.date === today
     );
-    if (todayRecord) {
+    if (todayRecord && !todayRecord.logoutTime) {
       const logoutTime = new Date().toISOString();
       const loginDate = new Date(todayRecord.loginTime);
       const logoutDate = new Date(logoutTime);
@@ -204,26 +206,15 @@ export function generateDailyNotifications(userId: string, role: string): void {
         const todayDate = new Date();
         if (d.getMonth() === todayDate.getMonth() && d.getDate() === todayDate.getDate()) {
           storage.push(KEYS.NOTIFICATIONS, {
-            id: generateId('NTF'),
-            userId,
-            type,
-            title: `🎂 ${title} Today`,
-            message: `${client.name}'s birthday is today!`,
-            clientId: client.id,
-            isRead: false,
-            createdAt: new Date().toISOString(),
+            id: generateId('NTF'), userId, type, title: `🎂 ${title} Today`,
+            message: `${client.name}'s birthday is today!`, clientId: client.id, isRead: false, createdAt: new Date().toISOString(),
           });
         }
       } else if (days >= 0 && days <= threshold) {
         storage.push(KEYS.NOTIFICATIONS, {
-          id: generateId('NTF'),
-          userId,
-          type,
-          title: `${title} Alert`,
+          id: generateId('NTF'), userId, type, title: `${title} Alert`,
           message: `${client.name}'s ${title.toLowerCase()} is ${days === 0 ? 'today' : `in ${days} days`} (${formatDate(dateVal)})`,
-          clientId: client.id,
-          isRead: false,
-          createdAt: new Date().toISOString(),
+          clientId: client.id, isRead: false, createdAt: new Date().toISOString(),
         });
       }
     });
@@ -246,7 +237,7 @@ export function initializeApp(): void {
   const keys = [
     KEYS.EMPLOYEES, KEYS.CLIENTS, KEYS.TASKS, KEYS.QUOTATIONS,
     KEYS.GOALS, KEYS.ATTENDANCE, KEYS.LEAVE, KEYS.PAYROLL,
-    KEYS.NOTIFICATIONS, KEYS.AUDIT_LOG,
+    KEYS.NOTIFICATIONS, KEYS.AUDIT_LOG, KEYS.CHAT, KEYS.CHAT_GROUPS,
   ];
   keys.forEach((k) => {
     if (!storage.get(k)) storage.set(k, []);
