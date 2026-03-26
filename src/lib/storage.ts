@@ -176,9 +176,9 @@ export function formatCurrency(amount: number): string {
 
 // Notification generator
 export function generateDailyNotifications(userId: string, role: string): void {
-  const clients = storage.getAll<any>(KEYS.CLIENTS);
-  const filtered = role === 'admin' ? clients : clients.filter(c => c.assignedTo === userId || c.createdBy === userId);
-  const existing = storage.getAll<any>(KEYS.NOTIFICATIONS);
+  const clients = storage.getAll(KEYS.CLIENTS);
+  const filtered = role === 'admin' ? clients : clients.filter((c: any) => c.assignedTo === userId || c.createdBy === userId);
+  const existing = storage.getAll(KEYS.NOTIFICATIONS);
   const today = new Date().toISOString().split('T')[0];
 
   filtered.forEach((client) => {
