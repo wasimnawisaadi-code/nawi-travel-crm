@@ -2,21 +2,21 @@ import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Briefcase, Calendar, FileText,
-  DollarSign, BarChart3, Shield, Bell, LogOut, Menu,
-  Search, ChevronLeft, Clock, PlaneTakeoff, MessageCircle
+  DollarSign, BarChart3, Shield, LogOut, Menu,
+  Search, ChevronLeft, Clock, PlaneTakeoff, MessageCircle, CalendarDays
 } from 'lucide-react';
 import { getCurrentUser, isAdmin, logout, storage, KEYS } from '@/lib/storage';
 import logo from '@/assets/logo.png';
 
 const adminLinks = [
-  { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/admin/dashboard', label: 'Dashboard & Reports', icon: LayoutDashboard },
   { to: '/admin/employees', label: 'Employees', icon: Users },
   { to: '/admin/clients', label: 'Clients', icon: Briefcase },
   { to: '/admin/calendar', label: 'Calendar', icon: Calendar },
+  { to: '/admin/important-dates', label: 'Important Dates', icon: CalendarDays },
   { to: '/admin/attendance', label: 'Attendance', icon: Clock },
   { to: '/admin/leave', label: 'Leave & HR', icon: FileText },
   { to: '/admin/payroll', label: 'Payroll', icon: DollarSign },
-  { to: '/admin/reports', label: 'Reports', icon: BarChart3 },
   { to: '/admin/audit-log', label: 'Audit Log', icon: Shield },
   { to: '/admin/chat', label: 'Team Chat', icon: MessageCircle },
 ];
@@ -25,6 +25,7 @@ const employeeLinks = [
   { to: '/employee/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/employee/clients', label: 'My Clients', icon: Briefcase },
   { to: '/employee/calendar', label: 'Calendar', icon: Calendar },
+  { to: '/employee/important-dates', label: 'Important Dates', icon: CalendarDays },
   { to: '/employee/attendance', label: 'Attendance', icon: Clock },
   { to: '/employee/leave', label: 'Leave', icon: FileText },
   { to: '/employee/chat', label: 'Team Chat', icon: MessageCircle },

@@ -22,6 +22,7 @@ import AddClientWizard from "./pages/shared/AddClientWizard";
 import OperationsCalendar from "./pages/shared/OperationsCalendar";
 import LeaveManagement from "./pages/shared/LeaveManagement";
 import TeamChat from "./pages/shared/TeamChat";
+import ImportantDates from "./pages/shared/ImportantDates";
 import NotFound from "./pages/NotFound";
 
 initializeApp();
@@ -53,6 +54,7 @@ const App = () => (
             <Route path="/admin/payroll" element={<PayrollManagement />} />
             <Route path="/admin/reports" element={<ReportsPage />} />
             <Route path="/admin/audit-log" element={<AuditLog />} />
+            <Route path="/admin/important-dates" element={<ImportantDates />} />
             <Route path="/admin/chat" element={<TeamChat />} />
 
             {/* Employee Routes */}
@@ -63,6 +65,7 @@ const App = () => (
             <Route path="/employee/calendar" element={<OperationsCalendar />} />
             <Route path="/employee/attendance" element={<AttendancePage />} />
             <Route path="/employee/leave" element={<LeaveManagement isEmployee />} />
+            <Route path="/employee/important-dates" element={<ImportantDates />} />
             <Route path="/employee/chat" element={<TeamChat />} />
           </Route>
 
