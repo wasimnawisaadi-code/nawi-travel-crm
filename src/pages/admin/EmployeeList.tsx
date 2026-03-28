@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Trash2, Eye, Users, Camera } from 'lucide-react';
+import { Plus, Search, Trash2, Eye, Users, Camera, Shield, Wifi, MapPin } from 'lucide-react';
 import { storage, KEYS, generateId, auditLog } from '@/lib/storage';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
@@ -10,16 +10,23 @@ export default function EmployeeList() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [roleFilter, setRoleFilter] = useState('all');
   const [showDeleteModal, setShowDeleteModal] = useState<any>(null);
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [form, setForm] = useState({ name: '', mobile: '', email: '', password: '', passportNo: '', emiratesId: '', photo: '' });
+  const [form, setForm] = useState({
+    name: '', mobile: '', email: '', password: '',
+    passportNo: '', emiratesId: '', photo: '',
+    profileType: 'office' as 'office' | 'sales',
+    allowedIPs: '' as string,
+  });
 
   const load = () => setEmployees(storage.getAll(KEYS.EMPLOYEES));
   useEffect(load, []);
 
   const filtered = employees.filter((e: any) => {
     if (statusFilter !== 'all' && e.status !== statusFilter) return false;
+    if (roleFilter !== 'all' && (e.profileType || 'office') !== roleFilter) return false;
     if (search && !e.name.toLowerCase().includes(search.toLowerCase()) && !e.email.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
@@ -29,55 +36,71 @@ export default function EmployeeList() {
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { alert('Photo must be under 5MB'); return; }
     const reader = new FileReader();
     reader.onload = () => setForm({ ...form, photo: reader.result as string });
     reader.readAsDataURL(file);
   };
 
+  const generatePassword = () => {
+    const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const lower = 'abcdefghjkmnpqrstuvwxyz';
+    const digits = '23456789';
+    const special = '!@#$%&*';
+    let pwd = '';
+    pwd += upper.charAt(Math.floor(Math.random() * upper.length));
+    pwd += lower.charAt(Math.floor(Math.random() * lower.length));
+    pwd += digits.charAt(Math.floor(Math.random() * digits.length));
+    pwd += special.charAt(Math.floor(Math.random() * special.length));
+    const all = upper + lower + digits + special;
+    for (let i = 0; i < 8; i++) pwd += all.charAt(Math.floor(Math.random() * all.length));
+    pwd = pwd.split('').sort(() => Math.random() - 0.5).join('');
+    setForm({ ...form, password: pwd });
+  };
+
+  const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validateEmail(form.email)) { alert('Please enter a valid email address'); return; }
+    if (form.password.length < 8) { alert('Password must be at least 8 characters'); return; }
+    // Check duplicate email
+    const existing = employees.find((emp: any) => emp.email === form.email && emp.status === 'active');
+    if (existing) { alert('An active employee with this email already exists'); return; }
+
     const id = generateId('EMP');
     const emp = {
       id, name: form.name, mobile: form.mobile, email: form.email,
       password: form.password, passportNo: form.passportNo, emiratesId: form.emiratesId,
       photo: form.photo, baseSalary: 0, leaveBalance: 30,
+      profileType: form.profileType,
+      allowedIPs: form.allowedIPs ? form.allowedIPs.split(',').map(ip => ip.trim()).filter(Boolean) : [],
       status: 'active', createdAt: new Date().toISOString(), createdBy: 'ADM-001',
     };
     storage.push(KEYS.EMPLOYEES, emp);
-    auditLog('employee_created', 'employee', id, { name: form.name });
+    auditLog('employee_created', 'employee', id, { name: form.name, profileType: form.profileType });
     setShowCreateForm(false);
-    setForm({ name: '', mobile: '', email: '', password: '', passportNo: '', emiratesId: '', photo: '' });
+    setForm({ name: '', mobile: '', email: '', password: '', passportNo: '', emiratesId: '', photo: '', profileType: 'office', allowedIPs: '' });
     load();
   };
 
   const handleDelete = () => {
     if (!showDeleteModal || deleteConfirmName !== showDeleteModal.name) return;
-    storage.update(KEYS.EMPLOYEES, showDeleteModal.id, { status: 'inactive' });
+    storage.update(KEYS.EMPLOYEES, showDeleteModal.id, { status: 'inactive', deactivatedAt: new Date().toISOString() });
     auditLog('employee_deleted', 'employee', showDeleteModal.id, { name: showDeleteModal.name });
-
-    // Reassign clients
     const empClients = clients.filter((c: any) => c.assignedTo === showDeleteModal.id);
     empClients.forEach((c: any) => {
       storage.update(KEYS.CLIENTS, c.id, { assignedTo: '' });
     });
-
     setShowDeleteModal(null);
     setDeleteConfirmName('');
     load();
   };
 
-  // Generate secure password
-  const generatePassword = () => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%';
-    let pwd = '';
-    for (let i = 0; i < 12; i++) pwd += chars.charAt(Math.floor(Math.random() * chars.length));
-    setForm({ ...form, password: pwd });
-  };
-
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3 flex-1 w-full sm:w-auto">
+        <div className="flex items-center gap-3 flex-1 w-full sm:w-auto flex-wrap">
           <div className="relative flex-1 max-w-xs">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input value={search} onChange={(e) => setSearch(e.target.value)} className="input-nawi pl-9" placeholder="Search employees..." />
@@ -86,6 +109,11 @@ export default function EmployeeList() {
             <option value="all">All Status</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
+          </select>
+          <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="input-nawi w-auto">
+            <option value="all">All Types</option>
+            <option value="office">Office</option>
+            <option value="sales">Sales</option>
           </select>
         </div>
         <button onClick={() => setShowCreateForm(true)} className="btn-primary"><Plus className="w-4 h-4" /> Add Employee</button>
@@ -97,6 +125,7 @@ export default function EmployeeList() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((e: any) => {
             const clientCount = clients.filter((c: any) => c.assignedTo === e.id).length;
+            const isSales = e.profileType === 'sales';
             return (
               <div key={e.id} className="card-nawi-hover cursor-pointer" onClick={() => navigate(`/admin/employees/${e.id}`)}>
                 <div className="flex items-start gap-3">
@@ -112,7 +141,11 @@ export default function EmployeeList() {
                       <p className="font-semibold text-foreground truncate">{e.name}</p>
                       <StatusBadge status={e.status} />
                     </div>
-                    <p className="text-xs text-muted-foreground font-mono">{e.id}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <p className="text-xs text-muted-foreground font-mono">{e.id}</p>
+                      {isSales && <span className="text-xs bg-warning/10 text-warning px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><MapPin className="w-3 h-3" />Sales</span>}
+                      {!isSales && e.allowedIPs?.length > 0 && <Wifi className="w-3 h-3 text-secondary" title="IP restricted" />}
+                    </div>
                     <p className="text-xs text-muted-foreground mt-1">{e.email}</p>
                     <p className="text-xs text-muted-foreground">{e.mobile}</p>
                     <div className="flex items-center justify-between mt-2">
@@ -153,6 +186,23 @@ export default function EmployeeList() {
                 </label>
               </div>
 
+              {/* Profile Type */}
+              <div>
+                <label className="block text-sm font-medium mb-2">Employee Type</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button type="button" onClick={() => setForm({ ...form, profileType: 'office' })}
+                    className={`p-3 rounded-xl border-2 text-center transition-all ${form.profileType === 'office' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                    <Wifi className="w-5 h-5 mx-auto mb-1" /><span className="text-sm font-medium">Office</span>
+                    <p className="text-xs text-muted-foreground mt-0.5">IP restricted access</p>
+                  </button>
+                  <button type="button" onClick={() => setForm({ ...form, profileType: 'sales' })}
+                    className={`p-3 rounded-xl border-2 text-center transition-all ${form.profileType === 'sales' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                    <MapPin className="w-5 h-5 mx-auto mb-1" /><span className="text-sm font-medium">Sales</span>
+                    <p className="text-xs text-muted-foreground mt-0.5">Login from anywhere</p>
+                  </button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2"><label className="block text-sm font-medium mb-1">Full Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input-nawi" required /></div>
                 <div><label className="block text-sm font-medium mb-1">Mobile *</label><input value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} className="input-nawi" required /></div>
@@ -160,13 +210,24 @@ export default function EmployeeList() {
                 <div className="col-span-2">
                   <label className="block text-sm font-medium mb-1">Password *</label>
                   <div className="flex gap-2">
-                    <input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="input-nawi flex-1" required />
-                    <button type="button" onClick={generatePassword} className="btn-outline text-xs whitespace-nowrap">Generate</button>
+                    <input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="input-nawi flex-1" required minLength={8} />
+                    <button type="button" onClick={generatePassword} className="btn-outline text-xs whitespace-nowrap"><Shield className="w-3 h-3" /> Generate</button>
                   </div>
+                  <p className="text-xs text-muted-foreground mt-1">Min 8 chars with uppercase, lowercase, number & special char</p>
                 </div>
                 <div><label className="block text-sm font-medium mb-1">Passport No.</label><input value={form.passportNo} onChange={(e) => setForm({ ...form, passportNo: e.target.value })} className="input-nawi" /></div>
                 <div><label className="block text-sm font-medium mb-1">Emirates ID</label><input value={form.emiratesId} onChange={(e) => setForm({ ...form, emiratesId: e.target.value })} className="input-nawi" /></div>
               </div>
+
+              {/* IP Restriction for office employees */}
+              {form.profileType === 'office' && (
+                <div>
+                  <label className="block text-sm font-medium mb-1 flex items-center gap-1"><Wifi className="w-3 h-3" /> Allowed WiFi IP Addresses</label>
+                  <input value={form.allowedIPs} onChange={(e) => setForm({ ...form, allowedIPs: e.target.value })} className="input-nawi" placeholder="e.g., 192.168.1.1, 10.0.0.1 (comma separated)" />
+                  <p className="text-xs text-muted-foreground mt-1">Leave empty for now — you can add IPs later from employee profile</p>
+                </div>
+              )}
+
               <div className="flex justify-end gap-3 pt-2">
                 <button type="button" onClick={() => setShowCreateForm(false)} className="btn-outline">Cancel</button>
                 <button type="submit" className="btn-primary">Create Employee</button>
@@ -180,15 +241,18 @@ export default function EmployeeList() {
       {showDeleteModal && (
         <div className="fixed inset-0 bg-foreground/50 z-50 flex items-center justify-center p-4">
           <div className="bg-card rounded-xl shadow-elevated w-full max-w-md p-6">
-            <h2 className="text-lg font-bold text-foreground font-display mb-2">Delete Employee</h2>
-            <p className="text-sm text-muted-foreground mb-3">This will permanently deactivate <strong>{showDeleteModal.name}</strong>'s account.</p>
-            <div className="bg-destructive/10 text-destructive text-sm px-4 py-2.5 rounded-lg mb-4">This action cannot be undone.</div>
+            <h2 className="text-lg font-bold text-foreground font-display mb-2">Deactivate Employee</h2>
+            <p className="text-sm text-muted-foreground mb-3">This will permanently deactivate <strong>{showDeleteModal.name}</strong>'s account and unassign all their clients.</p>
+            <div className="bg-destructive/10 text-destructive text-sm px-4 py-2.5 rounded-lg mb-4">
+              <p>⚠️ This action cannot be undone.</p>
+              <p className="text-xs mt-1">{clients.filter((c: any) => c.assignedTo === showDeleteModal.id).length} clients will be unassigned.</p>
+            </div>
             <p className="text-sm text-foreground mb-2">Type the employee's full name to confirm:</p>
             <div className="inline-block bg-primary text-primary-foreground text-sm px-3 py-1 rounded-full mb-3">{showDeleteModal.name}</div>
             <input value={deleteConfirmName} onChange={(e) => setDeleteConfirmName(e.target.value)} className="input-nawi mb-4" placeholder="Type employee name..." />
             <div className="flex justify-end gap-3">
               <button onClick={() => { setShowDeleteModal(null); setDeleteConfirmName(''); }} className="btn-outline">Cancel</button>
-              <button onClick={handleDelete} disabled={deleteConfirmName !== showDeleteModal.name} className="btn-danger disabled:opacity-40">Confirm Delete</button>
+              <button onClick={handleDelete} disabled={deleteConfirmName !== showDeleteModal.name} className="btn-danger disabled:opacity-40">Confirm Deactivate</button>
             </div>
           </div>
         </div>

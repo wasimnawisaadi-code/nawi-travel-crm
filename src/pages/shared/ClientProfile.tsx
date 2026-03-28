@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Edit, FileText, Trash2, Plus, Save, X, Upload, Download } from 'lucide-react';
+import { ArrowLeft, Edit, FileText, Trash2, Plus, Save, X, Upload, Download, Clock, Users } from 'lucide-react';
 import { storage, KEYS, formatCurrency, formatDate, daysUntil, getDateStatus, getCurrentUser, isAdmin, auditLog, generateId } from '@/lib/storage';
 import StatusBadge from '@/components/ui/StatusBadge';
 import jsPDF from 'jspdf';
@@ -16,7 +16,6 @@ export default function ClientProfile() {
   const [newNote, setNewNote] = useState('');
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [taskForm, setTaskForm] = useState({ title: '', dueDate: '', notes: '' });
-  // Quotation state
   const [showQuotation, setShowQuotation] = useState(false);
   const [lineItems, setLineItems] = useState([{ description: '', amount: 0 }]);
   const [payableAmount, setPayableAmount] = useState(0);
@@ -83,7 +82,6 @@ export default function ClientProfile() {
     }
   };
 
-  // Quotation functions
   const quotedPrice = lineItems.reduce((s, li) => s + (li.amount || 0), 0);
   const profit = quotedPrice - payableAmount;
 
@@ -103,7 +101,7 @@ export default function ClientProfile() {
     doc.setTextColor(0);
     doc.text(client.name, 20, 66); doc.text(client.mobile || '', 20, 72);
     doc.text(client.email || '', 20, 78);
-    if (client.service) doc.text(`Service: ${client.service}`, 20, 84);
+    if (client.service) doc.text(`Service: ${client.service}${client.serviceSubcategory ? ` (${client.serviceSubcategory})` : ''}`, 20, 84);
     let y = 96;
     doc.setFillColor(5, 47, 89); doc.rect(20, y, 170, 8, 'F');
     doc.setTextColor(255); doc.setFontSize(9);
@@ -128,7 +126,6 @@ export default function ClientProfile() {
       generatedBy: session?.userId || '', generatedAt: new Date().toISOString(), emailedAt: '',
     };
     storage.push(KEYS.QUOTATIONS, quo);
-    // Update client revenue
     storage.update(KEYS.CLIENTS, client.id, {
       revenue: (client.revenue || 0) + quotedPrice,
       profit: (client.profit || 0) + profit,
@@ -147,7 +144,7 @@ export default function ClientProfile() {
     overdue: 'text-destructive border-destructive/30 bg-destructive/10',
   };
 
-  const tabList = ['overview', 'documents', 'dates', 'quotations', 'tasks', 'revenue', 'notes', 'history'];
+  const tabList = ['overview', 'services', 'documents', 'dates', 'family', 'quotations', 'tasks', 'revenue', 'notes', 'history'];
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -162,17 +159,21 @@ export default function ClientProfile() {
               <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">{client.id}</span>
               <StatusBadge status={client.status} />
               {client.service && <span className="badge-new">{client.service}</span>}
+              {client.serviceSubcategory && <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full">{client.serviceSubcategory}</span>}
               {client.clientType && <span className="text-xs text-muted-foreground">{client.clientType}</span>}
               {assignedEmp && <span className="text-xs text-muted-foreground">→ {assignedEmp.name}</span>}
+              {(client.serviceHistory?.length || 0) > 1 && (
+                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">{client.serviceHistory.length} services</span>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Status progression */}
             <select value={client.status} onChange={(e) => handleStatusUpdate(e.target.value)} className="input-nawi w-auto text-sm">
               <option value="New">New</option><option value="Processing">Processing</option><option value="Success">Success</option><option value="Failed">Failed</option>
             </select>
             <button onClick={() => { setEditing(!editing); setForm(client); }} className="btn-outline"><Edit className="w-4 h-4" /> Edit</button>
             <button onClick={() => setShowQuotation(true)} className="btn-secondary"><FileText className="w-4 h-4" /> Quotation</button>
+            <button onClick={() => navigate(`${basePath}/clients/new?existingClient=${client.id}`)} className="btn-outline"><Plus className="w-4 h-4" /> New Service</button>
             <button onClick={handleDelete} className="btn-danger"><Trash2 className="w-4 h-4" /></button>
           </div>
         </div>
@@ -193,6 +194,7 @@ export default function ClientProfile() {
             {[
               { label: 'Name', key: 'name' }, { label: 'Mobile', key: 'mobile' }, { label: 'Email', key: 'email' },
               { label: 'Client Type', key: 'clientType' }, { label: 'Lead Source', key: 'leadSource' }, { label: 'Service', key: 'service' },
+              { label: 'Service Type', key: 'serviceSubcategory' }, { label: 'Nationality', key: 'nationality' },
               { label: 'Company', key: 'companyName' }, { label: 'Payment Type', key: 'paymentType' },
               { label: 'Revenue', key: 'revenue' }, { label: 'Profit', key: 'profit' },
             ].map(({ label, key }) => (
@@ -206,15 +208,51 @@ export default function ClientProfile() {
               </div>
             ))}
           </div>
-          {/* Service Details */}
           {client.serviceDetails && Object.keys(client.serviceDetails).length > 0 && (
             <div className="mt-4 pt-4 border-t border-border">
-              <h3 className="text-sm font-semibold mb-3">Service Details</h3>
+              <h3 className="text-sm font-semibold mb-3">Current Service Details</h3>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {Object.entries(client.serviceDetails).filter(([_, v]) => v).map(([k, v]) => (
                   <div key={k}><label className="block text-xs text-muted-foreground capitalize">{k.replace(/([A-Z])/g, ' $1')}</label><p className="text-sm font-medium">{v as string}</p></div>
                 ))}
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Service History */}
+      {tab === 'services' && (
+        <div className="card-nawi">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold font-display">Service History</h3>
+            <button onClick={() => navigate(`${basePath}/clients/new?existingClient=${client.id}`)} className="btn-primary"><Plus className="w-4 h-4" /> Add New Service</button>
+          </div>
+          {(!client.serviceHistory || client.serviceHistory.length === 0) ? (
+            <p className="text-sm text-muted-foreground text-center py-8">No service history</p>
+          ) : (
+            <div className="space-y-3">
+              {client.serviceHistory.map((svc: any, i: number) => (
+                <div key={svc.id || i} className="p-4 border border-border rounded-xl">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="badge-new">{svc.service}</span>
+                      {svc.serviceSubcategory && <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full">{svc.serviceSubcategory}</span>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={svc.status || 'New'} />
+                      <span className="text-xs text-muted-foreground">{formatDate(svc.createdAt)}</span>
+                    </div>
+                  </div>
+                  {svc.serviceDetails && Object.keys(svc.serviceDetails).length > 0 && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
+                      {Object.entries(svc.serviceDetails).filter(([_, v]) => v).slice(0, 8).map(([k, v]) => (
+                        <div key={k} className="text-xs"><span className="text-muted-foreground capitalize">{k.replace(/([A-Z])/g, ' $1')}: </span><span className="font-medium">{v as string}</span></div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -270,7 +308,7 @@ export default function ClientProfile() {
           <h3 className="font-semibold font-display mb-4">Important Dates</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {Object.entries(client.importantDates || {}).map(([type, val]) => {
-              if (!val) return null;
+              if (!val || type === 'passportNo') return null;
               const days = daysUntil(val as string);
               const status = getDateStatus(val as string);
               return (
@@ -282,6 +320,52 @@ export default function ClientProfile() {
               );
             }).filter(Boolean)}
           </div>
+          {/* Family member dates */}
+          {client.familyMembers?.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-border">
+              <h4 className="text-sm font-semibold mb-3">Family Member Dates</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {client.familyMembers.map((fm: any, i: number) => (
+                  <div key={i} className="p-3 border border-border rounded-lg">
+                    <p className="text-sm font-medium">{fm.name} ({fm.relation})</p>
+                    {fm.dob && <p className="text-xs text-muted-foreground">DOB: {formatDate(fm.dob)}</p>}
+                    {fm.passportExpiry && (
+                      <p className={`text-xs font-medium mt-1 ${daysUntil(fm.passportExpiry) < 90 ? 'text-destructive' : 'text-success'}`}>
+                        PP Exp: {formatDate(fm.passportExpiry)} ({daysUntil(fm.passportExpiry)}d)
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Family */}
+      {tab === 'family' && (
+        <div className="card-nawi">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold font-display flex items-center gap-2"><Users className="w-4 h-4" /> Family Members</h3>
+          </div>
+          {(!client.familyMembers || client.familyMembers.length === 0) ? (
+            <p className="text-sm text-muted-foreground text-center py-8">No family members recorded</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {client.familyMembers.map((fm: any, i: number) => (
+                <div key={i} className="p-4 border border-border rounded-xl">
+                  <p className="font-semibold text-foreground">{fm.name}</p>
+                  <p className="text-sm text-muted-foreground">{fm.relation}</p>
+                  <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
+                    <div><span className="text-muted-foreground">DOB:</span> {fm.dob ? formatDate(fm.dob) : '—'}</div>
+                    <div><span className="text-muted-foreground">Nationality:</span> {fm.nationality || '—'}</div>
+                    <div><span className="text-muted-foreground">Passport:</span> {fm.passportNo || '—'}</div>
+                    <div><span className="text-muted-foreground">PP Expiry:</span> {fm.passportExpiry ? formatDate(fm.passportExpiry) : '—'}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -392,12 +476,10 @@ export default function ClientProfile() {
             <h2 className="text-lg font-bold font-display mb-4">Generate Quotation — {client.name}</h2>
             <div className="grid grid-cols-2 gap-3 p-3 bg-muted/50 rounded-lg text-sm mb-4">
               <div><span className="text-muted-foreground">Client:</span> {client.name}</div>
-              <div><span className="text-muted-foreground">Service:</span> {client.service}</div>
+              <div><span className="text-muted-foreground">Service:</span> {client.service}{client.serviceSubcategory ? ` (${client.serviceSubcategory})` : ''}</div>
             </div>
-
             <div className="space-y-4">
               <div><label className="block text-sm font-medium mb-1">Valid Until</label><input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} className="input-nawi" /></div>
-
               <div>
                 <div className="flex items-center justify-between mb-2"><label className="text-sm font-medium">Line Items</label><button onClick={() => setLineItems([...lineItems, { description: '', amount: 0 }])} className="btn-outline text-xs py-1"><Plus className="w-3 h-3" /> Add</button></div>
                 {lineItems.map((li, i) => (
@@ -408,7 +490,6 @@ export default function ClientProfile() {
                   </div>
                 ))}
               </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="block text-sm font-medium mb-1">Quoted Price</label><input value={quotedPrice} readOnly className="input-nawi bg-muted" /></div>
                 <div><label className="block text-sm font-medium mb-1">Payable Amount</label><input type="number" value={payableAmount || ''} onChange={(e) => setPayableAmount(Number(e.target.value))} className="input-nawi" /></div>
@@ -417,7 +498,6 @@ export default function ClientProfile() {
                 Profit: {formatCurrency(profit)}
               </div>
               <div><label className="block text-sm font-medium mb-1">Notes</label><textarea value={quoNotes} onChange={(e) => setQuoNotes(e.target.value)} className="input-nawi" rows={2} /></div>
-
               <div className="flex gap-2">
                 <button onClick={saveQuotation} className="btn-primary flex-1"><Save className="w-4 h-4" /> Save</button>
                 <button onClick={generatePDF} className="btn-secondary flex-1"><Download className="w-4 h-4" /> Download PDF</button>
