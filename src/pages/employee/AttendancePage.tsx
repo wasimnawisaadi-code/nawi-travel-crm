@@ -1,14 +1,18 @@
 import { useState } from 'react';
 import { getCurrentUser, storage, KEYS, formatDate } from '@/lib/storage';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { LogOut, Clock, FileText } from 'lucide-react';
+import { LogOut, Clock, Camera, MapPin, Upload } from 'lucide-react';
 
 export default function AttendancePage() {
   const session = getCurrentUser();
   const [yearMonth, setYearMonth] = useState(() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`; });
   const [showCheckout, setShowCheckout] = useState(false);
   const [workSummary, setWorkSummary] = useState('');
+  const [fieldPhoto, setFieldPhoto] = useState<any>(null);
+  const [fieldLocation, setFieldLocation] = useState('');
 
+  const emp = storage.getAll(KEYS.EMPLOYEES).find((e: any) => e.id === session?.userId);
+  const isSales = emp?.profileType === 'sales';
   const attendance = storage.getAll(KEYS.ATTENDANCE).filter((a: any) => a.employeeId === session?.userId && a.date?.startsWith(yearMonth));
   const today = new Date().toISOString().split('T')[0];
   const todayRecord = storage.getAll(KEYS.ATTENDANCE).find((a: any) => a.employeeId === session?.userId && a.date === today);
@@ -17,17 +21,41 @@ export default function AttendancePage() {
   const late = attendance.filter((a: any) => a.status === 'Late').length;
   const totalHours = attendance.reduce((s: number, a: any) => s + (a.hoursWorked || 0), 0);
 
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setFieldPhoto({ base64: reader.result, name: file.name });
+    reader.readAsDataURL(file);
+  };
+
   const handleCheckout = () => {
     if (todayRecord && !todayRecord.logoutTime) {
       const logoutTime = new Date().toISOString();
       const loginDate = new Date(todayRecord.loginTime);
       const logoutDate = new Date(logoutTime);
       const hoursWorked = Math.round(((logoutDate.getTime() - loginDate.getTime()) / 3600000) * 10) / 10;
-      storage.update(KEYS.ATTENDANCE, todayRecord.id, { logoutTime, hoursWorked, workSummary: workSummary.trim() || undefined });
+      const updates: any = { logoutTime, hoursWorked, workSummary: workSummary.trim() || undefined };
+      if (isSales && fieldPhoto) {
+        updates.fieldPhotos = [...(todayRecord.fieldPhotos || []), { base64: fieldPhoto.base64, location: fieldLocation, uploadedAt: new Date().toISOString() }];
+      }
+      storage.update(KEYS.ATTENDANCE, todayRecord.id, updates);
       setShowCheckout(false);
       setWorkSummary('');
+      setFieldPhoto(null);
+      setFieldLocation('');
       window.location.reload();
     }
+  };
+
+  const handleUploadFieldPhoto = () => {
+    if (!todayRecord || !fieldPhoto) return;
+    const photos = todayRecord.fieldPhotos || [];
+    photos.push({ base64: fieldPhoto.base64, location: fieldLocation, uploadedAt: new Date().toISOString() });
+    storage.update(KEYS.ATTENDANCE, todayRecord.id, { fieldPhotos: photos });
+    setFieldPhoto(null);
+    setFieldLocation('');
+    window.location.reload();
   };
 
   return (
@@ -63,6 +91,36 @@ export default function AttendancePage() {
         </div>
       )}
 
+      {/* Sales person field photo upload */}
+      {isSales && todayRecord && !todayRecord.logoutTime && (
+        <div className="card-nawi bg-warning/5 border-warning/20">
+          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><MapPin className="w-4 h-4 text-warning" /> Field Visit Photo</h3>
+          <p className="text-xs text-muted-foreground mb-3">Upload a photo of where you're working today</p>
+          <div className="flex gap-3 items-end">
+            <div className="flex-1">
+              <input value={fieldLocation} onChange={e => setFieldLocation(e.target.value)} className="input-nawi mb-2" placeholder="Location description (e.g., ABC Company Office)" />
+              <label className="btn-outline cursor-pointer text-sm w-full justify-center">
+                <Camera className="w-4 h-4" /> {fieldPhoto ? fieldPhoto.name : 'Take/Upload Photo'}
+                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoUpload} />
+              </label>
+            </div>
+            {fieldPhoto && (
+              <button onClick={handleUploadFieldPhoto} className="btn-primary"><Upload className="w-4 h-4" /> Submit</button>
+            )}
+          </div>
+          {todayRecord.fieldPhotos?.length > 0 && (
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {todayRecord.fieldPhotos.map((p: any, i: number) => (
+                <div key={i} className="rounded-lg overflow-hidden border border-border">
+                  <img src={p.base64} alt="" className="w-full h-20 object-cover" />
+                  <p className="text-xs text-muted-foreground p-1 truncate">{p.location}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-4">
         <div className="stat-card"><div className="stat-card-icon bg-success"><span className="text-primary-foreground font-bold">{present}</span></div><div><p className="text-xs text-muted-foreground">Present</p></div></div>
         <div className="stat-card"><div className="stat-card-icon bg-warning"><span className="text-primary-foreground font-bold">{late}</span></div><div><p className="text-xs text-muted-foreground">Late</p></div></div>
@@ -94,7 +152,17 @@ export default function AttendancePage() {
           <div className="bg-card rounded-xl shadow-elevated w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
             <h2 className="text-lg font-bold font-display mb-4">📝 Daily Check Out</h2>
             <p className="text-sm text-muted-foreground mb-4">Please describe what you worked on today:</p>
-            <textarea value={workSummary} onChange={e => setWorkSummary(e.target.value)} className="input-nawi" rows={4} placeholder="e.g., Processed 5 visa applications, followed up with 3 clients, submitted quotations..." />
+            <textarea value={workSummary} onChange={e => setWorkSummary(e.target.value)} className="input-nawi" rows={4} placeholder="e.g., Processed 5 visa applications, followed up with 3 clients..." />
+            {isSales && (
+              <div className="mt-4">
+                <label className="block text-sm font-medium mb-1">Final Location Photo (optional)</label>
+                <input value={fieldLocation} onChange={e => setFieldLocation(e.target.value)} className="input-nawi mb-2" placeholder="Where are you now?" />
+                <label className="btn-outline cursor-pointer text-sm w-full justify-center">
+                  <Camera className="w-4 h-4" /> {fieldPhoto ? fieldPhoto.name : 'Upload Photo'}
+                  <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+                </label>
+              </div>
+            )}
             <div className="flex justify-end gap-3 mt-4">
               <button onClick={() => setShowCheckout(false)} className="btn-outline">Cancel</button>
               <button onClick={handleCheckout} className="btn-primary"><LogOut className="w-4 h-4" /> Check Out</button>

@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Check, ChevronLeft, ChevronRight, Plane, FileText as VisaIcon, Globe, Palmtree, Shield, Building, Handshake, Hotel, Upload, AlertTriangle, FileUp, X } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Check, ChevronLeft, ChevronRight, Upload, AlertTriangle, FileUp, X, Users, Plus, Trash2 } from 'lucide-react';
 import { storage, KEYS, generateId, getCurrentUser, auditLog, isAdmin } from '@/lib/storage';
 import Papa from 'papaparse';
 
 const SERVICES = [
   { key: 'Air Ticket', emoji: '✈️' },
-  { key: 'UAE Visa', emoji: '🪪' },
-  { key: 'Global Visa', emoji: '🌍' },
+  { key: 'UAE Visa', emoji: '🪪', subcategories: ['Tourist Visa', 'Visit Visa', 'Transit Visa', 'Family Visa', 'Employment Visa', 'Freelancer Visa', 'Business Visa', 'Student Visa', 'Extension', 'Status Change', 'Visa Cancellation'] },
+  { key: 'Global Visa', emoji: '🌍', subcategories: ['Tourist', 'Business', 'Student', 'Work Permit', 'Transit', 'Family Reunion', 'Medical'] },
   { key: 'Holiday Package', emoji: '🏝️' },
   { key: 'Travel Insurance', emoji: '🛡️' },
   { key: 'Pilgrimage', emoji: '🕌' },
@@ -15,24 +15,36 @@ const SERVICES = [
   { key: 'Hotel Booking', emoji: '🏨' },
 ];
 
-const LEAD_SOURCES = ['Walk-in', 'Call', 'WhatsApp', 'Social Media', 'Reference'];
+const LEAD_SOURCES = ['Walk-in', 'Call', 'WhatsApp', 'Social Media', 'Reference', 'Website', 'B2B Partner'];
 
 const DOC_REQUIREMENTS: Record<string, Record<string, string[]>> = {
   'Air Ticket': { default: ['Passport Copy'] },
-  'UAE Visa': { 'Outside UAE': ['Passport', 'Photo'], 'Inside UAE': ['Passport', 'Photo', 'Emirates ID', 'Current Visa Copy'] },
+  'UAE Visa': {
+    'Tourist Visa': ['Passport', 'Photo', 'Flight Ticket'],
+    'Visit Visa': ['Passport', 'Photo', 'Sponsor Passport', 'Sponsor Visa'],
+    'Family Visa': ['Passport', 'Photo', 'Sponsor Passport', 'Sponsor Visa', 'Sponsor Emirates ID', 'Marriage Certificate', 'Salary Certificate'],
+    'Employment Visa': ['Passport', 'Photo', 'Offer Letter', 'Medical Report'],
+    'Freelancer Visa': ['Passport', 'Photo', 'Bank Statement', 'Business Plan'],
+    'Business Visa': ['Passport', 'Photo', 'Trade License', 'Company Letter'],
+    'Student Visa': ['Passport', 'Photo', 'Admission Letter', 'Sponsor Passport'],
+    'Extension': ['Passport', 'Current Visa Copy', 'Emirates ID'],
+    'Status Change': ['Passport', 'Current Visa Copy', 'Emirates ID', 'New Offer Letter'],
+    'Visa Cancellation': ['Passport', 'Emirates ID', 'Current Visa Copy'],
+    default: ['Passport', 'Photo'],
+  },
   'Global Visa': {
-    Employed: ['Passport', 'Photo', 'Emirates ID', 'Bank Statement', 'NOC'],
-    'Self-Employed': ['Passport', 'Photo', 'Emirates ID', 'Bank Statement', 'Trade License'],
-    Unemployed: ['Passport', 'Photo', 'Sponsor Passport', 'Sponsor Bank Statement', 'Sponsor Letter'],
+    Employed: ['Passport', 'Photo', 'Emirates ID', 'Bank Statement (6 months)', 'NOC Letter', 'Salary Certificate', 'Travel Insurance'],
+    'Self-Employed': ['Passport', 'Photo', 'Emirates ID', 'Bank Statement (6 months)', 'Trade License', 'Company Profile'],
+    Unemployed: ['Passport', 'Photo', 'Sponsor Passport', 'Sponsor Bank Statement', 'Sponsor Letter', 'Relationship Proof'],
+    default: ['Passport', 'Photo'],
   },
   'Holiday Package': { default: ['Passport Copy'] },
   'Travel Insurance': { default: ['Passport Copy'] },
-  'Pilgrimage': { default: ['Passport', 'Photo'] },
+  'Pilgrimage': { default: ['Passport', 'Photo', 'Vaccination Certificate'] },
   'Meet & Assist': { default: ['Passport Copy'] },
   'Hotel Booking': { default: [] },
 };
 
-// OCR simulation - extract fields from document type
 const simulateOCR = (docType: string, fileName: string) => {
   const fields: Record<string, string> = {};
   if (docType.toLowerCase().includes('passport')) {
@@ -45,8 +57,20 @@ const simulateOCR = (docType: string, fileName: string) => {
   return fields;
 };
 
+interface FamilyMember {
+  name: string;
+  relation: string;
+  dob: string;
+  passportNo: string;
+  passportExpiry: string;
+  nationality: string;
+  documents: any[];
+}
+
 export default function AddClientWizard() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const existingClientId = searchParams.get('existingClient');
   const session = getCurrentUser();
   const [step, setStep] = useState(0);
   const [duplicates, setDuplicates] = useState<any[]>([]);
@@ -54,34 +78,58 @@ export default function AddClientWizard() {
   const [bulkData, setBulkData] = useState<any[]>([]);
   const [bulkErrors, setBulkErrors] = useState<string[]>([]);
   const [ocrFields, setOcrFields] = useState<Record<string, string>>({});
+  const [existingClient, setExistingClient] = useState<any>(null);
+  const [addingNewService, setAddingNewService] = useState(false);
   const basePath = isAdmin() ? '/admin' : '/employee';
 
   const [form, setForm] = useState({
     name: '', mobile: '', email: '', passportNo: '',
     clientType: '', companyName: '', companyNumber: '', paymentType: '',
-    service: '', leadSource: '', nationality: '', dob: '',
+    service: '', serviceSubcategory: '', leadSource: '', nationality: '', dob: '',
     serviceDetails: {} as Record<string, string>,
     documents: [] as any[],
     importantDates: { dob: '', passportExpiry: '', visaExpiry: '', travelDate: '', weddingAnniversary: '' } as Record<string, string>,
+    familyMembers: [] as FamilyMember[],
   });
+
+  // Load existing client if adding new service
+  useEffect(() => {
+    if (existingClientId) {
+      const c = storage.getAll(KEYS.CLIENTS).find((cl: any) => cl.id === existingClientId);
+      if (c) {
+        setExistingClient(c);
+        setAddingNewService(true);
+        setForm(prev => ({
+          ...prev,
+          name: c.name, mobile: c.mobile, email: c.email || '', passportNo: c.importantDates?.passportNo || c.passportNo || '',
+          clientType: c.clientType, companyName: c.companyName || '', companyNumber: c.companyNumber || '',
+          nationality: c.nationality || '', dob: c.importantDates?.dob || '',
+          leadSource: c.leadSource || '',
+          importantDates: c.importantDates || {},
+        }));
+        setStep(0); // Go to service selection
+      }
+    }
+  }, [existingClientId]);
 
   const updateForm = (changes: any) => setForm(prev => ({ ...prev, ...changes }));
   const updateSD = (key: string, val: string) => setForm(prev => ({ ...prev, serviceDetails: { ...prev.serviceDetails, [key]: val } }));
 
-  // Auto duplicate check (debounced)
+  // Auto duplicate check
   useEffect(() => {
+    if (addingNewService) return;
     if (!form.name && !form.mobile && !form.passportNo) { setDuplicates([]); return; }
     const timer = setTimeout(() => {
       const clients = storage.getAll(KEYS.CLIENTS);
       const dupes = clients.filter((c: any) =>
-        (form.name.length >= 3 && c.name?.toLowerCase().includes(form.name.toLowerCase())) ||
-        (form.mobile.length >= 5 && c.mobile?.includes(form.mobile)) ||
-        (form.passportNo.length >= 4 && c.importantDates?.passportNo === form.passportNo)
+        (form.name.length >= 3 && c.name?.toLowerCase() === form.name.toLowerCase()) ||
+        (form.mobile.length >= 5 && c.mobile === form.mobile) ||
+        (form.passportNo.length >= 4 && (c.importantDates?.passportNo === form.passportNo || c.passportNo === form.passportNo))
       );
       setDuplicates(dupes);
     }, 300);
     return () => clearTimeout(timer);
-  }, [form.name, form.mobile, form.passportNo]);
+  }, [form.name, form.mobile, form.passportNo, addingNewService]);
 
   // Auto-extract important dates from service details
   useEffect(() => {
@@ -97,9 +145,11 @@ export default function AddClientWizard() {
   const getRequiredDocs = () => {
     const reqs = DOC_REQUIREMENTS[form.service];
     if (!reqs) return [];
+    // Check subcategory first
+    if (form.serviceSubcategory && reqs[form.serviceSubcategory]) return reqs[form.serviceSubcategory];
     const sd = form.serviceDetails;
-    if (form.service === 'UAE Visa') return reqs[sd.applicationType || 'Outside UAE'] || reqs['Outside UAE'] || [];
-    if (form.service === 'Global Visa') return reqs[sd.applicantType || 'Employed'] || reqs.Employed || [];
+    if (form.service === 'UAE Visa') return reqs[sd.applicationType || 'default'] || reqs.default || [];
+    if (form.service === 'Global Visa') return reqs[sd.applicantType || 'Employed'] || reqs.default || [];
     return reqs.default || [];
   };
 
@@ -113,15 +163,72 @@ export default function AddClientWizard() {
     reader.readAsDataURL(file);
   };
 
+  const addFamilyMember = () => {
+    updateForm({ familyMembers: [...form.familyMembers, { name: '', relation: '', dob: '', passportNo: '', passportExpiry: '', nationality: form.nationality, documents: [] }] });
+  };
+
+  const updateFamilyMember = (index: number, changes: Partial<FamilyMember>) => {
+    const updated = [...form.familyMembers];
+    updated[index] = { ...updated[index], ...changes };
+    updateForm({ familyMembers: updated });
+  };
+
+  const removeFamilyMember = (index: number) => {
+    updateForm({ familyMembers: form.familyMembers.filter((_, i) => i !== index) });
+  };
+
   const handleSubmit = () => {
+    if (addingNewService && existingClient) {
+      // Add new service entry to existing client
+      const serviceEntry = {
+        id: generateId('SVC'),
+        service: form.service,
+        serviceSubcategory: form.serviceSubcategory,
+        serviceDetails: form.serviceDetails,
+        documents: form.documents,
+        familyMembers: form.familyMembers,
+        status: 'New',
+        createdAt: new Date().toISOString(),
+        createdBy: session?.userId || '',
+      };
+      const existingServices = existingClient.serviceHistory || [];
+      const updatedDates = { ...existingClient.importantDates, ...form.importantDates };
+      storage.update(KEYS.CLIENTS, existingClient.id, {
+        service: form.service, // latest service
+        serviceSubcategory: form.serviceSubcategory,
+        serviceDetails: form.serviceDetails,
+        serviceHistory: [...existingServices, serviceEntry],
+        documents: [...(existingClient.documents || []), ...form.documents],
+        importantDates: updatedDates,
+        familyMembers: form.familyMembers.length > 0 ? form.familyMembers : existingClient.familyMembers,
+        updatedAt: new Date().toISOString(),
+      });
+      auditLog('service_added', 'client', existingClient.id, { service: form.service });
+      navigate(`${basePath}/clients/${existingClient.id}`);
+      return;
+    }
+
     const id = generateId('CLT');
+    const serviceEntry = {
+      id: generateId('SVC'),
+      service: form.service,
+      serviceSubcategory: form.serviceSubcategory,
+      serviceDetails: form.serviceDetails,
+      documents: form.documents,
+      familyMembers: form.familyMembers,
+      status: 'New',
+      createdAt: new Date().toISOString(),
+      createdBy: session?.userId || '',
+    };
     const client = {
-      id, name: form.name, mobile: form.mobile, email: form.email,
+      id, name: form.name, mobile: form.mobile, email: form.email, passportNo: form.passportNo,
       clientType: form.clientType, companyName: form.companyName, companyNumber: form.companyNumber,
-      paymentType: form.paymentType, service: form.service, leadSource: form.leadSource,
-      nationality: form.nationality,
+      paymentType: form.paymentType, service: form.service, serviceSubcategory: form.serviceSubcategory,
+      leadSource: form.leadSource, nationality: form.nationality,
       serviceDetails: form.serviceDetails, documents: form.documents,
-      importantDates: { ...form.importantDates, dob: form.dob || form.importantDates.dob },
+      importantDates: { ...form.importantDates, dob: form.dob || form.importantDates.dob, passportNo: form.passportNo },
+      familyMembers: form.familyMembers,
+      serviceHistory: [serviceEntry],
       status: 'New', assignedTo: session?.userId || '', revenue: 0, profit: 0, notes: '',
       createdAt: new Date().toISOString(), createdBy: session?.userId || '', updatedAt: new Date().toISOString(), history: [],
     };
@@ -150,36 +257,52 @@ export default function AddClientWizard() {
 
   const handleBulkImport = () => {
     let created = 0;
+    let skipped = 0;
     bulkData.forEach((row: any) => {
-      const existing = storage.getAll(KEYS.CLIENTS).find((c: any) => c.mobile === row.mobile || (row.passportNo && c.importantDates?.passportNo === row.passportNo));
-      if (existing) return;
+      const existing = storage.getAll(KEYS.CLIENTS).find((c: any) => c.mobile === row.mobile || (row.passportNo && (c.importantDates?.passportNo === row.passportNo || c.passportNo === row.passportNo)));
+      if (existing) {
+        // Add as new service to existing client
+        const serviceEntry = {
+          id: generateId('SVC'), service: form.service, serviceSubcategory: form.serviceSubcategory,
+          serviceDetails: row, status: 'New', createdAt: new Date().toISOString(), createdBy: session?.userId || '',
+        };
+        const history = existing.serviceHistory || [];
+        storage.update(KEYS.CLIENTS, existing.id, {
+          service: form.service, serviceHistory: [...history, serviceEntry], updatedAt: new Date().toISOString(),
+        });
+        skipped++;
+        return;
+      }
       const id = generateId('CLT');
       storage.push(KEYS.CLIENTS, {
-        id, name: row.name, mobile: row.mobile, email: row.email || '',
+        id, name: row.name, mobile: row.mobile, email: row.email || '', passportNo: row.passportNo || '',
         clientType: row.clientType || form.clientType || 'Individual', service: form.service,
-        leadSource: form.leadSource || '',
-        serviceDetails: row, documents: [], importantDates: { passportExpiry: row.passportExpiry || '', travelDate: row.travelDate || '' },
+        serviceSubcategory: form.serviceSubcategory, leadSource: form.leadSource || '', nationality: row.nationality || '',
+        serviceDetails: row, documents: [],
+        importantDates: { passportExpiry: row.passportExpiry || '', travelDate: row.travelDate || '', dob: row.dob || '', passportNo: row.passportNo || '' },
+        familyMembers: [],
+        serviceHistory: [{ id: generateId('SVC'), service: form.service, serviceSubcategory: form.serviceSubcategory, serviceDetails: row, status: 'New', createdAt: new Date().toISOString(), createdBy: session?.userId || '' }],
         status: 'New', assignedTo: session?.userId || '', revenue: 0, profit: 0, notes: '',
         createdAt: new Date().toISOString(), createdBy: session?.userId || '', updatedAt: new Date().toISOString(), history: [],
       });
       created++;
     });
-    alert(`${created} clients imported successfully!`);
+    alert(`${created} new clients created, ${skipped} existing clients updated with new service.`);
     navigate(`${basePath}/clients`);
   };
 
   const downloadTemplate = () => {
     const templateHeaders: Record<string, string> = {
-      'Air Ticket': 'name,mobile,email,passportNo,travelDate,departureCity,arrivalCity,flightNumber,returnDate',
-      'UAE Visa': 'name,mobile,email,passportNo,visaType,nationality,applicationType,entryType',
-      'Global Visa': 'name,mobile,email,passportNo,country,applicantType,nationality',
-      'Holiday Package': 'name,mobile,email,passportNo,travelDate,returnDate,destination,adults,children',
-      'Travel Insurance': 'name,mobile,email,passportNo,travelDate,returnDate,coverageType,destination',
-      'Pilgrimage': 'name,mobile,email,passportNo,pilgrimageType,season,groupName,persons',
-      'Meet & Assist': 'name,mobile,email,passportNo,flightNumber,maType,airport,dateTime',
-      'Hotel Booking': 'name,mobile,email,checkinDate,checkoutDate,city,rooms,roomType,guests',
+      'Air Ticket': 'name,mobile,email,passportNo,nationality,travelDate,departureCity,arrivalCity,flightNumber,returnDate,dob,passportExpiry',
+      'UAE Visa': 'name,mobile,email,passportNo,nationality,visaType,applicationType,entryType,dob,passportExpiry',
+      'Global Visa': 'name,mobile,email,passportNo,nationality,country,applicantType,dob,passportExpiry',
+      'Holiday Package': 'name,mobile,email,passportNo,nationality,travelDate,returnDate,destination,adults,children,dob',
+      'Travel Insurance': 'name,mobile,email,passportNo,nationality,travelDate,returnDate,coverageType,destination,dob',
+      'Pilgrimage': 'name,mobile,email,passportNo,nationality,pilgrimageType,season,groupName,persons,dob',
+      'Meet & Assist': 'name,mobile,email,passportNo,nationality,flightNumber,maType,airport,dateTime',
+      'Hotel Booking': 'name,mobile,email,nationality,checkinDate,checkoutDate,city,rooms,roomType,guests',
     };
-    const headers = templateHeaders[form.service] || 'name,mobile,email,passportNo';
+    const headers = templateHeaders[form.service] || 'name,mobile,email,passportNo,nationality';
     const blob = new Blob([headers], { type: 'text/csv' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -204,17 +327,39 @@ export default function AddClientWizard() {
     </div>
   );
 
-  // Step 0: Client Type + Lead Source + Service
-  // Step 1: All service-specific fields + basic info
-  // Step 2: Documents + Important Dates
-  // Step 3: Review
-  const steps = ['Type & Service', 'Client Details', 'Documents & Dates', 'Review'];
+  const selectedServiceObj = SERVICES.find(s => s.key === form.service);
+  const hasSubcategories = selectedServiceObj && 'subcategories' in selectedServiceObj;
+  const isFamilyService = form.serviceSubcategory === 'Family Visa' || form.serviceSubcategory === 'Family Reunion' || form.service === 'Holiday Package';
 
-  const canProceedStep0 = form.clientType && form.leadSource && form.service;
+  const steps = addingNewService
+    ? ['Select Service', 'Service Details', 'Documents & Dates', 'Review']
+    : ['Type & Service', 'Client Details', 'Documents & Dates', 'Review'];
+
+  const canProceedStep0 = addingNewService
+    ? (form.service && (!hasSubcategories || form.serviceSubcategory))
+    : (form.clientType && form.leadSource && form.service && (!hasSubcategories || form.serviceSubcategory));
   const canProceedStep1 = form.name && form.mobile;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+      {/* Existing client banner */}
+      {addingNewService && existingClient && (
+        <div className="card-nawi bg-secondary/5 border-secondary/20">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-secondary/10 flex items-center justify-center text-secondary font-bold">
+              {existingClient.name?.charAt(0)}
+            </div>
+            <div>
+              <p className="font-semibold text-foreground">{existingClient.name}</p>
+              <p className="text-xs text-muted-foreground">{existingClient.id} • {existingClient.mobile} • Adding new service request</p>
+              {existingClient.serviceHistory?.length > 0 && (
+                <p className="text-xs text-secondary mt-0.5">Previous services: {existingClient.serviceHistory.map((s: any) => s.service).join(', ')}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Progress */}
       <div className="card-nawi">
         <div className="flex items-center justify-between mb-3">
@@ -227,57 +372,88 @@ export default function AddClientWizard() {
       </div>
 
       {/* Duplicate Warning */}
-      {duplicates.length > 0 && step > 0 && (
+      {duplicates.length > 0 && step >= 1 && !addingNewService && (
         <div className="bg-warning/10 border border-warning/20 p-4 rounded-xl">
-          <div className="flex items-center gap-2 mb-2"><AlertTriangle className="w-5 h-5 text-warning" /><span className="font-medium text-warning">⚠️ Potential duplicate(s) found automatically</span></div>
+          <div className="flex items-center gap-2 mb-2"><AlertTriangle className="w-5 h-5 text-warning" /><span className="font-medium text-warning">⚠️ Client already exists!</span></div>
           {duplicates.slice(0, 3).map((d: any) => (
-            <p key={d.id} className="text-sm">{d.name} — {d.mobile} — {d.id} ({d.service})</p>
+            <div key={d.id} className="flex items-center justify-between text-sm mb-1">
+              <span>{d.name} — {d.mobile} — {d.id} ({d.service})</span>
+              <button onClick={() => navigate(`${basePath}/clients/new?existingClient=${d.id}`)} className="text-xs text-secondary hover:underline">Add New Service →</button>
+            </div>
           ))}
-          <p className="text-xs text-muted-foreground mt-1">You can still continue if this is a different service request.</p>
+          <p className="text-xs text-muted-foreground mt-2">If this client needs a new service, click "Add New Service" to avoid duplicates.</p>
         </div>
       )}
 
       <div className="card-nawi">
-        {/* STEP 0: Client Type + Lead Source + Service Selection */}
+        {/* STEP 0: Client Type + Service Selection */}
         {step === 0 && (
           <div className="space-y-6">
-            <h2 className="text-lg font-bold font-display">1. Client Type</h2>
-            <div className="grid grid-cols-3 gap-3">
-              {[{ key: 'Individual', icon: '👤' }, { key: 'B2B', icon: '🏢' }, { key: 'Corporate', icon: '🏗️' }].map(({ key, icon }) => (
-                <button key={key} onClick={() => updateForm({ clientType: key })} className={`p-4 rounded-xl border-2 text-center transition-all ${form.clientType === key ? 'border-primary bg-primary/5' : 'border-border hover:border-secondary'}`}>
-                  <span className="text-2xl block mb-1">{icon}</span><span className="text-sm font-medium">{key}</span>
-                </button>
-              ))}
-            </div>
-
-            {(form.clientType === 'B2B' || form.clientType === 'Corporate') && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-border">
-                <div><label className="block text-sm font-medium mb-1">Company Name *</label><input value={form.companyName} onChange={(e) => updateForm({ companyName: e.target.value })} className="input-nawi" /></div>
-                <div><label className="block text-sm font-medium mb-1">Company Reg. No.</label><input value={form.companyNumber} onChange={(e) => updateForm({ companyNumber: e.target.value })} className="input-nawi" /></div>
-                <div><label className="block text-sm font-medium mb-1">Payment Type</label>
-                  <div className="flex gap-3 mt-1">{['Cash', 'Credit'].map(t => <label key={t} className="flex items-center gap-2 cursor-pointer"><input type="radio" name="paymentType" value={t} checked={form.paymentType === t} onChange={(e) => updateForm({ paymentType: e.target.value })} className="w-4 h-4" /><span className="text-sm">{t}</span></label>)}</div>
+            {!addingNewService && (
+              <>
+                <h2 className="text-lg font-bold font-display">1. Client Type</h2>
+                <div className="grid grid-cols-3 gap-3">
+                  {[{ key: 'Individual', icon: '👤', desc: 'Single person' }, { key: 'B2B', icon: '🏢', desc: 'Business partner' }, { key: 'Corporate', icon: '🏗️', desc: 'Company/Group' }].map(({ key, icon, desc }) => (
+                    <button key={key} onClick={() => updateForm({ clientType: key })} className={`p-4 rounded-xl border-2 text-center transition-all ${form.clientType === key ? 'border-primary bg-primary/5' : 'border-border hover:border-secondary'}`}>
+                      <span className="text-2xl block mb-1">{icon}</span><span className="text-sm font-medium">{key}</span>
+                      <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
+                    </button>
+                  ))}
                 </div>
-              </div>
+
+                {(form.clientType === 'B2B' || form.clientType === 'Corporate') && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-border">
+                    <div><label className="block text-sm font-medium mb-1">Company Name *</label><input value={form.companyName} onChange={(e) => updateForm({ companyName: e.target.value })} className="input-nawi" /></div>
+                    <div><label className="block text-sm font-medium mb-1">Company Reg. No.</label><input value={form.companyNumber} onChange={(e) => updateForm({ companyNumber: e.target.value })} className="input-nawi" /></div>
+                    <div><label className="block text-sm font-medium mb-1">Payment Type</label>
+                      <div className="flex gap-3 mt-1">{['Cash', 'Credit'].map(t => <label key={t} className="flex items-center gap-2 cursor-pointer"><input type="radio" name="paymentType" value={t} checked={form.paymentType === t} onChange={(e) => updateForm({ paymentType: e.target.value })} className="w-4 h-4" /><span className="text-sm">{t}</span></label>)}</div>
+                    </div>
+                  </div>
+                )}
+
+                <h2 className="text-lg font-bold font-display pt-4">2. Lead Source</h2>
+                <div className="flex flex-wrap gap-2">
+                  {LEAD_SOURCES.map(s => (
+                    <button key={s} onClick={() => updateForm({ leadSource: s })} className={`px-4 py-2 rounded-full text-sm font-medium border transition-colors ${form.leadSource === s ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:border-secondary'}`}>{s}</button>
+                  ))}
+                </div>
+              </>
             )}
 
-            <h2 className="text-lg font-bold font-display pt-4">2. Lead Source</h2>
-            <div className="flex flex-wrap gap-2">
-              {LEAD_SOURCES.map(s => (
-                <button key={s} onClick={() => updateForm({ leadSource: s })} className={`px-4 py-2 rounded-full text-sm font-medium border transition-colors ${form.leadSource === s ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:border-secondary'}`}>{s}</button>
-              ))}
-            </div>
-
-            <h2 className="text-lg font-bold font-display pt-4">3. Select Service</h2>
+            <h2 className="text-lg font-bold font-display pt-4">{addingNewService ? 'Select New Service' : '3. Select Service'}</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {SERVICES.map(({ key, emoji }) => (
-                <button key={key} onClick={() => updateForm({ service: key })} className={`p-4 rounded-xl border-2 text-center transition-all ${form.service === key ? 'border-primary bg-primary/5' : 'border-border hover:border-secondary'}`}>
+                <button key={key} onClick={() => updateForm({ service: key, serviceSubcategory: '', serviceDetails: {} })} className={`p-4 rounded-xl border-2 text-center transition-all ${form.service === key ? 'border-primary bg-primary/5' : 'border-border hover:border-secondary'}`}>
                   <span className="text-2xl block mb-2">{emoji}</span><span className="text-sm font-medium">{key}</span>
                 </button>
               ))}
             </div>
 
+            {/* Service subcategory */}
+            {hasSubcategories && form.service && (
+              <div className="pt-4 border-t border-border">
+                <h3 className="text-sm font-semibold mb-3">{form.service} — Select Type</h3>
+                <div className="flex flex-wrap gap-2">
+                  {(selectedServiceObj as any).subcategories.map((sub: string) => (
+                    <button key={sub} onClick={() => updateForm({ serviceSubcategory: sub })}
+                      className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${form.serviceSubcategory === sub ? 'bg-secondary text-secondary-foreground border-secondary' : 'border-border hover:border-secondary'}`}>
+                      {sub}
+                    </button>
+                  ))}
+                </div>
+                {form.serviceSubcategory === 'Family Visa' && (
+                  <div className="mt-3 p-3 bg-secondary/5 rounded-lg text-xs text-muted-foreground">
+                    <p className="font-medium text-foreground mb-1">Family Visa Procedure:</p>
+                    <p>1. Sponsor must have valid residence visa & meet salary requirements (AED 4,000+)</p>
+                    <p>2. Required for spouse, children, parents — each needs separate application</p>
+                    <p>3. You can add family members in the next step</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Bulk upload option */}
-            {form.service && (
+            {form.service && (!hasSubcategories || form.serviceSubcategory) && (
               <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
                 <FileUp className="w-5 h-5 text-secondary" />
                 <span className="text-sm flex-1">Have multiple clients for {form.service}?</span>
@@ -289,6 +465,7 @@ export default function AddClientWizard() {
               <div className="space-y-4 border-t border-border pt-4">
                 <div className="flex items-center gap-3">
                   <button onClick={downloadTemplate} className="btn-outline text-sm">Download {form.service} Template</button>
+                  <span className="text-xs text-muted-foreground">CSV format with all required columns</span>
                 </div>
                 <div className="border-2 border-dashed border-border rounded-xl p-6 text-center">
                   <Upload className="w-6 h-6 text-muted-foreground mx-auto mb-2" />
@@ -312,34 +489,91 @@ export default function AddClientWizard() {
           </div>
         )}
 
-        {/* STEP 1: Basic Info + ALL Service-Specific Fields */}
+        {/* STEP 1: Basic Info + Service-Specific Fields */}
         {step === 1 && (
           <div className="space-y-6">
-            <h2 className="text-lg font-bold font-display">Client Information — {form.service}</h2>
+            <h2 className="text-lg font-bold font-display">
+              Client Information — {form.service}{form.serviceSubcategory ? ` (${form.serviceSubcategory})` : ''}
+            </h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div><label className="block text-sm font-medium mb-1">Full Name <span className="text-destructive">*</span></label><input value={form.name} onChange={(e) => updateForm({ name: e.target.value })} className="input-nawi" required /></div>
-              <div><label className="block text-sm font-medium mb-1">Mobile <span className="text-destructive">*</span></label><input value={form.mobile} onChange={(e) => updateForm({ mobile: e.target.value })} className="input-nawi" required /></div>
-              <div><label className="block text-sm font-medium mb-1">Email</label><input type="email" value={form.email} onChange={(e) => updateForm({ email: e.target.value })} className="input-nawi" /></div>
-              <div><label className="block text-sm font-medium mb-1">Nationality</label><input value={form.nationality} onChange={(e) => updateForm({ nationality: e.target.value })} className="input-nawi" /></div>
-              <div><label className="block text-sm font-medium mb-1">Date of Birth</label><input type="date" value={form.dob} onChange={(e) => updateForm({ dob: e.target.value })} className="input-nawi" /></div>
-              <div><label className="block text-sm font-medium mb-1">Passport Number</label><input value={form.passportNo} onChange={(e) => updateForm({ passportNo: e.target.value })} className="input-nawi" /></div>
-            </div>
+            {!addingNewService && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium mb-1">Full Name <span className="text-destructive">*</span></label><input value={form.name} onChange={(e) => updateForm({ name: e.target.value })} className="input-nawi" required /></div>
+                <div><label className="block text-sm font-medium mb-1">Mobile <span className="text-destructive">*</span></label><input value={form.mobile} onChange={(e) => updateForm({ mobile: e.target.value })} className="input-nawi" required /></div>
+                <div><label className="block text-sm font-medium mb-1">Email</label><input type="email" value={form.email} onChange={(e) => updateForm({ email: e.target.value })} className="input-nawi" /></div>
+                <div><label className="block text-sm font-medium mb-1">Nationality</label><input value={form.nationality} onChange={(e) => updateForm({ nationality: e.target.value })} className="input-nawi" /></div>
+                <div><label className="block text-sm font-medium mb-1">Date of Birth</label><input type="date" value={form.dob} onChange={(e) => updateForm({ dob: e.target.value })} className="input-nawi" /></div>
+                <div><label className="block text-sm font-medium mb-1">Passport Number</label><input value={form.passportNo} onChange={(e) => updateForm({ passportNo: e.target.value })} className="input-nawi" /></div>
+              </div>
+            )}
 
             {/* Service-Specific Fields */}
-            <div className="border-t border-border pt-4">
+            <div className={addingNewService ? '' : 'border-t border-border pt-4'}>
               <h3 className="text-base font-semibold font-display mb-4">{form.service} Details</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {form.service === 'Air Ticket' && <><Field label="Travel Date" k="travelDate" type="date" required /><Field label="Departure City" k="departureCity" required /><Field label="Arrival City" k="arrivalCity" required /><Field label="Flight Number" k="flightNumber" /><Field label="PNR" k="pnr" /><Field label="Ticket Number" k="ticketNumber" /><Field label="Return Date" k="returnDate" type="date" /></>}
-                {form.service === 'UAE Visa' && <><SelectField label="Visa Type" k="visaType" options={['30 days', '60 days', '90 days', 'Extension']} /><SelectField label="Application Type" k="applicationType" options={['Inside UAE', 'Outside UAE']} /><SelectField label="Entry Type" k="entryType" options={['Single', 'Multiple']} /><Field label="Nationality" k="nationality" /></>}
-                {form.service === 'Global Visa' && <><Field label="Country" k="country" required /><SelectField label="Applicant Type" k="applicantType" options={['Employed', 'Self-Employed', 'Unemployed']} /></>}
-                {form.service === 'Holiday Package' && <><SelectField label="Package Type" k="packageType" options={['Inbound', 'Outbound']} /><Field label="Travel Date" k="travelDate" type="date" /><Field label="Return Date" k="returnDate" type="date" /><Field label="Adults" k="adults" /><Field label="Children" k="children" /><Field label="Destination" k="destination" /></>}
-                {form.service === 'Travel Insurance' && <><Field label="Travel Date" k="travelDate" type="date" /><Field label="Return Date" k="returnDate" type="date" /><Field label="Coverage Type" k="coverageType" /><Field label="Destination" k="destination" /></>}
-                {form.service === 'Pilgrimage' && <><SelectField label="Type" k="pilgrimageType" options={['Hajj', 'Umrah']} /><Field label="Season/Year" k="season" /><Field label="Group Name" k="groupName" /><Field label="No. of Persons" k="persons" /></>}
-                {form.service === 'Meet & Assist' && <><Field label="Flight Number" k="flightNumber" /><SelectField label="Type" k="maType" options={['Arrival', 'Departure']} /><Field label="Airport" k="airport" /><Field label="Date/Time" k="dateTime" type="datetime-local" /></>}
-                {form.service === 'Hotel Booking' && <><Field label="Check-in" k="checkinDate" type="date" /><Field label="Check-out" k="checkoutDate" type="date" /><Field label="City" k="city" /><Field label="Rooms" k="rooms" /><SelectField label="Room Type" k="roomType" options={['Standard', 'Deluxe', 'Suite']} /><Field label="Guests" k="guests" /></>}
+                {form.service === 'Air Ticket' && <><Field label="Travel Date" k="travelDate" type="date" required /><Field label="Departure City" k="departureCity" required /><Field label="Arrival City" k="arrivalCity" required /><Field label="Flight Number" k="flightNumber" /><Field label="PNR" k="pnr" /><Field label="Ticket Number" k="ticketNumber" /><Field label="Return Date" k="returnDate" type="date" /><SelectField label="Class" k="travelClass" options={['Economy', 'Premium Economy', 'Business', 'First Class']} /><Field label="No. of Passengers" k="passengers" /></>}
+                {form.service === 'UAE Visa' && <>
+                  <SelectField label="Visa Type" k="visaType" options={['30 days', '60 days', '90 days', '1 Year', '2 Year', '5 Year', '10 Year Golden', 'Extension']} />
+                  <SelectField label="Application Type" k="applicationType" options={['Inside UAE', 'Outside UAE']} />
+                  <SelectField label="Entry Type" k="entryType" options={['Single', 'Multiple']} />
+                  <Field label="Nationality" k="nationality" />
+                  {form.serviceSubcategory === 'Family Visa' && <>
+                    <Field label="Sponsor Name" k="sponsorName" required />
+                    <Field label="Sponsor UID" k="sponsorUid" />
+                    <Field label="Sponsor Salary" k="sponsorSalary" />
+                    <SelectField label="Relationship" k="relationship" options={['Spouse', 'Son', 'Daughter', 'Father', 'Mother']} />
+                  </>}
+                  {form.serviceSubcategory === 'Freelancer Visa' && <>
+                    <Field label="Freelance Category" k="freelanceCategory" />
+                    <SelectField label="Free Zone" k="freeZone" options={['Dubai South', 'RAKEZ', 'Ajman Free Zone', 'Sharjah Media City', 'IFZA', 'Other']} />
+                  </>}
+                  {form.serviceSubcategory === 'Business Visa' && <>
+                    <Field label="Business Activity" k="businessActivity" />
+                    <Field label="Trade License No." k="tradeLicenseNo" />
+                  </>}
+                </>}
+                {form.service === 'Global Visa' && <><Field label="Country" k="country" required /><SelectField label="Applicant Type" k="applicantType" options={['Employed', 'Self-Employed', 'Unemployed', 'Student', 'Retired']} /><Field label="Travel Date" k="travelDate" type="date" /><Field label="Return Date" k="returnDate" type="date" /><SelectField label="Visa Type" k="globalVisaType" options={['Tourist', 'Business', 'Student', 'Work Permit', 'Transit', 'Family Reunion', 'Medical']} /></>}
+                {form.service === 'Holiday Package' && <><SelectField label="Package Type" k="packageType" options={['Inbound', 'Outbound', 'Domestic']} /><Field label="Travel Date" k="travelDate" type="date" /><Field label="Return Date" k="returnDate" type="date" /><Field label="Adults" k="adults" /><Field label="Children" k="children" /><Field label="Infants" k="infants" /><Field label="Destination" k="destination" /><SelectField label="Star Rating" k="starRating" options={['3 Star', '4 Star', '5 Star', 'Luxury']} /></>}
+                {form.service === 'Travel Insurance' && <><Field label="Travel Date" k="travelDate" type="date" /><Field label="Return Date" k="returnDate" type="date" /><SelectField label="Coverage Type" k="coverageType" options={['Individual', 'Family', 'Group', 'Annual Multi-Trip']} /><Field label="Destination" k="destination" /><Field label="Sum Insured" k="sumInsured" /></>}
+                {form.service === 'Pilgrimage' && <><SelectField label="Type" k="pilgrimageType" options={['Hajj', 'Umrah']} /><Field label="Season/Year" k="season" /><Field label="Group Name" k="groupName" /><Field label="No. of Persons" k="persons" /><SelectField label="Package" k="pilgrimagePackage" options={['Economy', 'Standard', 'Premium', 'VIP']} /></>}
+                {form.service === 'Meet & Assist' && <><Field label="Flight Number" k="flightNumber" /><SelectField label="Type" k="maType" options={['Arrival', 'Departure', 'Transit']} /><Field label="Airport" k="airport" /><Field label="Date/Time" k="dateTime" type="datetime-local" /><Field label="No. of Passengers" k="passengers" /></>}
+                {form.service === 'Hotel Booking' && <><Field label="Check-in" k="checkinDate" type="date" /><Field label="Check-out" k="checkoutDate" type="date" /><Field label="City" k="city" /><Field label="Rooms" k="rooms" /><SelectField label="Room Type" k="roomType" options={['Standard', 'Deluxe', 'Suite', 'Villa']} /><Field label="Guests" k="guests" /><SelectField label="Star Rating" k="hotelStars" options={['3 Star', '4 Star', '5 Star']} /><Field label="Special Requests" k="specialRequests" /></>}
               </div>
             </div>
+
+            {/* Family Members section for family services */}
+            {isFamilyService && (
+              <div className="border-t border-border pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-base font-semibold font-display flex items-center gap-2"><Users className="w-4 h-4" /> Family Members</h3>
+                  <button onClick={addFamilyMember} className="btn-outline text-sm"><Plus className="w-4 h-4" /> Add Member</button>
+                </div>
+                {form.familyMembers.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">No family members added. Click "Add Member" to include family.</p>
+                )}
+                {form.familyMembers.map((fm, i) => (
+                  <div key={i} className="p-4 border border-border rounded-xl mb-3">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-semibold">Member {i + 1}</span>
+                      <button onClick={() => removeFamilyMember(i)} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      <div><label className="block text-xs font-medium mb-1">Full Name *</label><input value={fm.name} onChange={(e) => updateFamilyMember(i, { name: e.target.value })} className="input-nawi" /></div>
+                      <div><label className="block text-xs font-medium mb-1">Relation *</label>
+                        <select value={fm.relation} onChange={(e) => updateFamilyMember(i, { relation: e.target.value })} className="input-nawi">
+                          <option value="">Select</option>
+                          {['Spouse', 'Son', 'Daughter', 'Father', 'Mother', 'Brother', 'Sister'].map(r => <option key={r}>{r}</option>)}
+                        </select>
+                      </div>
+                      <div><label className="block text-xs font-medium mb-1">DOB</label><input type="date" value={fm.dob} onChange={(e) => updateFamilyMember(i, { dob: e.target.value })} className="input-nawi" /></div>
+                      <div><label className="block text-xs font-medium mb-1">Passport No.</label><input value={fm.passportNo} onChange={(e) => updateFamilyMember(i, { passportNo: e.target.value })} className="input-nawi" /></div>
+                      <div><label className="block text-xs font-medium mb-1">Passport Expiry</label><input type="date" value={fm.passportExpiry} onChange={(e) => updateFamilyMember(i, { passportExpiry: e.target.value })} className="input-nawi" /></div>
+                      <div><label className="block text-xs font-medium mb-1">Nationality</label><input value={fm.nationality} onChange={(e) => updateFamilyMember(i, { nationality: e.target.value })} className="input-nawi" /></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -348,10 +582,9 @@ export default function AddClientWizard() {
           <div className="space-y-6">
             <h2 className="text-lg font-bold font-display">Documents & Important Dates</h2>
 
-            {/* Required Documents */}
             {getRequiredDocs().length > 0 && (
               <div>
-                <h3 className="text-sm font-semibold mb-3">Required Documents for {form.service}</h3>
+                <h3 className="text-sm font-semibold mb-3">Required Documents for {form.service}{form.serviceSubcategory ? ` — ${form.serviceSubcategory}` : ''}</h3>
                 <p className="text-xs text-muted-foreground mb-3">Upload documents and we'll auto-extract information using OCR</p>
                 <div className="space-y-2">
                   {getRequiredDocs().map((docName) => {
@@ -385,7 +618,7 @@ export default function AddClientWizard() {
             {form.documents.length > 0 && (
               <div className="p-4 bg-success/5 border border-success/20 rounded-xl">
                 <h4 className="text-sm font-semibold text-success mb-2">📋 OCR Extracted Fields</h4>
-                <p className="text-xs text-muted-foreground mb-3">Fields auto-detected from uploaded documents. Verify and edit if needed.</p>
+                <p className="text-xs text-muted-foreground mb-3">Fields auto-detected from uploaded documents.</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className="block text-xs text-muted-foreground mb-1">Name (from doc)</label><input value={form.name} onChange={(e) => updateForm({ name: e.target.value })} className="input-nawi bg-success/5 border-success/20 text-sm" /></div>
                   <div><label className="block text-xs text-muted-foreground mb-1">Passport No.</label><input value={form.passportNo} onChange={(e) => updateForm({ passportNo: e.target.value })} className="input-nawi bg-success/5 border-success/20 text-sm" /></div>
@@ -406,7 +639,6 @@ export default function AddClientWizard() {
               </div>
             </div>
 
-            {/* Uploaded Docs List */}
             {form.documents.length > 0 && (
               <div>
                 <h3 className="text-sm font-semibold mb-2">Uploaded Documents ({form.documents.length})</h3>
@@ -436,6 +668,21 @@ export default function AddClientWizard() {
                 ))}
               </div>
             </div>
+
+            {/* Family member dates */}
+            {form.familyMembers.length > 0 && (
+              <div className="border-t border-border pt-4">
+                <h3 className="text-sm font-semibold mb-3">Family Member Dates</h3>
+                {form.familyMembers.map((fm, i) => (
+                  <div key={i} className="flex items-center gap-4 mb-2 text-sm">
+                    <span className="font-medium w-32 truncate">{fm.name || `Member ${i + 1}`}</span>
+                    <span className="text-muted-foreground">{fm.relation}</span>
+                    <span className="text-xs">DOB: {fm.dob || '—'}</span>
+                    <span className="text-xs">PP Exp: {fm.passportExpiry || '—'}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -446,18 +693,30 @@ export default function AddClientWizard() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase">Client Details</h3>
-                {[['Name', form.name], ['Mobile', form.mobile], ['Email', form.email], ['Type', form.clientType], ['Lead Source', form.leadSource], ['Nationality', form.nationality], ['DOB', form.dob]].map(([l, v]) => (
+                {[['Name', form.name], ['Mobile', form.mobile], ['Email', form.email], ['Type', form.clientType], ['Lead Source', form.leadSource], ['Nationality', form.nationality], ['DOB', form.dob], ['Passport', form.passportNo]].map(([l, v]) => (
                   <div key={l} className="flex justify-between text-sm"><span className="text-muted-foreground">{l}</span><span className="font-medium">{v || '—'}</span></div>
                 ))}
                 {form.companyName && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Company</span><span className="font-medium">{form.companyName}</span></div>}
               </div>
               <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase">Service: {form.service}</h3>
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase">Service: {form.service}{form.serviceSubcategory ? ` — ${form.serviceSubcategory}` : ''}</h3>
                 {Object.entries(form.serviceDetails).filter(([_, v]) => v).map(([k, v]) => (
                   <div key={k} className="flex justify-between text-sm"><span className="text-muted-foreground capitalize">{k.replace(/([A-Z])/g, ' $1')}</span><span className="font-medium">{v}</span></div>
                 ))}
               </div>
             </div>
+
+            {form.familyMembers.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase">Family Members ({form.familyMembers.length})</h3>
+                {form.familyMembers.map((fm, i) => (
+                  <div key={i} className="text-sm p-2 bg-muted/50 rounded-lg">
+                    {fm.name} — {fm.relation} — PP: {fm.passportNo || '—'}
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-muted-foreground uppercase">Documents ({form.documents.length})</h3>
               {form.documents.map((d: any, i: number) => <p key={i} className="text-sm">✓ {d.docType}: {d.name}</p>)}
@@ -469,7 +728,9 @@ export default function AddClientWizard() {
                 <div key={k} className="flex justify-between text-sm"><span className="text-muted-foreground capitalize">{k.replace(/([A-Z])/g, ' $1')}</span><span className="font-medium">{v}</span></div>
               ))}
             </div>
-            <button onClick={handleSubmit} className="btn-primary w-full py-3 text-base mt-6">✨ Confirm & Create Client</button>
+            <button onClick={handleSubmit} className="btn-primary w-full py-3 text-base mt-6">
+              {addingNewService ? '✨ Add New Service to Client' : '✨ Confirm & Create Client'}
+            </button>
           </div>
         )}
       </div>
@@ -478,7 +739,7 @@ export default function AddClientWizard() {
       <div className="flex justify-between">
         <button onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0} className="btn-outline disabled:opacity-40"><ChevronLeft className="w-4 h-4" /> Back</button>
         {step < steps.length - 1 && (
-          <button onClick={() => setStep(step + 1)} disabled={(step === 0 && !canProceedStep0) || (step === 1 && !canProceedStep1)} className="btn-primary disabled:opacity-40">Next <ChevronRight className="w-4 h-4" /></button>
+          <button onClick={() => setStep(step + 1)} disabled={(step === 0 && !canProceedStep0) || (step === 1 && !canProceedStep1 && !addingNewService)} className="btn-primary disabled:opacity-40">Next <ChevronRight className="w-4 h-4" /></button>
         )}
       </div>
     </div>

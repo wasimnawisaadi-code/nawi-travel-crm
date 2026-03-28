@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Plus, X, Target } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, X, Target, Trash2 } from 'lucide-react';
 import { storage, KEYS, formatDate, getCurrentUser, isAdmin, generateId, auditLog } from '@/lib/storage';
 import StatusBadge from '@/components/ui/StatusBadge';
-
-const SERVICES = ['Air Ticket', 'UAE Visa', 'Global Visa', 'Holiday Package', 'Travel Insurance', 'Pilgrimage', 'Meet & Assist', 'Hotel Booking'];
 
 export default function OperationsCalendar() {
   const session = getCurrentUser();
@@ -16,7 +14,7 @@ export default function OperationsCalendar() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [goals, setGoals] = useState<any[]>([]);
   const [taskForm, setTaskForm] = useState({ clientId: '', service: '', title: '', assignedTo: '', dueDate: '', notes: '' });
-  const [goalForm, setGoalForm] = useState({ title: '', assignedTo: '', startDate: '', endDate: '', description: '' });
+  const [goalForm, setGoalForm] = useState({ title: '', assignedTo: '', startDate: '', endDate: '', description: '', goalTasks: [{ title: '', dueDate: '' }] as { title: string; dueDate: string }[] });
 
   const reload = () => {
     let t = storage.getAll(KEYS.TASKS);
@@ -40,7 +38,6 @@ export default function OperationsCalendar() {
     return tasks.filter((t: any) => t.dueDate === dateStr);
   };
 
-  // Goals for this month
   const monthGoals = goals.filter((g: any) => {
     if (g.yearMonth) return g.yearMonth === yearMonth;
     if (g.startDate && g.endDate) {
@@ -75,16 +72,48 @@ export default function OperationsCalendar() {
 
   const handleAddGoal = (e: React.FormEvent) => {
     e.preventDefault();
+    const goalId = generateId('GOAL');
     const goal = {
-      id: generateId('GOAL'), title: goalForm.title, assignedTo: goalForm.assignedTo,
+      id: goalId, title: goalForm.title, assignedTo: goalForm.assignedTo,
       startDate: goalForm.startDate, endDate: goalForm.endDate, description: goalForm.description,
       yearMonth, status: 'Active', createdBy: session?.userId || '', createdAt: new Date().toISOString(),
     };
     storage.push(KEYS.GOALS, goal);
-    auditLog('goal_created', 'goal', goal.id, {});
+
+    // Create tasks under this goal
+    const emp = employees.find((e: any) => e.id === goalForm.assignedTo);
+    goalForm.goalTasks.forEach(gt => {
+      if (!gt.title) return;
+      const task = {
+        id: generateId('TSK'), clientId: '', clientName: '',
+        service: '', title: gt.title,
+        assignedTo: goalForm.assignedTo || '',
+        assignedToName: emp?.name || 'All',
+        dueDate: gt.dueDate || goalForm.endDate, completedDate: '', status: 'New', profit: 0,
+        notes: `Goal: ${goalForm.title}`, goalId,
+        createdAt: new Date().toISOString(), createdBy: session?.userId || '',
+      };
+      storage.push(KEYS.TASKS, task);
+    });
+
+    auditLog('goal_created', 'goal', goalId, { tasksCount: goalForm.goalTasks.filter(t => t.title).length });
     setShowAddGoal(false);
-    setGoalForm({ title: '', assignedTo: '', startDate: '', endDate: '', description: '' });
+    setGoalForm({ title: '', assignedTo: '', startDate: '', endDate: '', description: '', goalTasks: [{ title: '', dueDate: '' }] });
     reload();
+  };
+
+  const addGoalTask = () => {
+    setGoalForm({ ...goalForm, goalTasks: [...goalForm.goalTasks, { title: '', dueDate: '' }] });
+  };
+
+  const updateGoalTask = (index: number, field: string, value: string) => {
+    const updated = [...goalForm.goalTasks];
+    (updated[index] as any)[field] = value;
+    setGoalForm({ ...goalForm, goalTasks: updated });
+  };
+
+  const removeGoalTask = (index: number) => {
+    setGoalForm({ ...goalForm, goalTasks: goalForm.goalTasks.filter((_, i) => i !== index) });
   };
 
   const updateTaskStatus = (taskId: string, status: string) => {
@@ -124,20 +153,33 @@ export default function OperationsCalendar() {
           <div className="space-y-2">
             {monthGoals.map((g: any) => {
               const emp = employees.find((e: any) => e.id === g.assignedTo);
+              const goalTasks = tasks.filter((t: any) => t.goalId === g.id);
+              const completedCount = goalTasks.filter((t: any) => t.status === 'Completed').length;
               return (
-                <div key={g.id} className="flex items-center justify-between p-2 bg-background rounded-lg">
-                  <div>
-                    <p className="text-sm font-medium">{g.title || g.service}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {emp?.name || 'All'} • {g.startDate ? `${formatDate(g.startDate)} → ${formatDate(g.endDate)}` : g.yearMonth}
-                    </p>
-                    {g.description && <p className="text-xs text-muted-foreground mt-0.5">{g.description}</p>}
+                <div key={g.id} className="p-3 bg-background rounded-lg">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-sm font-medium">{g.title}</p>
+                    {goalTasks.length > 0 && <span className="text-xs font-medium text-primary">{completedCount}/{goalTasks.length} tasks</span>}
                   </div>
-                  {g.target && (
-                    <div className="text-right">
-                      <span className="text-sm font-bold">{g.achieved || 0}/{g.target}</span>
-                      <div className="w-20 h-1.5 bg-muted rounded-full mt-1">
-                        <div className="h-full bg-primary rounded-full" style={{ width: `${Math.min(100, ((g.achieved || 0) / g.target) * 100)}%` }} />
+                  <p className="text-xs text-muted-foreground">
+                    {emp?.name || 'All'} • {g.startDate ? `${formatDate(g.startDate)} → ${formatDate(g.endDate)}` : g.yearMonth}
+                  </p>
+                  {g.description && <p className="text-xs text-muted-foreground mt-0.5">{g.description}</p>}
+                  {goalTasks.length > 0 && (
+                    <div className="mt-2">
+                      <div className="w-full h-1.5 bg-muted rounded-full">
+                        <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${goalTasks.length > 0 ? (completedCount / goalTasks.length) * 100 : 0}%` }} />
+                      </div>
+                      <div className="mt-2 space-y-1">
+                        {goalTasks.map((t: any) => (
+                          <div key={t.id} className="flex items-center justify-between text-xs">
+                            <span className={t.status === 'Completed' ? 'line-through text-muted-foreground' : ''}>{t.title}</span>
+                            <div className="flex items-center gap-1">
+                              <StatusBadge status={t.status} />
+                              {!admin ? null : null}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
@@ -195,7 +237,8 @@ export default function OperationsCalendar() {
                 {dayTasks.map((t: any) => (
                   <div key={t.id} className="p-3 border border-border rounded-lg">
                     <p className="font-medium text-sm">{t.title}</p>
-                    <p className="text-xs text-muted-foreground">{t.clientName} • {t.service}</p>
+                    {t.clientName && <p className="text-xs text-muted-foreground">{t.clientName} • {t.service}</p>}
+                    {t.goalId && <p className="text-xs text-secondary">🎯 Goal task</p>}
                     {t.assignedToName && <p className="text-xs text-muted-foreground">→ {t.assignedToName}</p>}
                     <div className="flex items-center justify-between mt-2">
                       <StatusBadge status={t.status} />
@@ -220,7 +263,7 @@ export default function OperationsCalendar() {
             <form onSubmit={handleAddTask} className="space-y-4">
               <div><label className="block text-sm font-medium mb-1">Client</label>
                 <select value={taskForm.clientId} onChange={(e) => { const c = clients.find((c: any) => c.id === e.target.value); setTaskForm({ ...taskForm, clientId: e.target.value, service: c?.service || '' }); }} className="input-nawi">
-                  <option value="">Select...</option>{clients.map((c: any) => <option key={c.id} value={c.id}>{c.name} ({c.id})</option>)}
+                  <option value="">Select (optional)...</option>{clients.map((c: any) => <option key={c.id} value={c.id}>{c.name} ({c.id})</option>)}
                 </select>
               </div>
               <div><label className="block text-sm font-medium mb-1">Title *</label><input value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} className="input-nawi" required /></div>
@@ -239,11 +282,11 @@ export default function OperationsCalendar() {
         </div>
       )}
 
-      {/* Add Goal Modal */}
+      {/* Add Goal Modal with Tasks */}
       {showAddGoal && (
         <div className="fixed inset-0 bg-foreground/50 z-50 flex items-center justify-center p-4" onClick={() => setShowAddGoal(false)}>
-          <div className="bg-card rounded-xl shadow-elevated w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold font-display mb-4">Set Goal</h2>
+          <div className="bg-card rounded-xl shadow-elevated w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold font-display mb-4 flex items-center gap-2"><Target className="w-5 h-5" /> Set Goal with Tasks</h2>
             <form onSubmit={handleAddGoal} className="space-y-4">
               <div><label className="block text-sm font-medium mb-1">Goal Title *</label><input value={goalForm.title} onChange={(e) => setGoalForm({ ...goalForm, title: e.target.value })} className="input-nawi" required placeholder="e.g., Process 50 UAE Visas" /></div>
               <div><label className="block text-sm font-medium mb-1">Assign To</label>
@@ -255,8 +298,24 @@ export default function OperationsCalendar() {
                 <div><label className="block text-sm font-medium mb-1">Start Date</label><input type="date" value={goalForm.startDate} onChange={(e) => setGoalForm({ ...goalForm, startDate: e.target.value })} className="input-nawi" /></div>
                 <div><label className="block text-sm font-medium mb-1">End Date</label><input type="date" value={goalForm.endDate} onChange={(e) => setGoalForm({ ...goalForm, endDate: e.target.value })} className="input-nawi" /></div>
               </div>
-              <div><label className="block text-sm font-medium mb-1">Description</label><textarea value={goalForm.description} onChange={(e) => setGoalForm({ ...goalForm, description: e.target.value })} className="input-nawi" rows={2} placeholder="Details for the employee to understand..." /></div>
-              <div className="flex justify-end gap-3"><button type="button" onClick={() => setShowAddGoal(false)} className="btn-outline">Cancel</button><button type="submit" className="btn-primary">Create Goal</button></div>
+              <div><label className="block text-sm font-medium mb-1">Description</label><textarea value={goalForm.description} onChange={(e) => setGoalForm({ ...goalForm, description: e.target.value })} className="input-nawi" rows={2} placeholder="Details for the employee..." /></div>
+
+              {/* Goal Tasks */}
+              <div className="border-t border-border pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-sm font-semibold">Tasks under this Goal</label>
+                  <button type="button" onClick={addGoalTask} className="btn-outline text-xs py-1"><Plus className="w-3 h-3" /> Add Task</button>
+                </div>
+                {goalForm.goalTasks.map((gt, i) => (
+                  <div key={i} className="flex gap-2 mb-2">
+                    <input value={gt.title} onChange={(e) => updateGoalTask(i, 'title', e.target.value)} className="input-nawi flex-1" placeholder={`Task ${i + 1} title`} />
+                    <input type="date" value={gt.dueDate} onChange={(e) => updateGoalTask(i, 'dueDate', e.target.value)} className="input-nawi w-36" />
+                    {goalForm.goalTasks.length > 1 && <button type="button" onClick={() => removeGoalTask(i)} className="text-destructive p-1"><Trash2 className="w-4 h-4" /></button>}
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-end gap-3"><button type="button" onClick={() => setShowAddGoal(false)} className="btn-outline">Cancel</button><button type="submit" className="btn-primary">Create Goal & Tasks</button></div>
             </form>
           </div>
         </div>
