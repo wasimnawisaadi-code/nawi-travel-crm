@@ -144,7 +144,7 @@ export default function EmployeeList() {
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <p className="text-xs text-muted-foreground font-mono">{e.id}</p>
                       {isSales && <span className="text-xs bg-warning/10 text-warning px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><MapPin className="w-3 h-3" />Sales</span>}
-                      {!isSales && e.allowedIPs?.length > 0 && <Wifi className="w-3 h-3 text-secondary" title="IP restricted" />}
+                      {!isSales && e.allowedIPs?.length > 0 && <span title="IP restricted"><Wifi className="w-3 h-3 text-secondary" /></span>}
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">{e.email}</p>
                     <p className="text-xs text-muted-foreground">{e.mobile}</p>
