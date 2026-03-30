@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Check, ChevronLeft, ChevronRight, Upload, AlertTriangle, FileUp, X, Users, Plus, Trash2 } from 'lucide-react';
-import { storage, KEYS, generateId, getCurrentUser, auditLog, isAdmin } from '@/lib/storage';
+import { Check, ChevronLeft, ChevronRight, Upload, AlertTriangle, FileUp, X, Users, Plus, Trash2, Search, Link2, History, Calendar } from 'lucide-react';
+import { storage, KEYS, generateId, getCurrentUser, auditLog, isAdmin, formatDate } from '@/lib/storage';
 import Papa from 'papaparse';
 
 const SERVICES = [
@@ -58,13 +58,7 @@ const simulateOCR = (docType: string, fileName: string) => {
 };
 
 interface FamilyMember {
-  name: string;
-  relation: string;
-  dob: string;
-  passportNo: string;
-  passportExpiry: string;
-  nationality: string;
-  documents: any[];
+  name: string; relation: string; dob: string; passportNo: string; passportExpiry: string; nationality: string; documents: any[];
 }
 
 export default function AddClientWizard() {
@@ -80,6 +74,12 @@ export default function AddClientWizard() {
   const [ocrFields, setOcrFields] = useState<Record<string, string>>({});
   const [existingClient, setExistingClient] = useState<any>(null);
   const [addingNewService, setAddingNewService] = useState(false);
+  const [clientSearch, setClientSearch] = useState('');
+  const [showClientPicker, setShowClientPicker] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
+  });
   const basePath = isAdmin() ? '/admin' : '/employee';
 
   const [form, setForm] = useState({
@@ -88,11 +88,12 @@ export default function AddClientWizard() {
     service: '', serviceSubcategory: '', leadSource: '', nationality: '', dob: '',
     serviceDetails: {} as Record<string, string>,
     documents: [] as any[],
-    importantDates: { dob: '', passportExpiry: '', visaExpiry: '', travelDate: '', weddingAnniversary: '' } as Record<string, string>,
+    importantDates: { dob: '', passportExpiry: '', visaExpiry: '', travelDate: '', weddingAnniversary: '', emiratesIdExpiry: '', medicalExpiry: '', contractEndDate: '' } as Record<string, string>,
     familyMembers: [] as FamilyMember[],
+    requestMonth: '',
   });
 
-  // Load existing client if adding new service
+  // Load existing client
   useEffect(() => {
     if (existingClientId) {
       const c = storage.getAll(KEYS.CLIENTS).find((cl: any) => cl.id === existingClientId);
@@ -100,14 +101,14 @@ export default function AddClientWizard() {
         setExistingClient(c);
         setAddingNewService(true);
         setForm(prev => ({
-          ...prev,
-          name: c.name, mobile: c.mobile, email: c.email || '', passportNo: c.importantDates?.passportNo || c.passportNo || '',
+          ...prev, name: c.name, mobile: c.mobile, email: c.email || '',
+          passportNo: c.importantDates?.passportNo || c.passportNo || '',
           clientType: c.clientType, companyName: c.companyName || '', companyNumber: c.companyNumber || '',
           nationality: c.nationality || '', dob: c.importantDates?.dob || '',
-          leadSource: c.leadSource || '',
-          importantDates: c.importantDates || {},
+          leadSource: c.leadSource || '', importantDates: c.importantDates || {},
+          familyMembers: c.familyMembers || [],
         }));
-        setStep(0); // Go to service selection
+        setStep(0);
       }
     }
   }, [existingClientId]);
@@ -115,7 +116,7 @@ export default function AddClientWizard() {
   const updateForm = (changes: any) => setForm(prev => ({ ...prev, ...changes }));
   const updateSD = (key: string, val: string) => setForm(prev => ({ ...prev, serviceDetails: { ...prev.serviceDetails, [key]: val } }));
 
-  // Auto duplicate check
+  // Duplicate check with debounce
   useEffect(() => {
     if (addingNewService) return;
     if (!form.name && !form.mobile && !form.passportNo) { setDuplicates([]); return; }
@@ -131,7 +132,7 @@ export default function AddClientWizard() {
     return () => clearTimeout(timer);
   }, [form.name, form.mobile, form.passportNo, addingNewService]);
 
-  // Auto-extract important dates from service details
+  // Auto-extract dates from service details
   useEffect(() => {
     const sd = form.serviceDetails;
     const dates = { ...form.importantDates };
@@ -142,10 +143,24 @@ export default function AddClientWizard() {
     updateForm({ importantDates: dates });
   }, [form.serviceDetails.travelDate, form.serviceDetails.returnDate, form.serviceDetails.checkinDate, form.dob]);
 
+  // Existing client search for "link to existing"
+  const searchedClients = useMemo(() => {
+    if (!clientSearch || clientSearch.length < 2) return [];
+    const q = clientSearch.toLowerCase();
+    return storage.getAll(KEYS.CLIENTS).filter((c: any) =>
+      c.name?.toLowerCase().includes(q) || c.mobile?.includes(q) || c.id?.toLowerCase().includes(q) || c.passportNo?.toLowerCase().includes(q)
+    ).slice(0, 8);
+  }, [clientSearch]);
+
+  const linkToExistingClient = (c: any) => {
+    navigate(`${basePath}/clients/new?existingClient=${c.id}`);
+    setShowClientPicker(false);
+    setClientSearch('');
+  };
+
   const getRequiredDocs = () => {
     const reqs = DOC_REQUIREMENTS[form.service];
     if (!reqs) return [];
-    // Check subcategory first
     if (form.serviceSubcategory && reqs[form.serviceSubcategory]) return reqs[form.serviceSubcategory];
     const sd = form.serviceDetails;
     if (form.service === 'UAE Visa') return reqs[sd.applicationType || 'default'] || reqs.default || [];
@@ -166,36 +181,31 @@ export default function AddClientWizard() {
   const addFamilyMember = () => {
     updateForm({ familyMembers: [...form.familyMembers, { name: '', relation: '', dob: '', passportNo: '', passportExpiry: '', nationality: form.nationality, documents: [] }] });
   };
-
   const updateFamilyMember = (index: number, changes: Partial<FamilyMember>) => {
     const updated = [...form.familyMembers];
     updated[index] = { ...updated[index], ...changes };
     updateForm({ familyMembers: updated });
   };
-
-  const removeFamilyMember = (index: number) => {
-    updateForm({ familyMembers: form.familyMembers.filter((_, i) => i !== index) });
-  };
+  const removeFamilyMember = (index: number) => updateForm({ familyMembers: form.familyMembers.filter((_, i) => i !== index) });
 
   const handleSubmit = () => {
+    const serviceEntry = {
+      id: generateId('SVC'), service: form.service, serviceSubcategory: form.serviceSubcategory,
+      serviceDetails: form.serviceDetails, documents: form.documents,
+      familyMembers: form.familyMembers, status: 'New',
+      requestMonth: selectedMonth, createdAt: new Date().toISOString(), createdBy: session?.userId || '',
+    };
+
     if (addingNewService && existingClient) {
-      // Add new service entry to existing client
-      const serviceEntry = {
-        id: generateId('SVC'),
-        service: form.service,
-        serviceSubcategory: form.serviceSubcategory,
-        serviceDetails: form.serviceDetails,
-        documents: form.documents,
-        familyMembers: form.familyMembers,
-        status: 'New',
-        createdAt: new Date().toISOString(),
-        createdBy: session?.userId || '',
-      };
       const existingServices = existingClient.serviceHistory || [];
+      // Check if same service same month - warn but allow
+      const sameSvcSameMonth = existingServices.filter((s: any) => s.service === form.service && s.requestMonth === selectedMonth);
+      if (sameSvcSameMonth.length > 0) {
+        if (!confirm(`This client already has ${sameSvcSameMonth.length} "${form.service}" request(s) in ${selectedMonth}. Add another?`)) return;
+      }
       const updatedDates = { ...existingClient.importantDates, ...form.importantDates };
       storage.update(KEYS.CLIENTS, existingClient.id, {
-        service: form.service, // latest service
-        serviceSubcategory: form.serviceSubcategory,
+        service: form.service, serviceSubcategory: form.serviceSubcategory,
         serviceDetails: form.serviceDetails,
         serviceHistory: [...existingServices, serviceEntry],
         documents: [...(existingClient.documents || []), ...form.documents],
@@ -203,23 +213,12 @@ export default function AddClientWizard() {
         familyMembers: form.familyMembers.length > 0 ? form.familyMembers : existingClient.familyMembers,
         updatedAt: new Date().toISOString(),
       });
-      auditLog('service_added', 'client', existingClient.id, { service: form.service });
+      auditLog('service_added', 'client', existingClient.id, { service: form.service, month: selectedMonth });
       navigate(`${basePath}/clients/${existingClient.id}`);
       return;
     }
 
     const id = generateId('CLT');
-    const serviceEntry = {
-      id: generateId('SVC'),
-      service: form.service,
-      serviceSubcategory: form.serviceSubcategory,
-      serviceDetails: form.serviceDetails,
-      documents: form.documents,
-      familyMembers: form.familyMembers,
-      status: 'New',
-      createdAt: new Date().toISOString(),
-      createdBy: session?.userId || '',
-    };
     const client = {
       id, name: form.name, mobile: form.mobile, email: form.email, passportNo: form.passportNo,
       clientType: form.clientType, companyName: form.companyName, companyNumber: form.companyNumber,
@@ -227,13 +226,12 @@ export default function AddClientWizard() {
       leadSource: form.leadSource, nationality: form.nationality,
       serviceDetails: form.serviceDetails, documents: form.documents,
       importantDates: { ...form.importantDates, dob: form.dob || form.importantDates.dob, passportNo: form.passportNo },
-      familyMembers: form.familyMembers,
-      serviceHistory: [serviceEntry],
+      familyMembers: form.familyMembers, serviceHistory: [serviceEntry],
       status: 'New', assignedTo: session?.userId || '', revenue: 0, profit: 0, notes: '',
       createdAt: new Date().toISOString(), createdBy: session?.userId || '', updatedAt: new Date().toISOString(), history: [],
     };
     storage.push(KEYS.CLIENTS, client);
-    auditLog('client_created', 'client', id, { name: form.name, service: form.service });
+    auditLog('client_created', 'client', id, { name: form.name, service: form.service, month: selectedMonth });
     navigate(`${basePath}/clients/${id}`);
   };
 
@@ -256,38 +254,36 @@ export default function AddClientWizard() {
   };
 
   const handleBulkImport = () => {
-    let created = 0;
-    let skipped = 0;
+    let created = 0, updated = 0;
     bulkData.forEach((row: any) => {
       const existing = storage.getAll(KEYS.CLIENTS).find((c: any) => c.mobile === row.mobile || (row.passportNo && (c.importantDates?.passportNo === row.passportNo || c.passportNo === row.passportNo)));
+      const svcEntry = {
+        id: generateId('SVC'), service: form.service, serviceSubcategory: form.serviceSubcategory,
+        serviceDetails: row, status: 'New', requestMonth: selectedMonth,
+        createdAt: new Date().toISOString(), createdBy: session?.userId || '',
+      };
       if (existing) {
-        // Add as new service to existing client
-        const serviceEntry = {
-          id: generateId('SVC'), service: form.service, serviceSubcategory: form.serviceSubcategory,
-          serviceDetails: row, status: 'New', createdAt: new Date().toISOString(), createdBy: session?.userId || '',
-        };
         const history = existing.serviceHistory || [];
         storage.update(KEYS.CLIENTS, existing.id, {
-          service: form.service, serviceHistory: [...history, serviceEntry], updatedAt: new Date().toISOString(),
+          service: form.service, serviceHistory: [...history, svcEntry], updatedAt: new Date().toISOString(),
         });
-        skipped++;
-        return;
+        updated++;
+      } else {
+        const id = generateId('CLT');
+        storage.push(KEYS.CLIENTS, {
+          id, name: row.name, mobile: row.mobile, email: row.email || '', passportNo: row.passportNo || '',
+          clientType: row.clientType || form.clientType || 'Individual', service: form.service,
+          serviceSubcategory: form.serviceSubcategory, leadSource: form.leadSource || '', nationality: row.nationality || '',
+          serviceDetails: row, documents: [],
+          importantDates: { passportExpiry: row.passportExpiry || '', travelDate: row.travelDate || '', dob: row.dob || '', passportNo: row.passportNo || '' },
+          familyMembers: [], serviceHistory: [svcEntry],
+          status: 'New', assignedTo: session?.userId || '', revenue: 0, profit: 0, notes: '',
+          createdAt: new Date().toISOString(), createdBy: session?.userId || '', updatedAt: new Date().toISOString(), history: [],
+        });
+        created++;
       }
-      const id = generateId('CLT');
-      storage.push(KEYS.CLIENTS, {
-        id, name: row.name, mobile: row.mobile, email: row.email || '', passportNo: row.passportNo || '',
-        clientType: row.clientType || form.clientType || 'Individual', service: form.service,
-        serviceSubcategory: form.serviceSubcategory, leadSource: form.leadSource || '', nationality: row.nationality || '',
-        serviceDetails: row, documents: [],
-        importantDates: { passportExpiry: row.passportExpiry || '', travelDate: row.travelDate || '', dob: row.dob || '', passportNo: row.passportNo || '' },
-        familyMembers: [],
-        serviceHistory: [{ id: generateId('SVC'), service: form.service, serviceSubcategory: form.serviceSubcategory, serviceDetails: row, status: 'New', createdAt: new Date().toISOString(), createdBy: session?.userId || '' }],
-        status: 'New', assignedTo: session?.userId || '', revenue: 0, profit: 0, notes: '',
-        createdAt: new Date().toISOString(), createdBy: session?.userId || '', updatedAt: new Date().toISOString(), history: [],
-      });
-      created++;
     });
-    alert(`${created} new clients created, ${skipped} existing clients updated with new service.`);
+    alert(`${created} new clients created, ${updated} existing clients updated with new service.`);
     navigate(`${basePath}/clients`);
   };
 
@@ -316,7 +312,6 @@ export default function AddClientWizard() {
       <input type={type} value={form.serviceDetails[k] || ''} onChange={(e) => updateSD(k, e.target.value)} className="input-nawi" />
     </div>
   );
-
   const SelectField = ({ label, k, options }: { label: string; k: string; options: string[] }) => (
     <div>
       <label className="block text-sm font-medium mb-1">{label}</label>
@@ -342,23 +337,81 @@ export default function AddClientWizard() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+      {/* Link to existing client option */}
+      {!addingNewService && step === 0 && (
+        <div className="card-nawi bg-secondary/5 border-secondary/20">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold flex items-center gap-2"><Link2 className="w-4 h-4 text-secondary" /> Returning Client?</h3>
+            <button onClick={() => setShowClientPicker(!showClientPicker)} className="btn-outline text-xs">
+              {showClientPicker ? 'New Client' : 'Search Existing'}
+            </button>
+          </div>
+          {showClientPicker && (
+            <div className="space-y-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <input value={clientSearch} onChange={e => setClientSearch(e.target.value)} className="input-nawi pl-9" placeholder="Search by name, mobile, ID, passport..." />
+              </div>
+              {searchedClients.length > 0 && (
+                <div className="border border-border rounded-xl overflow-hidden divide-y divide-border max-h-64 overflow-y-auto">
+                  {searchedClients.map((c: any) => (
+                    <button key={c.id} onClick={() => linkToExistingClient(c)}
+                      className="w-full text-left px-4 py-3 hover:bg-muted/50 transition-colors flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium">{c.name}</p>
+                        <p className="text-xs text-muted-foreground">{c.id} • {c.mobile} • {c.service || 'N/A'}</p>
+                        {c.serviceHistory?.length > 0 && (
+                          <p className="text-xs text-secondary mt-0.5 flex items-center gap-1">
+                            <History className="w-3 h-3" /> {c.serviceHistory.length} previous service(s): {c.serviceHistory.map((s: any) => s.service).slice(-3).join(', ')}
+                          </p>
+                        )}
+                      </div>
+                      <Plus className="w-4 h-4 text-secondary" />
+                    </button>
+                  ))}
+                </div>
+              )}
+              {clientSearch.length >= 2 && searchedClients.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-3">No matching clients. Continue below to add new.</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Existing client banner */}
       {addingNewService && existingClient && (
         <div className="card-nawi bg-secondary/5 border-secondary/20">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-secondary/10 flex items-center justify-center text-secondary font-bold">
+            <div className="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center text-secondary font-bold text-lg">
               {existingClient.name?.charAt(0)}
             </div>
-            <div>
+            <div className="flex-1">
               <p className="font-semibold text-foreground">{existingClient.name}</p>
-              <p className="text-xs text-muted-foreground">{existingClient.id} • {existingClient.mobile} • Adding new service request</p>
+              <p className="text-xs text-muted-foreground">{existingClient.id} • {existingClient.mobile}</p>
               {existingClient.serviceHistory?.length > 0 && (
-                <p className="text-xs text-secondary mt-0.5">Previous services: {existingClient.serviceHistory.map((s: any) => s.service).join(', ')}</p>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {existingClient.serviceHistory.map((s: any, i: number) => (
+                    <span key={i} className="text-xs bg-muted px-2 py-0.5 rounded-full">
+                      {s.service} {s.requestMonth ? `(${s.requestMonth})` : ''} — <span className={s.status === 'Success' ? 'text-success' : s.status === 'Failed' ? 'text-destructive' : 'text-warning'}>{s.status}</span>
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
           </div>
         </div>
       )}
+
+      {/* Month selector */}
+      <div className="card-nawi flex items-center gap-4">
+        <Calendar className="w-5 h-5 text-primary" />
+        <div>
+          <label className="block text-xs text-muted-foreground">Request Month</label>
+          <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="input-nawi w-auto text-sm mt-0.5" />
+        </div>
+        <p className="text-xs text-muted-foreground flex-1">All service requests are tracked by month for reporting. Old entries can be back-dated.</p>
+      </div>
 
       {/* Progress */}
       <div className="card-nawi">
@@ -374,19 +427,23 @@ export default function AddClientWizard() {
       {/* Duplicate Warning */}
       {duplicates.length > 0 && step >= 1 && !addingNewService && (
         <div className="bg-warning/10 border border-warning/20 p-4 rounded-xl">
-          <div className="flex items-center gap-2 mb-2"><AlertTriangle className="w-5 h-5 text-warning" /><span className="font-medium text-warning">⚠️ Client already exists!</span></div>
+          <div className="flex items-center gap-2 mb-2"><AlertTriangle className="w-5 h-5 text-warning" /><span className="font-medium text-warning">⚠️ Possible Duplicate — Client may already exist!</span></div>
+          <p className="text-xs text-muted-foreground mb-2">If this is the same person needing a new service, click "Add Service" to link it. This prevents data collision.</p>
           {duplicates.slice(0, 3).map((d: any) => (
-            <div key={d.id} className="flex items-center justify-between text-sm mb-1">
-              <span>{d.name} — {d.mobile} — {d.id} ({d.service})</span>
-              <button onClick={() => navigate(`${basePath}/clients/new?existingClient=${d.id}`)} className="text-xs text-secondary hover:underline">Add New Service →</button>
+            <div key={d.id} className="flex items-center justify-between p-2 bg-card rounded-lg border border-border mb-1">
+              <div>
+                <span className="text-sm font-medium">{d.name}</span>
+                <span className="text-xs text-muted-foreground ml-2">{d.mobile} • {d.id}</span>
+                {d.serviceHistory?.length > 0 && <span className="text-xs text-secondary ml-2">({d.serviceHistory.length} services)</span>}
+              </div>
+              <button onClick={() => navigate(`${basePath}/clients/new?existingClient=${d.id}`)} className="btn-outline text-xs"><Plus className="w-3 h-3" /> Add Service</button>
             </div>
           ))}
-          <p className="text-xs text-muted-foreground mt-2">If this client needs a new service, click "Add New Service" to avoid duplicates.</p>
         </div>
       )}
 
       <div className="card-nawi">
-        {/* STEP 0: Client Type + Service Selection */}
+        {/* STEP 0: Client Type + Service */}
         {step === 0 && (
           <div className="space-y-6">
             {!addingNewService && (
@@ -429,7 +486,6 @@ export default function AddClientWizard() {
               ))}
             </div>
 
-            {/* Service subcategory */}
             {hasSubcategories && form.service && (
               <div className="pt-4 border-t border-border">
                 <h3 className="text-sm font-semibold mb-3">{form.service} — Select Type</h3>
@@ -443,16 +499,16 @@ export default function AddClientWizard() {
                 </div>
                 {form.serviceSubcategory === 'Family Visa' && (
                   <div className="mt-3 p-3 bg-secondary/5 rounded-lg text-xs text-muted-foreground">
-                    <p className="font-medium text-foreground mb-1">Family Visa Procedure:</p>
-                    <p>1. Sponsor must have valid residence visa & meet salary requirements (AED 4,000+)</p>
-                    <p>2. Required for spouse, children, parents — each needs separate application</p>
-                    <p>3. You can add family members in the next step</p>
+                    <p className="font-medium text-foreground mb-1">🏠 Family Visa Procedure:</p>
+                    <p>1. Sponsor must have valid residence visa & salary AED 4,000+</p>
+                    <p>2. Each family member needs a separate application</p>
+                    <p>3. Add family members in Step 2</p>
                   </div>
                 )}
               </div>
             )}
 
-            {/* Bulk upload option */}
+            {/* Bulk Upload */}
             {form.service && (!hasSubcategories || form.serviceSubcategory) && (
               <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
                 <FileUp className="w-5 h-5 text-secondary" />
@@ -465,7 +521,7 @@ export default function AddClientWizard() {
               <div className="space-y-4 border-t border-border pt-4">
                 <div className="flex items-center gap-3">
                   <button onClick={downloadTemplate} className="btn-outline text-sm">Download {form.service} Template</button>
-                  <span className="text-xs text-muted-foreground">CSV format with all required columns</span>
+                  <span className="text-xs text-muted-foreground">CSV format with required columns</span>
                 </div>
                 <div className="border-2 border-dashed border-border rounded-xl p-6 text-center">
                   <Upload className="w-6 h-6 text-muted-foreground mx-auto mb-2" />
@@ -481,7 +537,7 @@ export default function AddClientWizard() {
                         <tbody>{bulkData.slice(0, 5).map((row, i) => <tr key={i}>{Object.values(row).slice(0, 5).map((v, j) => <td key={j}>{v as string}</td>)}</tr>)}</tbody>
                       </table>
                     </div>
-                    <button onClick={handleBulkImport} className="btn-primary mt-3 w-full">Import {bulkData.length} Clients</button>
+                    <button onClick={handleBulkImport} className="btn-primary mt-3 w-full">Import {bulkData.length} Clients for {selectedMonth}</button>
                   </div>
                 )}
               </div>
@@ -489,7 +545,7 @@ export default function AddClientWizard() {
           </div>
         )}
 
-        {/* STEP 1: Basic Info + Service-Specific Fields */}
+        {/* STEP 1: Client Info + Service Details */}
         {step === 1 && (
           <div className="space-y-6">
             <h2 className="text-lg font-bold font-display">
@@ -517,20 +573,9 @@ export default function AddClientWizard() {
                   <SelectField label="Application Type" k="applicationType" options={['Inside UAE', 'Outside UAE']} />
                   <SelectField label="Entry Type" k="entryType" options={['Single', 'Multiple']} />
                   <Field label="Nationality" k="nationality" />
-                  {form.serviceSubcategory === 'Family Visa' && <>
-                    <Field label="Sponsor Name" k="sponsorName" required />
-                    <Field label="Sponsor UID" k="sponsorUid" />
-                    <Field label="Sponsor Salary" k="sponsorSalary" />
-                    <SelectField label="Relationship" k="relationship" options={['Spouse', 'Son', 'Daughter', 'Father', 'Mother']} />
-                  </>}
-                  {form.serviceSubcategory === 'Freelancer Visa' && <>
-                    <Field label="Freelance Category" k="freelanceCategory" />
-                    <SelectField label="Free Zone" k="freeZone" options={['Dubai South', 'RAKEZ', 'Ajman Free Zone', 'Sharjah Media City', 'IFZA', 'Other']} />
-                  </>}
-                  {form.serviceSubcategory === 'Business Visa' && <>
-                    <Field label="Business Activity" k="businessActivity" />
-                    <Field label="Trade License No." k="tradeLicenseNo" />
-                  </>}
+                  {form.serviceSubcategory === 'Family Visa' && <><Field label="Sponsor Name" k="sponsorName" required /><Field label="Sponsor UID" k="sponsorUid" /><Field label="Sponsor Salary" k="sponsorSalary" /><SelectField label="Relationship" k="relationship" options={['Spouse', 'Son', 'Daughter', 'Father', 'Mother']} /></>}
+                  {form.serviceSubcategory === 'Freelancer Visa' && <><Field label="Freelance Category" k="freelanceCategory" /><SelectField label="Free Zone" k="freeZone" options={['Dubai South', 'RAKEZ', 'Ajman Free Zone', 'Sharjah Media City', 'IFZA', 'Other']} /></>}
+                  {form.serviceSubcategory === 'Business Visa' && <><Field label="Business Activity" k="businessActivity" /><Field label="Trade License No." k="tradeLicenseNo" /></>}
                 </>}
                 {form.service === 'Global Visa' && <><Field label="Country" k="country" required /><SelectField label="Applicant Type" k="applicantType" options={['Employed', 'Self-Employed', 'Unemployed', 'Student', 'Retired']} /><Field label="Travel Date" k="travelDate" type="date" /><Field label="Return Date" k="returnDate" type="date" /><SelectField label="Visa Type" k="globalVisaType" options={['Tourist', 'Business', 'Student', 'Work Permit', 'Transit', 'Family Reunion', 'Medical']} /></>}
                 {form.service === 'Holiday Package' && <><SelectField label="Package Type" k="packageType" options={['Inbound', 'Outbound', 'Domestic']} /><Field label="Travel Date" k="travelDate" type="date" /><Field label="Return Date" k="returnDate" type="date" /><Field label="Adults" k="adults" /><Field label="Children" k="children" /><Field label="Infants" k="infants" /><Field label="Destination" k="destination" /><SelectField label="Star Rating" k="starRating" options={['3 Star', '4 Star', '5 Star', 'Luxury']} /></>}
@@ -541,7 +586,7 @@ export default function AddClientWizard() {
               </div>
             </div>
 
-            {/* Family Members section for family services */}
+            {/* Family Members */}
             {isFamilyService && (
               <div className="border-t border-border pt-4">
                 <div className="flex items-center justify-between mb-3">
@@ -549,7 +594,7 @@ export default function AddClientWizard() {
                   <button onClick={addFamilyMember} className="btn-outline text-sm"><Plus className="w-4 h-4" /> Add Member</button>
                 </div>
                 {form.familyMembers.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-4">No family members added. Click "Add Member" to include family.</p>
+                  <p className="text-sm text-muted-foreground text-center py-4">No family members. Click "Add Member" to include.</p>
                 )}
                 {form.familyMembers.map((fm, i) => (
                   <div key={i} className="p-4 border border-border rounded-xl mb-3">
@@ -577,170 +622,173 @@ export default function AddClientWizard() {
           </div>
         )}
 
-        {/* STEP 2: Documents + Important Dates */}
+        {/* STEP 2: Documents & Dates */}
         {step === 2 && (
           <div className="space-y-6">
             <h2 className="text-lg font-bold font-display">Documents & Important Dates</h2>
 
-            {getRequiredDocs().length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold mb-3">Required Documents for {form.service}{form.serviceSubcategory ? ` — ${form.serviceSubcategory}` : ''}</h3>
-                <p className="text-xs text-muted-foreground mb-3">Upload documents and we'll auto-extract information using OCR</p>
-                <div className="space-y-2">
-                  {getRequiredDocs().map((docName) => {
-                    const uploaded = form.documents.find((d: any) => d.docType === docName);
-                    return (
-                      <div key={docName} className={`flex items-center justify-between p-3 rounded-lg border ${uploaded ? 'border-success/30 bg-success/5' : 'border-border'}`}>
-                        <div className="flex items-center gap-2">
-                          {uploaded ? <Check className="w-4 h-4 text-success" /> : <div className="w-4 h-4 rounded border border-border" />}
-                          <span className="text-sm font-medium">{docName}</span>
-                          {!uploaded && <span className="text-xs text-destructive">Required</span>}
-                        </div>
-                        {uploaded ? (
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-success">✓ Uploaded & OCR Processed</span>
-                            <button onClick={() => updateForm({ documents: form.documents.filter((d: any) => d.docType !== docName) })} className="text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>
-                          </div>
-                        ) : (
-                          <label className="btn-outline text-xs cursor-pointer py-1">
-                            Upload
-                            <input type="file" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleDocUpload(docName, file); }} />
-                          </label>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* OCR Results */}
-            {form.documents.length > 0 && (
-              <div className="p-4 bg-success/5 border border-success/20 rounded-xl">
-                <h4 className="text-sm font-semibold text-success mb-2">📋 OCR Extracted Fields</h4>
-                <p className="text-xs text-muted-foreground mb-3">Fields auto-detected from uploaded documents.</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div><label className="block text-xs text-muted-foreground mb-1">Name (from doc)</label><input value={form.name} onChange={(e) => updateForm({ name: e.target.value })} className="input-nawi bg-success/5 border-success/20 text-sm" /></div>
-                  <div><label className="block text-xs text-muted-foreground mb-1">Passport No.</label><input value={form.passportNo} onChange={(e) => updateForm({ passportNo: e.target.value })} className="input-nawi bg-success/5 border-success/20 text-sm" /></div>
-                  <div><label className="block text-xs text-muted-foreground mb-1">Passport Expiry</label><input type="date" value={form.importantDates.passportExpiry || ''} onChange={(e) => updateForm({ importantDates: { ...form.importantDates, passportExpiry: e.target.value } })} className="input-nawi bg-success/5 border-success/20 text-sm" /></div>
-                  <div><label className="block text-xs text-muted-foreground mb-1">DOB</label><input type="date" value={form.dob || form.importantDates.dob || ''} onChange={(e) => updateForm({ dob: e.target.value })} className="input-nawi bg-success/5 border-success/20 text-sm" /></div>
-                </div>
-              </div>
-            )}
-
-            {/* Additional doc upload */}
+            {/* Required docs */}
             <div>
-              <h3 className="text-sm font-semibold mb-2">Additional Documents</h3>
-              <div className="border-2 border-dashed border-border rounded-xl p-6 text-center">
-                <Upload className="w-6 h-6 text-muted-foreground mx-auto mb-2" />
-                <label className="btn-outline cursor-pointer text-sm">Upload Files
-                  <input type="file" multiple className="hidden" onChange={(e) => { Array.from(e.target.files || []).forEach(file => handleDocUpload('Additional', file)); }} />
+              <h3 className="text-sm font-semibold mb-3">Required Documents for {form.service}{form.serviceSubcategory ? ` (${form.serviceSubcategory})` : ''}</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {getRequiredDocs().map((doc: string) => {
+                  const uploaded = form.documents.find(d => d.docType === doc);
+                  return (
+                    <div key={doc} className={`p-3 rounded-lg border ${uploaded ? 'border-success/30 bg-success/5' : 'border-border'}`}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm">{doc} {uploaded && <Check className="w-4 h-4 text-success inline ml-1" />}</span>
+                        <label className="btn-outline cursor-pointer text-xs py-1">
+                          <Upload className="w-3 h-3" /> {uploaded ? 'Replace' : 'Upload'}
+                          <input type="file" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleDocUpload(doc, e.target.files[0]); }} />
+                        </label>
+                      </div>
+                      {uploaded && <p className="text-xs text-muted-foreground mt-1">{uploaded.name}</p>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Additional documents */}
+            <div className="border-t border-border pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold">Additional Documents</h3>
+                <label className="btn-outline cursor-pointer text-sm">
+                  <Upload className="w-4 h-4" /> Upload More
+                  <input type="file" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleDocUpload('Additional', e.target.files[0]); }} />
                 </label>
               </div>
+              {form.documents.filter(d => !getRequiredDocs().includes(d.docType)).map((d, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm p-2 bg-muted/50 rounded mb-1">
+                  <Check className="w-3 h-3 text-success" />
+                  <span>{d.docType}: {d.name}</span>
+                  <button onClick={() => updateForm({ documents: form.documents.filter((_, j) => j !== form.documents.indexOf(d)) })} className="ml-auto text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>
+                </div>
+              ))}
             </div>
 
-            {form.documents.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold mb-2">Uploaded Documents ({form.documents.length})</h3>
-                <div className="space-y-1">{form.documents.map((d: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded-lg">
-                    <span>✓ {d.docType}: {d.name}</span>
-                    <button onClick={() => updateForm({ documents: form.documents.filter((_: any, j: number) => j !== i) })} className="text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>
-                  </div>
-                ))}</div>
+            {/* OCR status */}
+            {Object.keys(ocrFields).length > 0 && (
+              <div className="p-3 bg-success/5 border border-success/20 rounded-lg">
+                <p className="text-sm font-medium text-success mb-1">📋 OCR Data Extracted</p>
+                {Object.entries(ocrFields).map(([k, v]) => (
+                  <p key={k} className="text-xs text-muted-foreground">{k}: {v}</p>
+                ))}
               </div>
             )}
 
-            {/* Important Dates */}
-            <div>
-              <h3 className="text-sm font-semibold mb-3">Important Dates</h3>
-              <p className="text-xs text-muted-foreground mb-3">These dates will be tracked for reminders and notifications</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Important Dates - Expanded */}
+            <div className="border-t border-border pt-4">
+              <h3 className="text-sm font-semibold mb-3">Important Dates (Auto-reminders will be generated)</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {[
-                  { label: 'Date of Birth', key: 'dob' }, { label: 'Passport Expiry', key: 'passportExpiry' },
-                  { label: 'Visa Expiry', key: 'visaExpiry' }, { label: 'Travel Date', key: 'travelDate' },
-                  { label: 'Wedding Anniversary', key: 'weddingAnniversary' },
-                ].map(({ label, key }) => (
+                  { key: 'dob', label: '🎂 Date of Birth' },
+                  { key: 'passportExpiry', label: '📕 Passport Expiry' },
+                  { key: 'visaExpiry', label: '🪪 Visa Expiry' },
+                  { key: 'travelDate', label: '✈️ Travel Date' },
+                  { key: 'weddingAnniversary', label: '💍 Wedding Anniversary' },
+                  { key: 'emiratesIdExpiry', label: '🆔 Emirates ID Expiry' },
+                  { key: 'medicalExpiry', label: '🏥 Medical Report Expiry' },
+                  { key: 'contractEndDate', label: '📄 Contract End Date' },
+                ].map(({ key, label }) => (
                   <div key={key}>
                     <label className="block text-sm font-medium mb-1">{label}</label>
-                    <input type="date" value={form.importantDates[key] || (key === 'dob' ? form.dob : '')} onChange={(e) => updateForm({ importantDates: { ...form.importantDates, [key]: e.target.value } })} className="input-nawi" />
+                    <input type="date" value={form.importantDates[key] || ''} onChange={(e) => updateForm({ importantDates: { ...form.importantDates, [key]: e.target.value } })} className="input-nawi" />
                   </div>
                 ))}
               </div>
             </div>
-
-            {/* Family member dates */}
-            {form.familyMembers.length > 0 && (
-              <div className="border-t border-border pt-4">
-                <h3 className="text-sm font-semibold mb-3">Family Member Dates</h3>
-                {form.familyMembers.map((fm, i) => (
-                  <div key={i} className="flex items-center gap-4 mb-2 text-sm">
-                    <span className="font-medium w-32 truncate">{fm.name || `Member ${i + 1}`}</span>
-                    <span className="text-muted-foreground">{fm.relation}</span>
-                    <span className="text-xs">DOB: {fm.dob || '—'}</span>
-                    <span className="text-xs">PP Exp: {fm.passportExpiry || '—'}</span>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
 
         {/* STEP 3: Review */}
         {step === 3 && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-bold font-display">Review & Confirm</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase">Client Details</h3>
-                {[['Name', form.name], ['Mobile', form.mobile], ['Email', form.email], ['Type', form.clientType], ['Lead Source', form.leadSource], ['Nationality', form.nationality], ['DOB', form.dob], ['Passport', form.passportNo]].map(([l, v]) => (
-                  <div key={l} className="flex justify-between text-sm"><span className="text-muted-foreground">{l}</span><span className="font-medium">{v || '—'}</span></div>
-                ))}
-                {form.companyName && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Company</span><span className="font-medium">{form.companyName}</span></div>}
-              </div>
-              <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase">Service: {form.service}{form.serviceSubcategory ? ` — ${form.serviceSubcategory}` : ''}</h3>
-                {Object.entries(form.serviceDetails).filter(([_, v]) => v).map(([k, v]) => (
-                  <div key={k} className="flex justify-between text-sm"><span className="text-muted-foreground capitalize">{k.replace(/([A-Z])/g, ' $1')}</span><span className="font-medium">{v}</span></div>
-                ))}
-              </div>
-            </div>
+          <div className="space-y-6">
+            <h2 className="text-lg font-bold font-display">Review & Submit</h2>
 
-            {form.familyMembers.length > 0 && (
-              <div className="space-y-2">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase">Family Members ({form.familyMembers.length})</h3>
-                {form.familyMembers.map((fm, i) => (
-                  <div key={i} className="text-sm p-2 bg-muted/50 rounded-lg">
-                    {fm.name} — {fm.relation} — PP: {fm.passportNo || '—'}
-                  </div>
-                ))}
+            {/* Collision warning */}
+            {addingNewService && existingClient && (
+              <div className="p-3 bg-secondary/5 border border-secondary/20 rounded-lg">
+                <p className="text-sm font-medium text-secondary">Adding new "{form.service}" request to existing client: {existingClient.name}</p>
+                <p className="text-xs text-muted-foreground">This will be added as service #{(existingClient.serviceHistory?.length || 0) + 1} for month {selectedMonth}</p>
               </div>
             )}
 
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase">Documents ({form.documents.length})</h3>
-              {form.documents.map((d: any, i: number) => <p key={i} className="text-sm">✓ {d.docType}: {d.name}</p>)}
-              {form.documents.length === 0 && <p className="text-sm text-muted-foreground">No documents uploaded</p>}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Client</h3>
+                <div className="space-y-1">
+                  {[['Name', form.name], ['Mobile', form.mobile], ['Email', form.email], ['Nationality', form.nationality], ['Passport', form.passportNo], ['Client Type', form.clientType], ['Lead Source', form.leadSource], ['Request Month', selectedMonth]].map(([l, v]) => v && (
+                    <div key={l} className="flex justify-between text-sm"><span className="text-muted-foreground">{l}</span><span className="font-medium">{v}</span></div>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Service</h3>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-sm"><span className="text-muted-foreground">Service</span><span className="font-medium">{form.service}</span></div>
+                  {form.serviceSubcategory && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Type</span><span className="font-medium">{form.serviceSubcategory}</span></div>}
+                  {Object.entries(form.serviceDetails).filter(([_, v]) => v).map(([k, v]) => (
+                    <div key={k} className="flex justify-between text-sm"><span className="text-muted-foreground capitalize">{k.replace(/([A-Z])/g, ' $1')}</span><span className="font-medium">{v}</span></div>
+                  ))}
+                </div>
+              </div>
             </div>
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase">Important Dates</h3>
-              {Object.entries(form.importantDates).filter(([_, v]) => v).map(([k, v]) => (
-                <div key={k} className="flex justify-between text-sm"><span className="text-muted-foreground capitalize">{k.replace(/([A-Z])/g, ' $1')}</span><span className="font-medium">{v}</span></div>
-              ))}
-            </div>
-            <button onClick={handleSubmit} className="btn-primary w-full py-3 text-base mt-6">
-              {addingNewService ? '✨ Add New Service to Client' : '✨ Confirm & Create Client'}
-            </button>
+
+            {/* Dates summary */}
+            {Object.entries(form.importantDates).filter(([_, v]) => v).length > 0 && (
+              <div className="border-t border-border pt-4">
+                <h3 className="text-sm font-semibold mb-2">📅 Important Dates Collected</h3>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(form.importantDates).filter(([_, v]) => v).map(([k, v]) => (
+                    <span key={k} className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full capitalize">
+                      {k.replace(/([A-Z])/g, ' $1')}: {formatDate(v)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Documents summary */}
+            {form.documents.length > 0 && (
+              <div className="border-t border-border pt-4">
+                <h3 className="text-sm font-semibold mb-2">📎 Documents ({form.documents.length})</h3>
+                <div className="flex flex-wrap gap-2">
+                  {form.documents.map((d, i) => (
+                    <span key={i} className="text-xs bg-success/10 text-success px-2 py-1 rounded-full flex items-center gap-1"><Check className="w-3 h-3" />{d.docType || d.name}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Family summary */}
+            {form.familyMembers.length > 0 && (
+              <div className="border-t border-border pt-4">
+                <h3 className="text-sm font-semibold mb-2">👨‍👩‍👧‍👦 Family Members ({form.familyMembers.length})</h3>
+                {form.familyMembers.map((fm, i) => (
+                  <p key={i} className="text-sm">{fm.name} ({fm.relation}) — {fm.passportNo || 'No passport'}</p>
+                ))}
+              </div>
+            )}
           </div>
         )}
-      </div>
 
-      {/* Navigation */}
-      <div className="flex justify-between">
-        <button onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0} className="btn-outline disabled:opacity-40"><ChevronLeft className="w-4 h-4" /> Back</button>
-        {step < steps.length - 1 && (
-          <button onClick={() => setStep(step + 1)} disabled={(step === 0 && !canProceedStep0) || (step === 1 && !canProceedStep1 && !addingNewService)} className="btn-primary disabled:opacity-40">Next <ChevronRight className="w-4 h-4" /></button>
-        )}
+        {/* Navigation */}
+        <div className="flex justify-between pt-6 border-t border-border">
+          <button onClick={() => step > 0 ? setStep(step - 1) : navigate(`${basePath}/clients`)} className="btn-outline">
+            <ChevronLeft className="w-4 h-4" /> {step === 0 ? 'Cancel' : 'Back'}
+          </button>
+          {step < steps.length - 1 ? (
+            <button onClick={() => setStep(step + 1)} disabled={step === 0 ? !canProceedStep0 : step === 1 ? !canProceedStep1 : false}
+              className="btn-primary disabled:opacity-50">
+              Next <ChevronRight className="w-4 h-4" />
+            </button>
+          ) : (
+            <button onClick={handleSubmit} className="btn-primary">
+              <Check className="w-4 h-4" /> {addingNewService ? 'Add Service Request' : 'Create Client'}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
