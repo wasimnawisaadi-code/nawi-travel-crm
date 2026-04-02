@@ -172,6 +172,12 @@ export default function AppLayout() {
             )}
           </div>
 
+          <Link to={`/${session.role === 'admin' ? 'admin' : 'employee'}/notifications`} className="relative p-2 hover:bg-muted rounded-lg transition-colors" title="Notifications">
+            <Bell className="w-5 h-5 text-muted-foreground" />
+            {unreadNotifications > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 bg-destructive text-destructive-foreground text-[10px] w-4 h-4 rounded-full flex items-center justify-center">{unreadNotifications > 9 ? '9+' : unreadNotifications}</span>
+            )}
+          </Link>
           <span className="text-xs text-muted-foreground hidden md:block">{today}</span>
         </header>
 
