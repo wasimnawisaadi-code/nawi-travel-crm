@@ -502,6 +502,24 @@ export default function AddClientWizard() {
                     <p>3. Add family members in Step 2</p>
                   </div>
                 )}
+                {form.service === 'Global Visa' && form.serviceSubcategory && (
+                  <div className="mt-4 border-t border-border pt-4">
+                    <h4 className="text-sm font-semibold mb-3">Visa Processing Mode</h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { key: 'eVisa', icon: '💻', title: 'eVisa', desc: 'Online application — processed digitally' },
+                        { key: 'Sticker Visa', icon: '🏛️', title: 'Sticker Visa', desc: 'Direct embassy submission — physical stamp' },
+                      ].map(({ key, icon, title, desc }) => (
+                        <button key={key} onClick={() => updateSD('visaMode', key)}
+                          className={`p-3 rounded-xl border-2 text-left transition-all ${form.serviceDetails.visaMode === key ? 'border-primary bg-primary/5' : 'border-border hover:border-secondary'}`}>
+                          <span className="text-xl">{icon}</span>
+                          <p className="text-sm font-medium mt-1">{title}</p>
+                          <p className="text-xs text-muted-foreground">{desc}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
