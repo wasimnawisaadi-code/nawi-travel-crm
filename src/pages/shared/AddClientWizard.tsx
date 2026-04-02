@@ -6,8 +6,8 @@ import Papa from 'papaparse';
 
 const SERVICES = [
   { key: 'Air Ticket', emoji: '✈️' },
-  { key: 'UAE Visa', emoji: '🪪', subcategories: ['Tourist Visa', 'Visit Visa', 'Transit Visa', 'Family Visa', 'Employment Visa', 'Freelancer Visa', 'Business Visa', 'Student Visa', 'Extension', 'Status Change', 'Visa Cancellation'] },
-  { key: 'Global Visa', emoji: '🌍', subcategories: ['Tourist', 'Business', 'Student', 'Work Permit', 'Transit', 'Family Reunion', 'Medical'] },
+  { key: 'UAE Visa', emoji: '🪪', subcategories: ['Tourist Visa', 'Visit Visa', 'Transit Visa', 'Family Visa', 'Extension', 'Status Change', 'Visa Cancellation', 'Abscond'] },
+  { key: 'Global Visa', emoji: '🌍', subcategories: ['Tourist', 'Business', 'Transit', 'Medical'], visaMode: true },
   { key: 'Holiday Package', emoji: '🏝️' },
   { key: 'Travel Insurance', emoji: '🛡️' },
   { key: 'Pilgrimage', emoji: '🕌' },
