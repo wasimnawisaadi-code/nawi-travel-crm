@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, Search, Eye, LayoutGrid, LayoutList, Briefcase, Filter, Download } from 'lucide-react';
+import { Plus, Search, Eye, LayoutGrid, LayoutList, Briefcase, Filter, Download, MessageCircle } from 'lucide-react';
 import { storage, KEYS, formatCurrency, formatDate, getCurrentUser, isAdmin } from '@/lib/storage';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
