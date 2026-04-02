@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Briefcase, Calendar, FileText,
   DollarSign, BarChart3, Shield, LogOut, Menu,
-  Search, ChevronLeft, Clock, PlaneTakeoff, MessageCircle, CalendarDays
+  Search, ChevronLeft, Clock, PlaneTakeoff, MessageCircle, CalendarDays, Bell
 } from 'lucide-react';
 import { getCurrentUser, isAdmin, logout, storage, KEYS } from '@/lib/storage';
 import logo from '@/assets/logo.png';
