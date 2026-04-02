@@ -4,13 +4,15 @@ import { storage, KEYS, formatDate, auditLog, getCurrentUser, calculateWorkingDa
 import StatusBadge from '@/components/ui/StatusBadge';
 
 const LEAVE_TYPES = [
-  { key: 'Annual', days: 30, description: 'Annual leave per UAE Labour Law', paid: true },
-  { key: 'Sick', days: 90, description: 'First 15 full pay, next 15 half pay, rest unpaid', paid: true },
-  { key: 'Maternity', days: 60, description: '45 days full pay + 15 days half pay', paid: true },
-  { key: 'Paternity', days: 5, description: 'Paternity leave per UAE law', paid: true },
-  { key: 'Hajj', days: 30, description: 'Hajj leave (unpaid, once)', paid: false },
-  { key: 'Bereavement', days: 5, description: '3-5 days depending on relation', paid: true },
-  { key: 'Emergency', days: 3, description: 'Personal emergency leave', paid: false },
+  { key: 'Annual' },
+  { key: 'Sick' },
+  { key: 'Maternity' },
+  { key: 'Paternity' },
+  { key: 'Hajj' },
+  { key: 'Bereavement' },
+  { key: 'Emergency' },
+  { key: 'Unpaid' },
+  { key: 'Other' },
 ];
 
 export default function LeaveManagement({ isEmployee = false }: { isEmployee?: boolean }) {
