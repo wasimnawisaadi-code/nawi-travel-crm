@@ -50,6 +50,8 @@ export default function AppLayout() {
   const links = session.role === 'admin' ? adminLinks : employeeLinks;
   const unreadChats = storage.getAll(KEYS.CHAT)
     .filter((m: any) => m.to === session.userId && !m.read).length;
+  const unreadNotifications = storage.getAll(KEYS.NOTIFICATIONS)
+    .filter((n: any) => n.userId === session.userId && !n.isRead).length;
 
   const handleSearch = (q: string) => {
     setSearchQuery(q);
