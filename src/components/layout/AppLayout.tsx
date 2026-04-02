@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Briefcase, Calendar, FileText,
   DollarSign, BarChart3, Shield, LogOut, Menu,
-  Search, ChevronLeft, Clock, PlaneTakeoff, MessageCircle, CalendarDays
+  Search, ChevronLeft, Clock, PlaneTakeoff, MessageCircle, CalendarDays, Bell
 } from 'lucide-react';
 import { getCurrentUser, isAdmin, logout, storage, KEYS } from '@/lib/storage';
 import logo from '@/assets/logo.png';
@@ -50,6 +50,8 @@ export default function AppLayout() {
   const links = session.role === 'admin' ? adminLinks : employeeLinks;
   const unreadChats = storage.getAll(KEYS.CHAT)
     .filter((m: any) => m.to === session.userId && !m.read).length;
+  const unreadNotifications = storage.getAll(KEYS.NOTIFICATIONS)
+    .filter((n: any) => n.userId === session.userId && !n.isRead).length;
 
   const handleSearch = (q: string) => {
     setSearchQuery(q);
@@ -107,8 +109,8 @@ export default function AppLayout() {
                 title={collapsed ? link.label : undefined}>
                 <link.icon className="w-5 h-5 flex-shrink-0" />
                 {!collapsed && <span>{link.label}</span>}
-                {link.label === 'Team Chat' && unreadChats > 0 && !collapsed && (
-                  <span className="ml-auto bg-destructive text-destructive-foreground text-xs px-1.5 py-0.5 rounded-full">{unreadChats}</span>
+                {link.label === 'Team Chat' && (unreadChats + unreadNotifications) > 0 && !collapsed && (
+                  <span className="ml-auto bg-destructive text-destructive-foreground text-xs px-1.5 py-0.5 rounded-full">{unreadChats + unreadNotifications}</span>
                 )}
               </Link>
             );
@@ -170,6 +172,12 @@ export default function AppLayout() {
             )}
           </div>
 
+          <Link to={`/${session.role === 'admin' ? 'admin' : 'employee'}/notifications`} className="relative p-2 hover:bg-muted rounded-lg transition-colors" title="Notifications">
+            <Bell className="w-5 h-5 text-muted-foreground" />
+            {unreadNotifications > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 bg-destructive text-destructive-foreground text-[10px] w-4 h-4 rounded-full flex items-center justify-center">{unreadNotifications > 9 ? '9+' : unreadNotifications}</span>
+            )}
+          </Link>
           <span className="text-xs text-muted-foreground hidden md:block">{today}</span>
         </header>
 

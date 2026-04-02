@@ -3,15 +3,7 @@ import { Check, X, Upload, FileText, Calendar, Download } from 'lucide-react';
 import { storage, KEYS, formatDate, auditLog, getCurrentUser, calculateWorkingDays, generateId } from '@/lib/storage';
 import StatusBadge from '@/components/ui/StatusBadge';
 
-const LEAVE_TYPES = [
-  { key: 'Annual', days: 30, description: 'Annual leave per UAE Labour Law', paid: true },
-  { key: 'Sick', days: 90, description: 'First 15 full pay, next 15 half pay, rest unpaid', paid: true },
-  { key: 'Maternity', days: 60, description: '45 days full pay + 15 days half pay', paid: true },
-  { key: 'Paternity', days: 5, description: 'Paternity leave per UAE law', paid: true },
-  { key: 'Hajj', days: 30, description: 'Hajj leave (unpaid, once)', paid: false },
-  { key: 'Bereavement', days: 5, description: '3-5 days depending on relation', paid: true },
-  { key: 'Emergency', days: 3, description: 'Personal emergency leave', paid: false },
-];
+const LEAVE_TYPES = ['Annual', 'Sick', 'Maternity', 'Paternity', 'Hajj', 'Bereavement', 'Emergency', 'Unpaid', 'Other'];
 
 export default function LeaveManagement({ isEmployee = false }: { isEmployee?: boolean }) {
   const session = getCurrentUser();
@@ -30,13 +22,10 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
   useEffect(load, [isEmployee, session]);
 
   const employees = storage.getAll(KEYS.EMPLOYEES);
-  const attendance = storage.getAll(KEYS.ATTENDANCE);
 
-  // Filter
   let displayed = leave;
   if (employeeFilter !== 'all') displayed = displayed.filter((l: any) => l.employeeId === employeeFilter);
   if (statusFilter !== 'all') displayed = displayed.filter((l: any) => l.status === statusFilter);
-  // Month filter for history
   const monthFiltered = displayed.filter((l: any) => l.startDate?.startsWith(yearMonth) || l.endDate?.startsWith(yearMonth) || l.createdAt?.startsWith(yearMonth));
 
   const pending = displayed.filter((l: any) => l.status === 'Pending');
@@ -78,19 +67,6 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
     load();
   };
 
-  // Calculate balances for employee
-  const getBalances = (empId: string) => {
-    const empLeave = leave.filter((l: any) => l.employeeId === empId && l.status === 'Approved');
-    const balances: Record<string, { used: number; total: number }> = {};
-    LEAVE_TYPES.forEach(lt => {
-      balances[lt.key] = { total: lt.days, used: empLeave.filter((l: any) => l.leaveType === lt.key).reduce((s: number, l: any) => s + l.days, 0) };
-    });
-    return balances;
-  };
-
-  const myBalances = session ? getBalances(session.userId) : {};
-
-  // Calendar view for admin
   const [y, mo] = yearMonth.split('-').map(Number);
   const daysInMonth = new Date(y, mo, 0).getDate();
   const firstDayOfWeek = new Date(y, mo - 1, 1).getDay();
@@ -112,25 +88,6 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
 
   return (
     <div className="space-y-4 animate-fade-in">
-      {/* Employee Balances */}
-      {isEmployee && (
-        <div className="card-nawi bg-primary/5 border-primary/20">
-          <h3 className="font-semibold font-display mb-3 text-primary">Leave Balances (UAE Labour Law)</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {LEAVE_TYPES.filter(lt => lt.paid).slice(0, 4).map(lt => (
-              <div key={lt.key} className="text-center">
-                <p className="text-xs text-muted-foreground">{lt.key}</p>
-                <p className="text-2xl font-bold">{lt.days - (myBalances[lt.key]?.used || 0)}</p>
-                <p className="text-xs text-muted-foreground">of {lt.days} remaining</p>
-                <div className="w-full h-1.5 bg-muted rounded-full mt-1">
-                  <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${Math.min(100, ((myBalances[lt.key]?.used || 0) / lt.days) * 100)}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Controls */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
@@ -156,27 +113,20 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
         <div className="card-nawi border-warning/30">
           <h3 className="font-semibold font-display mb-3 text-warning">Pending Requests ({pending.length})</h3>
           <div className="space-y-3">
-            {pending.map((l: any) => {
-              const empBal = getBalances(l.employeeId);
-              const typeInfo = LEAVE_TYPES.find(lt => lt.key === l.leaveType);
-              return (
-                <div key={l.id} className="flex items-center justify-between p-3 border border-border rounded-lg">
-                  <div>
-                    <p className="font-medium text-foreground">{l.employeeName}</p>
-                    <p className="text-sm text-muted-foreground">{l.leaveType} • {formatDate(l.startDate)} — {formatDate(l.endDate)} ({l.days} days)</p>
-                    <p className="text-sm text-muted-foreground">{l.reason}</p>
-                    <p className="text-xs text-secondary mt-1">
-                      Balance: {typeInfo ? `${typeInfo.days - (empBal[l.leaveType]?.used || 0)}/${typeInfo.days}` : '—'} remaining
-                    </p>
-                    {l.document && <span className="inline-flex items-center gap-1 text-xs text-secondary mt-1"><FileText className="w-3 h-3" /> {l.document.name}</span>}
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => handleApprove(l.id)} className="btn-success p-2"><Check className="w-4 h-4" /></button>
-                    <button onClick={() => handleReject(l.id)} className="btn-danger p-2"><X className="w-4 h-4" /></button>
-                  </div>
+            {pending.map((l: any) => (
+              <div key={l.id} className="flex items-center justify-between p-3 border border-border rounded-lg">
+                <div>
+                  <p className="font-medium text-foreground">{l.employeeName}</p>
+                  <p className="text-sm text-muted-foreground">{l.leaveType} • {formatDate(l.startDate)} — {formatDate(l.endDate)} ({l.days} days)</p>
+                  <p className="text-sm text-muted-foreground">{l.reason}</p>
+                  {l.document && <span className="inline-flex items-center gap-1 text-xs text-secondary mt-1"><FileText className="w-3 h-3" /> {l.document.name}</span>}
                 </div>
-              );
-            })}
+                <div className="flex gap-2">
+                  <button onClick={() => handleApprove(l.id)} className="btn-success p-2"><Check className="w-4 h-4" /></button>
+                  <button onClick={() => handleReject(l.id)} className="btn-danger p-2"><X className="w-4 h-4" /></button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -231,16 +181,6 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
         </table>
       </div>
 
-      {/* UAE Leave Rules */}
-      <div className="card-nawi bg-primary/5 border-primary/20">
-        <h3 className="text-sm font-semibold text-primary mb-2">UAE Leave Entitlements</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-muted-foreground">
-          {LEAVE_TYPES.map(lt => (
-            <p key={lt.key}>• <strong>{lt.key}:</strong> {lt.days} days — {lt.description} {!lt.paid && '(Unpaid)'}</p>
-          ))}
-        </div>
-      </div>
-
       {/* Apply Form */}
       {showForm && (
         <div className="fixed inset-0 bg-foreground/50 z-50 flex items-center justify-center p-4" onClick={() => setShowForm(false)}>
@@ -250,21 +190,17 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
               <div>
                 <label className="block text-sm font-medium mb-1">Leave Type *</label>
                 <select value={form.leaveType} onChange={e => setForm({ ...form, leaveType: e.target.value })} className="input-nawi">
-                  {LEAVE_TYPES.map(lt => {
-                    const remaining = lt.days - (myBalances[lt.key]?.used || 0);
-                    return <option key={lt.key} value={lt.key}>{lt.key} ({remaining} days left)</option>;
-                  })}
+                  {LEAVE_TYPES.map(lt => <option key={lt} value={lt}>{lt}</option>)}
                 </select>
-                <p className="text-xs text-muted-foreground mt-1">{LEAVE_TYPES.find(lt => lt.key === form.leaveType)?.description}</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-sm font-medium mb-1">Start *</label><input type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} className="input-nawi" required /></div>
-                <div><label className="block text-sm font-medium mb-1">End *</label><input type="date" value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} className="input-nawi" required /></div>
+                <div><label className="block text-sm font-medium mb-1">Start Date *</label><input type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} className="input-nawi" required /></div>
+                <div><label className="block text-sm font-medium mb-1">End Date *</label><input type="date" value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} className="input-nawi" required /></div>
               </div>
               {form.startDate && form.endDate && <p className="text-sm font-medium text-primary">{calculateWorkingDays(form.startDate, form.endDate)} working days</p>}
               <div><label className="block text-sm font-medium mb-1">Reason *</label><textarea value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} className="input-nawi" rows={3} required /></div>
               <div>
-                <label className="block text-sm font-medium mb-1">Supporting Document {form.leaveType === 'Sick' && <span className="text-destructive">(Required)</span>}</label>
+                <label className="block text-sm font-medium mb-1">Supporting Document {form.leaveType === 'Sick' && <span className="text-destructive">(Required for Sick Leave)</span>}</label>
                 <label className="btn-outline cursor-pointer w-full justify-center">
                   <Upload className="w-4 h-4" /> {form.document ? form.document.name : 'Upload Document'}
                   <input type="file" className="hidden" onChange={handleDocUpload} />

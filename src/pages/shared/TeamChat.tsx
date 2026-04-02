@@ -88,6 +88,25 @@ export default function TeamChat() {
       read: false,
     };
     storage.push(KEYS.CHAT, msg);
+
+    // Push notification to recipients
+    if (activeChatType === 'group') {
+      const group = groups.find((g: any) => g.id === activeChat);
+      group?.members?.filter((m: string) => m !== session.userId).forEach((memberId: string) => {
+        storage.push(KEYS.NOTIFICATIONS, {
+          id: generateId('NTF'), userId: memberId, title: `New message in ${group.name}`,
+          message: `${session.userName}: ${message.trim().slice(0, 80)}`,
+          isRead: false, type: 'chat', createdAt: new Date().toISOString(),
+        });
+      });
+    } else {
+      storage.push(KEYS.NOTIFICATIONS, {
+        id: generateId('NTF'), userId: activeChat, title: `New message from ${session.userName}`,
+        message: message.trim().slice(0, 80),
+        isRead: false, type: 'chat', createdAt: new Date().toISOString(),
+      });
+    }
+
     setMessage('');
   };
 
