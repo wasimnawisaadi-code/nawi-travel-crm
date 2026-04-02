@@ -6,8 +6,8 @@ import Papa from 'papaparse';
 
 const SERVICES = [
   { key: 'Air Ticket', emoji: '✈️' },
-  { key: 'UAE Visa', emoji: '🪪', subcategories: ['Tourist Visa', 'Visit Visa', 'Transit Visa', 'Family Visa', 'Employment Visa', 'Freelancer Visa', 'Business Visa', 'Student Visa', 'Extension', 'Status Change', 'Visa Cancellation'] },
-  { key: 'Global Visa', emoji: '🌍', subcategories: ['Tourist', 'Business', 'Student', 'Work Permit', 'Transit', 'Family Reunion', 'Medical'] },
+  { key: 'UAE Visa', emoji: '🪪', subcategories: ['Tourist Visa', 'Visit Visa', 'Transit Visa', 'Family Visa', 'Extension', 'Status Change', 'Visa Cancellation', 'Abscond'] },
+  { key: 'Global Visa', emoji: '🌍', subcategories: ['Tourist', 'Business', 'Transit', 'Medical'], visaMode: true },
   { key: 'Holiday Package', emoji: '🏝️' },
   { key: 'Travel Insurance', emoji: '🛡️' },
   { key: 'Pilgrimage', emoji: '🕌' },
@@ -23,10 +23,7 @@ const DOC_REQUIREMENTS: Record<string, Record<string, string[]>> = {
     'Tourist Visa': ['Passport', 'Photo', 'Flight Ticket'],
     'Visit Visa': ['Passport', 'Photo', 'Sponsor Passport', 'Sponsor Visa'],
     'Family Visa': ['Passport', 'Photo', 'Sponsor Passport', 'Sponsor Visa', 'Sponsor Emirates ID', 'Marriage Certificate', 'Salary Certificate'],
-    'Employment Visa': ['Passport', 'Photo', 'Offer Letter', 'Medical Report'],
-    'Freelancer Visa': ['Passport', 'Photo', 'Bank Statement', 'Business Plan'],
-    'Business Visa': ['Passport', 'Photo', 'Trade License', 'Company Letter'],
-    'Student Visa': ['Passport', 'Photo', 'Admission Letter', 'Sponsor Passport'],
+    'Abscond': ['Passport', 'Photo', 'Current Visa Copy', 'Emirates ID', 'Police Report'],
     'Extension': ['Passport', 'Current Visa Copy', 'Emirates ID'],
     'Status Change': ['Passport', 'Current Visa Copy', 'Emirates ID', 'New Offer Letter'],
     'Visa Cancellation': ['Passport', 'Emirates ID', 'Current Visa Copy'],
