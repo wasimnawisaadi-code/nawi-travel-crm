@@ -147,7 +147,7 @@ export default function QuotationGenerator() {
               const text = `Dear ${client.name},%0A%0AThank you for your enquiry. Here is your quotation from *Nawi Saadi Travel & Tourism*:%0A%0A${lineItems.filter(li => li.description).map(li => `• ${li.description}: AED ${li.amount.toLocaleString()}`).join('%0A')}%0A%0A*Total: AED ${quotedPrice.toLocaleString()}*${validUntil ? `%0AValid Until: ${new Date(validUntil).toLocaleDateString('en-GB')}` : ''}${notes ? `%0A%0ANotes: ${notes}` : ''}%0A%0ARegards,%0ANawi Saadi Travel & Tourism`;
               const phone = client.mobile?.replace(/[^0-9]/g, '') || '';
               window.open(`https://wa.me/${phone}?text=${text}`, '_blank');
-            }} className="btn-outline flex-1 text-green-600 border-green-600 hover:bg-green-50"><MessageCircle className="w-4 h-4" /> WhatsApp</button>
+            }} className="btn-outline flex-1 text-success border-success hover:bg-success/10"><MessageCircle className="w-4 h-4" /> WhatsApp</button>
           </div>
         </div>
 

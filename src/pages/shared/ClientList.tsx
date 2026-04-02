@@ -132,7 +132,14 @@ export default function ClientList({ adminView = false }: { adminView?: boolean 
                     <td className="text-xs">{emp?.name || '—'}</td>
                     <td className="text-xs">{formatDate(c.createdAt)}</td>
                     <td className="text-xs">{formatCurrency(c.revenue || 0)}</td>
-                    <td><Eye className="w-4 h-4 text-muted-foreground" /></td>
+                    <td className="flex gap-1">
+                      <Eye className="w-4 h-4 text-muted-foreground" />
+                      {(c.status === 'New' || c.status === 'Processing') && c.mobile && (
+                        <button onClick={(e) => { e.stopPropagation(); window.open(`https://wa.me/${c.mobile.replace(/[^0-9]/g, '')}?text=Dear ${c.name},%0AThis is a follow-up regarding your ${c.service || 'service'} enquiry with Nawi Saadi Travel %26 Tourism.%0APlease let us know if you need any updates.%0ARegards`, '_blank'); }} className="text-success hover:text-success/80" title="WhatsApp Follow-up">
+                          <MessageCircle className="w-4 h-4" />
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
