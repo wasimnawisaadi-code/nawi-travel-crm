@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Plus, Trash2, Download, Send, Save } from 'lucide-react';
+import { Plus, Trash2, Download, Send, Save, MessageCircle } from 'lucide-react';
 import { storage, KEYS, generateId, getCurrentUser, auditLog, formatCurrency } from '@/lib/storage';
 import jsPDF from 'jspdf';
 
