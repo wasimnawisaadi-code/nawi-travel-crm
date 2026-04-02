@@ -109,8 +109,8 @@ export default function AppLayout() {
                 title={collapsed ? link.label : undefined}>
                 <link.icon className="w-5 h-5 flex-shrink-0" />
                 {!collapsed && <span>{link.label}</span>}
-                {link.label === 'Team Chat' && unreadChats > 0 && !collapsed && (
-                  <span className="ml-auto bg-destructive text-destructive-foreground text-xs px-1.5 py-0.5 rounded-full">{unreadChats}</span>
+                {link.label === 'Team Chat' && (unreadChats + unreadNotifications) > 0 && !collapsed && (
+                  <span className="ml-auto bg-destructive text-destructive-foreground text-xs px-1.5 py-0.5 rounded-full">{unreadChats + unreadNotifications}</span>
                 )}
               </Link>
             );
