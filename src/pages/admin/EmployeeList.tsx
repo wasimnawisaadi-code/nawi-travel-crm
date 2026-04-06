@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, Trash2, Eye, Users, Camera, Shield, Wifi, MapPin } from 'lucide-react';
-import { storage, KEYS, generateId, auditLog } from '@/lib/storage';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/lib/auth-context';
+import { auditLog } from '@/lib/supabase-service';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
 
 export default function EmployeeList() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [employees, setEmployees] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -21,17 +24,30 @@ export default function EmployeeList() {
     allowedIPs: '' as string,
   });
 
-  const load = () => setEmployees(storage.getAll(KEYS.EMPLOYEES));
-  useEffect(load, []);
+  const load = async () => {
+    const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+    // Filter out admin's own profile if needed
+    setEmployees(data || []);
+  };
+  useEffect(() => { load(); }, []);
 
   const filtered = employees.filter((e: any) => {
     if (statusFilter !== 'all' && e.status !== statusFilter) return false;
-    if (roleFilter !== 'all' && (e.profileType || 'office') !== roleFilter) return false;
+    if (roleFilter !== 'all' && (e.profile_type || 'office') !== roleFilter) return false;
     if (search && !e.name.toLowerCase().includes(search.toLowerCase()) && !e.email.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
-  const clients = storage.getAll(KEYS.CLIENTS);
+  const [clientCounts, setClientCounts] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const fetchCounts = async () => {
+      const { data } = await supabase.from('clients').select('assigned_to');
+      const counts: Record<string, number> = {};
+      (data || []).forEach((c: any) => { if (c.assigned_to) counts[c.assigned_to] = (counts[c.assigned_to] || 0) + 1; });
+      setClientCounts(counts);
+    };
+    fetchCounts();
+  }, []);
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -60,38 +76,47 @@ export default function EmployeeList() {
 
   const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateEmail(form.email)) { alert('Please enter a valid email address'); return; }
     if (form.password.length < 8) { alert('Password must be at least 8 characters'); return; }
-    // Check duplicate email
-    const existing = employees.find((emp: any) => emp.email === form.email && emp.status === 'active');
-    if (existing) { alert('An active employee with this email already exists'); return; }
 
-    const id = generateId('EMP');
-    const emp = {
-      id, name: form.name, mobile: form.mobile, email: form.email,
-      password: form.password, passportNo: form.passportNo, emiratesId: form.emiratesId,
-      photo: form.photo, baseSalary: 0, leaveBalance: 30,
-      profileType: form.profileType,
-      allowedIPs: form.allowedIPs ? form.allowedIPs.split(',').map(ip => ip.trim()).filter(Boolean) : [],
-      status: 'active', createdAt: new Date().toISOString(), createdBy: 'ADM-001',
-    };
-    storage.push(KEYS.EMPLOYEES, emp);
-    auditLog('employee_created', 'employee', id, { name: form.name, profileType: form.profileType });
+    // Create auth user via Supabase admin (we use signUp which will auto-create profile via trigger)
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: form.email,
+      password: form.password,
+      options: { data: { name: form.name } }
+    });
+
+    if (authError) { alert(authError.message); return; }
+    if (!authData.user) { alert('Failed to create user'); return; }
+
+    // Update profile with additional details
+    await supabase.from('profiles').update({
+      name: form.name,
+      mobile: form.mobile,
+      passport_no: form.passportNo || null,
+      emirates_id: form.emiratesId || null,
+      photo_url: form.photo || null,
+      profile_type: form.profileType as any,
+      allowed_ips: form.allowedIPs ? form.allowedIPs.split(',').map(ip => ip.trim()).filter(Boolean) : [],
+    }).eq('user_id', authData.user.id);
+
+    // Assign employee role
+    await supabase.from('user_roles').insert([{ user_id: authData.user.id, role: 'employee' as any }]);
+
+    await auditLog('employee_created', 'employee', authData.user.id, { name: form.name, profileType: form.profileType });
     setShowCreateForm(false);
     setForm({ name: '', mobile: '', email: '', password: '', passportNo: '', emiratesId: '', photo: '', profileType: 'office', allowedIPs: '' });
     load();
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!showDeleteModal || deleteConfirmName !== showDeleteModal.name) return;
-    storage.update(KEYS.EMPLOYEES, showDeleteModal.id, { status: 'inactive', deactivatedAt: new Date().toISOString() });
-    auditLog('employee_deleted', 'employee', showDeleteModal.id, { name: showDeleteModal.name });
-    const empClients = clients.filter((c: any) => c.assignedTo === showDeleteModal.id);
-    empClients.forEach((c: any) => {
-      storage.update(KEYS.CLIENTS, c.id, { assignedTo: '' });
-    });
+    await supabase.from('profiles').update({ status: 'inactive' }).eq('user_id', showDeleteModal.user_id);
+    // Unassign clients
+    await supabase.from('clients').update({ assigned_to: null }).eq('assigned_to', showDeleteModal.user_id);
+    await auditLog('employee_deleted', 'employee', showDeleteModal.user_id, { name: showDeleteModal.name });
     setShowDeleteModal(null);
     setDeleteConfirmName('');
     load();
@@ -124,13 +149,13 @@ export default function EmployeeList() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((e: any) => {
-            const clientCount = clients.filter((c: any) => c.assignedTo === e.id).length;
-            const isSales = e.profileType === 'sales';
+            const clientCount = clientCounts[e.user_id] || 0;
+            const isSales = e.profile_type === 'sales';
             return (
-              <div key={e.id} className="card-nawi-hover cursor-pointer" onClick={() => navigate(`/admin/employees/${e.id}`)}>
+              <div key={e.id} className="card-nawi-hover cursor-pointer" onClick={() => navigate(`/admin/employees/${e.user_id}`)}>
                 <div className="flex items-start gap-3">
-                  {e.photo ? (
-                    <img src={e.photo} alt="" className="w-14 h-14 rounded-full object-cover flex-shrink-0" />
+                  {e.photo_url ? (
+                    <img src={e.photo_url} alt="" className="w-14 h-14 rounded-full object-cover flex-shrink-0" />
                   ) : (
                     <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center text-lg font-bold text-primary-foreground flex-shrink-0">
                       {e.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
@@ -142,16 +167,16 @@ export default function EmployeeList() {
                       <StatusBadge status={e.status} />
                     </div>
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      <p className="text-xs text-muted-foreground font-mono">{e.id}</p>
+                      <p className="text-xs text-muted-foreground font-mono">{e.user_id?.slice(0, 8)}</p>
                       {isSales && <span className="text-xs bg-warning/10 text-warning px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><MapPin className="w-3 h-3" />Sales</span>}
-                      {!isSales && e.allowedIPs?.length > 0 && <span title="IP restricted"><Wifi className="w-3 h-3 text-secondary" /></span>}
+                      {!isSales && e.allowed_ips?.length > 0 && <span title="IP restricted"><Wifi className="w-3 h-3 text-secondary" /></span>}
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">{e.email}</p>
                     <p className="text-xs text-muted-foreground">{e.mobile}</p>
                     <div className="flex items-center justify-between mt-2">
                       <span className="text-xs text-muted-foreground">{clientCount} clients</span>
                       <div className="flex items-center gap-1">
-                        <button onClick={(ev) => { ev.stopPropagation(); navigate(`/admin/employees/${e.id}`); }} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground"><Eye className="w-4 h-4" /></button>
+                        <button onClick={(ev) => { ev.stopPropagation(); navigate(`/admin/employees/${e.user_id}`); }} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground"><Eye className="w-4 h-4" /></button>
                         <button onClick={(ev) => { ev.stopPropagation(); setShowDeleteModal(e); setDeleteConfirmName(''); }} className="p-1.5 hover:bg-destructive/10 rounded-lg text-muted-foreground hover:text-destructive"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </div>
@@ -169,7 +194,6 @@ export default function EmployeeList() {
           <div className="bg-card rounded-xl shadow-elevated w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-lg font-bold text-foreground font-display mb-4">Add New Employee</h2>
             <form onSubmit={handleCreate} className="space-y-4">
-              {/* Photo Upload */}
               <div className="flex justify-center">
                 <label className="relative cursor-pointer">
                   {form.photo ? (
@@ -186,7 +210,6 @@ export default function EmployeeList() {
                 </label>
               </div>
 
-              {/* Profile Type */}
               <div>
                 <label className="block text-sm font-medium mb-2">Employee Type</label>
                 <div className="grid grid-cols-2 gap-3">
@@ -219,7 +242,6 @@ export default function EmployeeList() {
                 <div><label className="block text-sm font-medium mb-1">Emirates ID</label><input value={form.emiratesId} onChange={(e) => setForm({ ...form, emiratesId: e.target.value })} className="input-nawi" /></div>
               </div>
 
-              {/* IP Restriction for office employees */}
               {form.profileType === 'office' && (
                 <div>
                   <label className="block text-sm font-medium mb-1 flex items-center gap-1"><Wifi className="w-3 h-3" /> Allowed WiFi IP Addresses</label>
@@ -245,7 +267,7 @@ export default function EmployeeList() {
             <p className="text-sm text-muted-foreground mb-3">This will permanently deactivate <strong>{showDeleteModal.name}</strong>'s account and unassign all their clients.</p>
             <div className="bg-destructive/10 text-destructive text-sm px-4 py-2.5 rounded-lg mb-4">
               <p>⚠️ This action cannot be undone.</p>
-              <p className="text-xs mt-1">{clients.filter((c: any) => c.assignedTo === showDeleteModal.id).length} clients will be unassigned.</p>
+              <p className="text-xs mt-1">{clientCounts[showDeleteModal.user_id] || 0} clients will be unassigned.</p>
             </div>
             <p className="text-sm text-foreground mb-2">Type the employee's full name to confirm:</p>
             <div className="inline-block bg-primary text-primary-foreground text-sm px-3 py-1 rounded-full mb-3">{showDeleteModal.name}</div>
