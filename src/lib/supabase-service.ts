@@ -26,11 +26,11 @@ export async function auditLog(
     .eq('user_id', user.id)
     .single();
 
-  await supabase.from('audit_log').insert({
+  await supabase.from('audit_log').insert([{
     user_id: user.id,
     user_name: profile?.name || 'Unknown',
-    action, target_type: targetType, target_id: targetId, changes,
-  });
+    action, target_type: targetType, target_id: targetId, changes: changes as any,
+  }]);
 }
 
 // =================== DATE UTILITIES ===================
