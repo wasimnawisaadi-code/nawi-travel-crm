@@ -3,7 +3,7 @@ import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { initializeApp } from "@/lib/storage";
+import { AuthProvider } from "@/lib/auth-context";
 
 import Login from "./pages/Login";
 import AppLayout from "./components/layout/AppLayout";
@@ -25,54 +25,54 @@ import TeamChat from "./pages/shared/TeamChat";
 import ImportantDates from "./pages/shared/ImportantDates";
 import NotFound from "./pages/NotFound";
 
-initializeApp();
-
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/" element={<Navigate to="/login" replace />} />
+    <AuthProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/" element={<Navigate to="/login" replace />} />
 
-          {/* Admin Routes */}
-          <Route element={<AppLayout />}>
-            <Route path="/admin/dashboard" element={<AdminDashboard />} />
-            <Route path="/admin/employees" element={<EmployeeList />} />
-            <Route path="/admin/employees/new" element={<EmployeeList />} />
-            <Route path="/admin/employees/:id" element={<EmployeeProfile />} />
-            <Route path="/admin/clients" element={<ClientList adminView />} />
-            <Route path="/admin/clients/new" element={<AddClientWizard />} />
-            <Route path="/admin/clients/:id" element={<ClientProfile />} />
-            <Route path="/admin/calendar" element={<OperationsCalendar />} />
-            <Route path="/admin/attendance" element={<AdminAttendance />} />
-            <Route path="/admin/leave" element={<LeaveManagement />} />
-            <Route path="/admin/payroll" element={<PayrollManagement />} />
-            <Route path="/admin/reports" element={<ReportsPage />} />
-            <Route path="/admin/audit-log" element={<AuditLog />} />
-            <Route path="/admin/important-dates" element={<ImportantDates />} />
-            <Route path="/admin/chat" element={<TeamChat />} />
+            {/* Admin Routes */}
+            <Route element={<AppLayout />}>
+              <Route path="/admin/dashboard" element={<AdminDashboard />} />
+              <Route path="/admin/employees" element={<EmployeeList />} />
+              <Route path="/admin/employees/new" element={<EmployeeList />} />
+              <Route path="/admin/employees/:id" element={<EmployeeProfile />} />
+              <Route path="/admin/clients" element={<ClientList adminView />} />
+              <Route path="/admin/clients/new" element={<AddClientWizard />} />
+              <Route path="/admin/clients/:id" element={<ClientProfile />} />
+              <Route path="/admin/calendar" element={<OperationsCalendar />} />
+              <Route path="/admin/attendance" element={<AdminAttendance />} />
+              <Route path="/admin/leave" element={<LeaveManagement />} />
+              <Route path="/admin/payroll" element={<PayrollManagement />} />
+              <Route path="/admin/reports" element={<ReportsPage />} />
+              <Route path="/admin/audit-log" element={<AuditLog />} />
+              <Route path="/admin/important-dates" element={<ImportantDates />} />
+              <Route path="/admin/chat" element={<TeamChat />} />
 
-            {/* Employee Routes */}
-            <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
-            <Route path="/employee/clients" element={<ClientList />} />
-            <Route path="/employee/clients/new" element={<AddClientWizard />} />
-            <Route path="/employee/clients/:id" element={<ClientProfile />} />
-            <Route path="/employee/calendar" element={<OperationsCalendar />} />
-            <Route path="/employee/attendance" element={<AttendancePage />} />
-            <Route path="/employee/leave" element={<LeaveManagement isEmployee />} />
-            <Route path="/employee/important-dates" element={<ImportantDates />} />
-            <Route path="/employee/chat" element={<TeamChat />} />
-          </Route>
+              {/* Employee Routes */}
+              <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
+              <Route path="/employee/clients" element={<ClientList />} />
+              <Route path="/employee/clients/new" element={<AddClientWizard />} />
+              <Route path="/employee/clients/:id" element={<ClientProfile />} />
+              <Route path="/employee/calendar" element={<OperationsCalendar />} />
+              <Route path="/employee/attendance" element={<AttendancePage />} />
+              <Route path="/employee/leave" element={<LeaveManagement isEmployee />} />
+              <Route path="/employee/important-dates" element={<ImportantDates />} />
+              <Route path="/employee/chat" element={<TeamChat />} />
+            </Route>
 
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </AuthProvider>
   </QueryClientProvider>
 );
 

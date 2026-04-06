@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Plane, Globe, Hotel, Shield } from 'lucide-react';
-import { storage, KEYS, generateId, generateDailyNotifications } from '@/lib/storage';
+import { useAuth } from '@/lib/auth-context';
+import { recordLoginAttendance, generateDailyNotifications } from '@/lib/supabase-service';
 import logo from '@/assets/logo.png';
 
 export default function Login() {
   const navigate = useNavigate();
+  const { signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
@@ -13,66 +15,42 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    setTimeout(() => {
-      const admin = storage.get<any>(KEYS.ADMIN);
-      const employees = storage.getAll(KEYS.EMPLOYEES);
-
-      let user: any = null;
-      let role: 'admin' | 'employee' = 'employee';
-
-      if (admin && admin.email === email && admin.passwordHash === password) {
-        user = admin;
-        role = 'admin';
-      } else {
-        const emp = employees.find((e: any) => e.email === email && e.password === password && e.status === 'active');
-        if (emp) {
-          user = emp;
-          role = 'employee';
-        }
-      }
-
-      if (!user) {
-        setError('Invalid email or password');
-        setLoading(false);
-        return;
-      }
-
-      const session = {
-        userId: user.id,
-        userName: user.name,
-        role,
-        loginTime: new Date().toISOString(),
-        token: crypto.randomUUID(),
-      };
-      storage.set(KEYS.SESSION, session);
-
-      // Record attendance
-      const today = new Date().toISOString().split('T')[0];
-      const attendance = storage.getAll(KEYS.ATTENDANCE);
-      const existing = attendance.find((a: any) => a.employeeId === user.id && a.date === today);
-      if (!existing) {
-        const now = new Date();
-        const isLate = now.getHours() > 9 || (now.getHours() === 9 && now.getMinutes() > 0);
-        storage.push(KEYS.ATTENDANCE, {
-          id: generateId('ATT'),
-          employeeId: user.id,
-          date: today,
-          loginTime: now.toISOString(),
-          logoutTime: '',
-          hoursWorked: 0,
-          status: isLate ? 'Late' : 'Present',
-        });
-      }
-
-      generateDailyNotifications(user.id, role);
-      navigate(role === 'admin' ? '/admin/dashboard' : '/employee/dashboard');
+    const { error: loginError } = await signIn(email, password);
+    if (loginError) {
+      setError(loginError);
       setLoading(false);
-    }, 600);
+      return;
+    }
+
+    // Wait for auth state to settle, then get user info
+    const { supabase } = await import('@/integrations/supabase/client');
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setError('Login failed');
+      setLoading(false);
+      return;
+    }
+
+    // Check role
+    const { data: roleData } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', user.id)
+      .single();
+
+    const role = roleData?.role || 'employee';
+
+    // Record attendance & generate notifications
+    await recordLoginAttendance(user.id);
+    await generateDailyNotifications(user.id, role === 'admin');
+
+    navigate(role === 'admin' ? '/admin/dashboard' : '/employee/dashboard');
+    setLoading(false);
   };
 
   return (

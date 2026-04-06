@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Briefcase, Calendar, FileText,
-  DollarSign, BarChart3, Shield, LogOut, Menu,
+  DollarSign, Shield, LogOut, Menu,
   Search, ChevronLeft, Clock, PlaneTakeoff, MessageCircle, CalendarDays, Bell
 } from 'lucide-react';
-import { getCurrentUser, isAdmin, logout, storage, KEYS } from '@/lib/storage';
+import { useAuth } from '@/lib/auth-context';
+import { supabase } from '@/integrations/supabase/client';
 import logo from '@/assets/logo.png';
 
 const adminLinks = [
@@ -34,44 +35,73 @@ const employeeLinks = [
 export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, profile, isAdmin, loading, signOut } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [showSearch, setShowSearch] = useState(false);
-  const session = getCurrentUser();
+  const [unreadChats, setUnreadChats] = useState(0);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   useEffect(() => {
-    if (!session) navigate('/login');
-  }, [session, navigate]);
+    if (!loading && !user) navigate('/login');
+  }, [user, loading, navigate]);
 
-  if (!session) return null;
+  // Fetch unread counts
+  useEffect(() => {
+    if (!user) return;
+    const fetchCounts = async () => {
+      const { count: chatCount } = await supabase
+        .from('chat_messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('recipient_id', user.id)
+        .eq('is_read', false);
+      setUnreadChats(chatCount || 0);
 
-  const links = session.role === 'admin' ? adminLinks : employeeLinks;
-  const unreadChats = storage.getAll(KEYS.CHAT)
-    .filter((m: any) => m.to === session.userId && !m.read).length;
-  const unreadNotifications = storage.getAll(KEYS.NOTIFICATIONS)
-    .filter((n: any) => n.userId === session.userId && !n.isRead).length;
+      const { count: notifCount } = await supabase
+        .from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('is_read', false);
+      setUnreadNotifications(notifCount || 0);
+    };
+    fetchCounts();
 
-  const handleSearch = (q: string) => {
+    // Subscribe to realtime notifications
+    const channel = supabase
+      .channel('notification-counts')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => {
+        fetchCounts();
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, () => {
+        fetchCounts();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
+
+  if (loading) return <div className="flex h-screen items-center justify-center"><div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
+  if (!user || !profile) return null;
+
+  const links = isAdmin ? adminLinks : employeeLinks;
+
+  const handleSearch = async (q: string) => {
     setSearchQuery(q);
     if (q.length < 2) { setSearchResults([]); setShowSearch(false); return; }
-    const results = storage.search(KEYS.CLIENTS, q, ['name', 'id', 'mobile', 'passportNo']);
-    setSearchResults(results.slice(0, 5));
+    const { data } = await supabase
+      .from('clients')
+      .select('id, display_id, name, mobile, service')
+      .or(`name.ilike.%${q}%,display_id.ilike.%${q}%,mobile.ilike.%${q}%,passport_no.ilike.%${q}%`)
+      .limit(5);
+    setSearchResults(data || []);
     setShowSearch(true);
   };
 
-  const handleLogout = () => { logout(); navigate('/login'); };
+  const handleLogout = async () => { await signOut(); navigate('/login'); };
 
   const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-
-  // Get employee photo
-  const getPhoto = () => {
-    if (session.role === 'admin') return null;
-    const emp = storage.getAll(KEYS.EMPLOYEES).find((e: any) => e.id === session.userId);
-    return emp?.photo || null;
-  };
-  const photo = getPhoto();
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -119,17 +149,17 @@ export default function AppLayout() {
 
         <div className="border-t border-sidebar-border p-3">
           <div className="flex items-center gap-3">
-            {photo ? (
-              <img src={photo} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
+            {profile.photo_url ? (
+              <img src={profile.photo_url} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
             ) : (
               <div className="w-9 h-9 rounded-full bg-sidebar-accent flex items-center justify-center text-sm font-bold text-sidebar-foreground flex-shrink-0">
-                {session.userName.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                {profile.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
               </div>
             )}
             {!collapsed && (
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-sidebar-foreground truncate">{session.userName}</p>
-                <p className="text-xs text-sidebar-muted capitalize">{session.role}</p>
+                <p className="text-sm font-medium text-sidebar-foreground truncate">{profile.name}</p>
+                <p className="text-xs text-sidebar-muted capitalize">{isAdmin ? 'admin' : 'employee'}</p>
               </div>
             )}
             {!collapsed && (
@@ -159,12 +189,12 @@ export default function AppLayout() {
             {showSearch && searchResults.length > 0 && (
               <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-xl shadow-elevated overflow-hidden z-50">
                 {searchResults.map((c: any) => (
-                  <Link key={c.id} to={`/${session.role === 'admin' ? 'admin' : 'employee'}/clients/${c.id}`}
+                  <Link key={c.id} to={`/${isAdmin ? 'admin' : 'employee'}/clients/${c.id}`}
                     className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted transition-colors">
                     <PlaneTakeoff className="w-4 h-4 text-muted-foreground" />
                     <div>
                       <p className="text-sm font-medium text-foreground">{c.name}</p>
-                      <p className="text-xs text-muted-foreground font-mono">{c.id} • {c.service || 'N/A'}</p>
+                      <p className="text-xs text-muted-foreground font-mono">{c.display_id} • {c.service || 'N/A'}</p>
                     </div>
                   </Link>
                 ))}
@@ -172,7 +202,7 @@ export default function AppLayout() {
             )}
           </div>
 
-          <Link to={`/${session.role === 'admin' ? 'admin' : 'employee'}/notifications`} className="relative p-2 hover:bg-muted rounded-lg transition-colors" title="Notifications">
+          <Link to={`/${isAdmin ? 'admin' : 'employee'}/notifications`} className="relative p-2 hover:bg-muted rounded-lg transition-colors" title="Notifications">
             <Bell className="w-5 h-5 text-muted-foreground" />
             {unreadNotifications > 0 && (
               <span className="absolute -top-0.5 -right-0.5 bg-destructive text-destructive-foreground text-[10px] w-4 h-4 rounded-full flex items-center justify-center">{unreadNotifications > 9 ? '9+' : unreadNotifications}</span>
