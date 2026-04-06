@@ -1,142 +1,175 @@
 import { useState, useEffect, useRef } from 'react';
 import { Send, Plus, Users, X, Hash, User } from 'lucide-react';
-import { storage, KEYS, getCurrentUser, isAdmin, generateId } from '@/lib/storage';
-
-interface ChatMessage {
-  id: string;
-  from: string;
-  fromName: string;
-  fromPhoto?: string;
-  to: string; // groupId or recipientId
-  type: 'group' | 'direct';
-  text: string;
-  timestamp: string;
-  read: boolean;
-}
-
-interface ChatGroup {
-  id: string;
-  name: string;
-  members: string[];
-  createdBy: string;
-  createdAt: string;
-}
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/lib/auth-context';
 
 export default function TeamChat() {
-  const session = getCurrentUser();
-  const [activeChat, setActiveChat] = useState<string>('general');
+  const { user, profile } = useAuth();
+  const [activeChat, setActiveChat] = useState<string>('');
   const [activeChatType, setActiveChatType] = useState<'group' | 'direct'>('group');
   const [message, setMessage] = useState('');
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [showNewDM, setShowNewDM] = useState(false);
   const [groupForm, setGroupForm] = useState({ name: '', members: [] as string[] });
+  const [groups, setGroups] = useState<any[]>([]);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [dmConversations, setDmConversations] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const employees = storage.getAll(KEYS.EMPLOYEES).filter((e: any) => e.status === 'active');
-  const admin = storage.get<any>(KEYS.ADMIN);
-  const allUsers = [
-    { id: admin?.id || 'ADM-001', name: admin?.name || 'Admin', photo: null },
-    ...employees.map((e: any) => ({ id: e.id, name: e.name, photo: e.photo })),
-  ];
-
-  // Ensure general group exists
+  // Load users
   useEffect(() => {
-    const groups = storage.getAll(KEYS.CHAT_GROUPS);
-    if (!groups.find((g: any) => g.id === 'general')) {
-      storage.push(KEYS.CHAT_GROUPS, {
-        id: 'general', name: 'General', members: allUsers.map(u => u.id),
-        createdBy: 'ADM-001', createdAt: new Date().toISOString(),
-      });
-    }
+    const fetchUsers = async () => {
+      const { data } = await supabase.from('profiles').select('user_id, name, photo_url').eq('status', 'active');
+      setAllUsers(data || []);
+    };
+    fetchUsers();
   }, []);
 
-  const groups = storage.getAll(KEYS.CHAT_GROUPS).filter((g: any) => g.members?.includes(session?.userId));
-  const messages = storage.getAll(KEYS.CHAT);
+  // Load groups
+  useEffect(() => {
+    if (!user) return;
+    const fetchGroups = async () => {
+      const { data } = await supabase.from('chat_groups').select('*').contains('members', [user.id]);
+      setGroups(data || []);
 
-  const currentMessages = messages.filter((m: any) => {
-    if (activeChatType === 'group') return m.type === 'group' && m.to === activeChat;
-    return m.type === 'direct' && (
-      (m.from === session?.userId && m.to === activeChat) ||
-      (m.from === activeChat && m.to === session?.userId)
-    );
-  }).sort((a: any, b: any) => a.timestamp.localeCompare(b.timestamp));
+      // Ensure general group exists
+      if (data && !data.find(g => g.name === 'General')) {
+        const allUserIds = allUsers.map(u => u.user_id);
+        const { data: newGroup } = await supabase.from('chat_groups').insert([{
+          name: 'General', members: allUserIds, created_by: user.id,
+        }]).select().single();
+        if (newGroup) {
+          setGroups(prev => [newGroup, ...prev]);
+          setActiveChat(newGroup.id);
+        }
+      } else if (data && data.length > 0 && !activeChat) {
+        setActiveChat(data[0].id);
+      }
+    };
+    fetchGroups();
+  }, [user, allUsers.length]);
 
-  // Get unique DM conversations
-  const dmConversations = new Set<string>();
-  messages.filter((m: any) => m.type === 'direct' && (m.from === session?.userId || m.to === session?.userId))
-    .forEach((m: any) => {
-      const otherId = m.from === session?.userId ? m.to : m.from;
-      dmConversations.add(otherId);
-    });
+  // Load messages for active chat
+  useEffect(() => {
+    if (!activeChat || !user) return;
+
+    const fetchMessages = async () => {
+      let query = supabase.from('chat_messages').select('*').order('created_at', { ascending: true });
+      if (activeChatType === 'group') {
+        query = query.eq('group_id', activeChat).eq('message_type', 'group' as any);
+      } else {
+        query = query.eq('message_type', 'direct' as any)
+          .or(`and(sender_id.eq.${user.id},recipient_id.eq.${activeChat}),and(sender_id.eq.${activeChat},recipient_id.eq.${user.id})`);
+      }
+      const { data } = await query;
+      setMessages(data || []);
+    };
+    fetchMessages();
+
+    // Realtime subscription
+    const channel = supabase
+      .channel(`chat-${activeChat}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
+        const msg = payload.new as any;
+        if (activeChatType === 'group' && msg.group_id === activeChat) {
+          setMessages(prev => [...prev, msg]);
+        } else if (activeChatType === 'direct' &&
+          ((msg.sender_id === user.id && msg.recipient_id === activeChat) ||
+           (msg.sender_id === activeChat && msg.recipient_id === user.id))) {
+          setMessages(prev => [...prev, msg]);
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [activeChat, activeChatType, user]);
+
+  // Load DM conversations
+  useEffect(() => {
+    if (!user) return;
+    const fetchDMs = async () => {
+      const { data } = await supabase.from('chat_messages').select('sender_id, recipient_id')
+        .eq('message_type', 'direct' as any)
+        .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`);
+      const others = new Set<string>();
+      (data || []).forEach((m: any) => {
+        const otherId = m.sender_id === user.id ? m.recipient_id : m.sender_id;
+        if (otherId) others.add(otherId);
+      });
+      setDmConversations(Array.from(others));
+    };
+    fetchDMs();
+  }, [user]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [currentMessages.length]);
+  }, [messages.length]);
 
-  const sendMessage = () => {
-    if (!message.trim() || !session) return;
-    const user = allUsers.find(u => u.id === session.userId);
-    const msg: ChatMessage = {
-      id: generateId('MSG'),
-      from: session.userId,
-      fromName: session.userName,
-      fromPhoto: user?.photo || undefined,
-      to: activeChat,
-      type: activeChatType,
+  const sendMessage = async () => {
+    if (!message.trim() || !user || !profile) return;
+    const msg: any = {
+      sender_id: user.id,
+      sender_name: profile.name,
+      sender_photo: profile.photo_url,
+      message_type: activeChatType,
       text: message.trim(),
-      timestamp: new Date().toISOString(),
-      read: false,
     };
-    storage.push(KEYS.CHAT, msg);
-
-    // Push notification to recipients
     if (activeChatType === 'group') {
-      const group = groups.find((g: any) => g.id === activeChat);
-      group?.members?.filter((m: string) => m !== session.userId).forEach((memberId: string) => {
-        storage.push(KEYS.NOTIFICATIONS, {
-          id: generateId('NTF'), userId: memberId, title: `New message in ${group.name}`,
-          message: `${session.userName}: ${message.trim().slice(0, 80)}`,
-          isRead: false, type: 'chat', createdAt: new Date().toISOString(),
-        });
-      });
+      msg.group_id = activeChat;
     } else {
-      storage.push(KEYS.NOTIFICATIONS, {
-        id: generateId('NTF'), userId: activeChat, title: `New message from ${session.userName}`,
-        message: message.trim().slice(0, 80),
-        isRead: false, type: 'chat', createdAt: new Date().toISOString(),
-      });
+      msg.recipient_id = activeChat;
+    }
+    await supabase.from('chat_messages').insert([msg]);
+
+    // Push notifications
+    if (activeChatType === 'group') {
+      const group = groups.find(g => g.id === activeChat);
+      const recipients = (group?.members || []).filter((m: string) => m !== user.id);
+      const notifs = recipients.map((memberId: string) => ({
+        user_id: memberId, title: `New message in ${group?.name}`,
+        message: `${profile.name}: ${message.trim().slice(0, 80)}`,
+        type: 'chat',
+      }));
+      if (notifs.length > 0) await supabase.from('notifications').insert(notifs);
+    } else {
+      await supabase.from('notifications').insert([{
+        user_id: activeChat, title: `New message from ${profile.name}`,
+        message: message.trim().slice(0, 80), type: 'chat',
+      }]);
     }
 
     setMessage('');
   };
 
-  const createGroup = () => {
-    if (!groupForm.name.trim()) return;
-    const group: ChatGroup = {
-      id: generateId('GRP'),
+  const createGroup = async () => {
+    if (!groupForm.name.trim() || !user) return;
+    const { data } = await supabase.from('chat_groups').insert([{
       name: groupForm.name,
-      members: [...groupForm.members, session?.userId || ''],
-      createdBy: session?.userId || '',
-      createdAt: new Date().toISOString(),
-    };
-    storage.push(KEYS.CHAT_GROUPS, group);
+      members: [...groupForm.members, user.id],
+      created_by: user.id,
+    }]).select().single();
+    if (data) {
+      setGroups(prev => [...prev, data]);
+      setActiveChat(data.id);
+      setActiveChatType('group');
+    }
     setShowNewGroup(false);
     setGroupForm({ name: '', members: [] });
-    setActiveChat(group.id);
-    setActiveChatType('group');
   };
 
   const startDM = (userId: string) => {
     setActiveChat(userId);
     setActiveChatType('direct');
     setShowNewDM(false);
+    if (!dmConversations.includes(userId)) {
+      setDmConversations(prev => [...prev, userId]);
+    }
   };
 
   const getActiveName = () => {
-    if (activeChatType === 'group') {
-      return groups.find(g => g.id === activeChat)?.name || 'General';
-    }
-    return allUsers.find(u => u.id === activeChat)?.name || 'Chat';
+    if (activeChatType === 'group') return groups.find(g => g.id === activeChat)?.name || 'General';
+    return allUsers.find(u => u.user_id === activeChat)?.name || 'Chat';
   };
 
   const formatTime = (ts: string) => new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
@@ -163,7 +196,6 @@ export default function TeamChat() {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {/* Groups */}
           <div className="px-3 py-2">
             <p className="text-xs font-medium text-muted-foreground mb-1">Groups</p>
             {groups.map((g: any) => (
@@ -174,24 +206,22 @@ export default function TeamChat() {
               </button>
             ))}
           </div>
-
-          {/* DMs */}
           <div className="px-3 py-2 border-t border-border">
             <p className="text-xs font-medium text-muted-foreground mb-1">Direct Messages</p>
-            {Array.from(dmConversations).map((userId) => {
-              const user = allUsers.find(u => u.id === userId);
-              if (!user) return null;
+            {dmConversations.map((userId) => {
+              const u = allUsers.find(au => au.user_id === userId);
+              if (!u) return null;
               return (
                 <button key={userId} onClick={() => startDM(userId)}
                   className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${activeChat === userId && activeChatType === 'direct' ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted text-foreground'}`}>
-                  {user.photo ? (
-                    <img src={user.photo} alt="" className="w-5 h-5 rounded-full object-cover" />
+                  {u.photo_url ? (
+                    <img src={u.photo_url} alt="" className="w-5 h-5 rounded-full object-cover" />
                   ) : (
                     <div className="w-5 h-5 rounded-full bg-secondary flex items-center justify-center text-[8px] font-bold text-secondary-foreground">
-                      {user.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                      {u.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
                     </div>
                   )}
-                  <span className="truncate">{user.name}</span>
+                  <span className="truncate">{u.name}</span>
                 </button>
               );
             })}
@@ -207,33 +237,33 @@ export default function TeamChat() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {currentMessages.length === 0 && (
+          {messages.length === 0 && (
             <p className="text-center text-sm text-muted-foreground py-16">No messages yet. Start the conversation!</p>
           )}
-          {currentMessages.map((msg: any, i: number) => {
-            const isMe = msg.from === session?.userId;
-            const showDate = i === 0 || formatDay(currentMessages[i - 1].timestamp) !== formatDay(msg.timestamp);
+          {messages.map((msg: any, i: number) => {
+            const isMe = msg.sender_id === user?.id;
+            const showDate = i === 0 || formatDay(messages[i - 1].created_at) !== formatDay(msg.created_at);
             return (
               <div key={msg.id}>
                 {showDate && (
-                  <div className="text-center my-4"><span className="text-xs text-muted-foreground bg-muted px-3 py-1 rounded-full">{formatDay(msg.timestamp)}</span></div>
+                  <div className="text-center my-4"><span className="text-xs text-muted-foreground bg-muted px-3 py-1 rounded-full">{formatDay(msg.created_at)}</span></div>
                 )}
                 <div className={`flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
                   {!isMe && (
-                    msg.fromPhoto ? (
-                      <img src={msg.fromPhoto} alt="" className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+                    msg.sender_photo ? (
+                      <img src={msg.sender_photo} alt="" className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
                     ) : (
                       <div className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center text-[9px] font-bold text-secondary-foreground flex-shrink-0">
-                        {msg.fromName.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                        {msg.sender_name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
                       </div>
                     )
                   )}
                   <div className={`max-w-[70%] ${isMe ? 'order-first' : ''}`}>
-                    {!isMe && <p className="text-xs text-muted-foreground mb-1 ml-1">{msg.fromName}</p>}
+                    {!isMe && <p className="text-xs text-muted-foreground mb-1 ml-1">{msg.sender_name}</p>}
                     <div className={`px-3 py-2 rounded-2xl text-sm ${isMe ? 'bg-primary text-primary-foreground rounded-br-md' : 'bg-muted text-foreground rounded-bl-md'}`}>
                       {msg.text}
                     </div>
-                    <p className={`text-[10px] text-muted-foreground mt-0.5 ${isMe ? 'text-right mr-1' : 'ml-1'}`}>{formatTime(msg.timestamp)}</p>
+                    <p className={`text-[10px] text-muted-foreground mt-0.5 ${isMe ? 'text-right mr-1' : 'ml-1'}`}>{formatTime(msg.created_at)}</p>
                   </div>
                 </div>
               </div>
@@ -261,10 +291,10 @@ export default function TeamChat() {
               <div>
                 <label className="block text-sm font-medium mb-2">Members</label>
                 <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {allUsers.filter(u => u.id !== session?.userId).map((u) => (
-                    <label key={u.id} className="flex items-center gap-2 p-2 hover:bg-muted rounded-lg cursor-pointer">
-                      <input type="checkbox" checked={groupForm.members.includes(u.id)} onChange={(e) => {
-                        setGroupForm({ ...groupForm, members: e.target.checked ? [...groupForm.members, u.id] : groupForm.members.filter(m => m !== u.id) });
+                  {allUsers.filter(u => u.user_id !== user?.id).map((u) => (
+                    <label key={u.user_id} className="flex items-center gap-2 p-2 hover:bg-muted rounded-lg cursor-pointer">
+                      <input type="checkbox" checked={groupForm.members.includes(u.user_id)} onChange={(e) => {
+                        setGroupForm({ ...groupForm, members: e.target.checked ? [...groupForm.members, u.user_id] : groupForm.members.filter(m => m !== u.user_id) });
                       }} className="w-4 h-4 rounded" />
                       <span className="text-sm">{u.name}</span>
                     </label>
@@ -286,13 +316,13 @@ export default function TeamChat() {
           <div className="bg-card rounded-xl shadow-elevated w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-lg font-bold font-display mb-4">New Message</h2>
             <div className="space-y-2 max-h-64 overflow-y-auto">
-              {allUsers.filter(u => u.id !== session?.userId).map((u) => (
-                <button key={u.id} onClick={() => startDM(u.id)} className="w-full text-left p-3 hover:bg-muted rounded-lg flex items-center gap-3 transition-colors">
-                  {u.photo ? (
-                    <img src={u.photo} alt="" className="w-8 h-8 rounded-full object-cover" />
+              {allUsers.filter(u => u.user_id !== user?.id).map((u) => (
+                <button key={u.user_id} onClick={() => startDM(u.user_id)} className="w-full text-left p-3 hover:bg-muted rounded-lg flex items-center gap-3 transition-colors">
+                  {u.photo_url ? (
+                    <img src={u.photo_url} alt="" className="w-8 h-8 rounded-full object-cover" />
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-xs font-bold text-secondary-foreground">
-                      {u.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                      {u.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
                     </div>
                   )}
                   <span className="text-sm font-medium">{u.name}</span>

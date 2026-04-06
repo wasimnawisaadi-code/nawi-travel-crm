@@ -1,44 +1,55 @@
 import { useState, useEffect } from 'react';
 import { Check, X, Upload, FileText, Calendar, Download } from 'lucide-react';
-import { storage, KEYS, formatDate, auditLog, getCurrentUser, calculateWorkingDays, generateId } from '@/lib/storage';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/lib/auth-context';
+import { formatDate, auditLog, calculateWorkingDays, generateDisplayId } from '@/lib/supabase-service';
 import StatusBadge from '@/components/ui/StatusBadge';
 
 const LEAVE_TYPES = ['Annual', 'Sick', 'Maternity', 'Paternity', 'Hajj', 'Bereavement', 'Emergency', 'Unpaid', 'Other'];
 
 export default function LeaveManagement({ isEmployee = false }: { isEmployee?: boolean }) {
-  const session = getCurrentUser();
+  const { user, profile } = useAuth();
   const [leave, setLeave] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ startDate: '', endDate: '', reason: '', leaveType: 'Annual', document: null as any });
   const [yearMonth, setYearMonth] = useState(() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`; });
   const [employeeFilter, setEmployeeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [employees, setEmployees] = useState<any[]>([]);
 
-  const load = () => {
-    let all = storage.getAll(KEYS.LEAVE);
-    if (isEmployee && session) all = all.filter((l: any) => l.employeeId === session.userId);
-    setLeave(all);
+  const load = async () => {
+    if (!user) return;
+    let query = supabase.from('leave_requests').select('*').order('created_at', { ascending: false });
+    if (isEmployee) query = query.eq('employee_id', user.id);
+    const { data } = await query;
+    setLeave(data || []);
   };
-  useEffect(load, [isEmployee, session]);
 
-  const employees = storage.getAll(KEYS.EMPLOYEES);
+  useEffect(() => { load(); }, [user, isEmployee]);
+  useEffect(() => {
+    const fetchEmployees = async () => {
+      const { data } = await supabase.from('profiles').select('user_id, name').eq('status', 'active');
+      setEmployees(data || []);
+    };
+    if (!isEmployee) fetchEmployees();
+  }, [isEmployee]);
 
   let displayed = leave;
-  if (employeeFilter !== 'all') displayed = displayed.filter((l: any) => l.employeeId === employeeFilter);
+  if (employeeFilter !== 'all') displayed = displayed.filter((l: any) => l.employee_id === employeeFilter);
   if (statusFilter !== 'all') displayed = displayed.filter((l: any) => l.status === statusFilter);
-  const monthFiltered = displayed.filter((l: any) => l.startDate?.startsWith(yearMonth) || l.endDate?.startsWith(yearMonth) || l.createdAt?.startsWith(yearMonth));
+  const monthFiltered = displayed.filter((l: any) => l.start_date?.startsWith(yearMonth) || l.end_date?.startsWith(yearMonth) || l.created_at?.startsWith(yearMonth));
 
   const pending = displayed.filter((l: any) => l.status === 'Pending');
   const history = monthFiltered.filter((l: any) => l.status !== 'Pending');
 
-  const handleApprove = (id: string) => {
-    storage.update(KEYS.LEAVE, id, { status: 'Approved', reviewedBy: session?.userName, reviewedAt: new Date().toISOString() });
-    auditLog('leave_approved', 'leave', id, {});
+  const handleApprove = async (id: string) => {
+    await supabase.from('leave_requests').update({ status: 'Approved' as any, reviewed_by: profile?.name || '', reviewed_at: new Date().toISOString() }).eq('id', id);
+    await auditLog('leave_approved', 'leave', id, {});
     load();
   };
-  const handleReject = (id: string) => {
-    storage.update(KEYS.LEAVE, id, { status: 'Rejected', reviewedBy: session?.userName, reviewedAt: new Date().toISOString() });
-    auditLog('leave_rejected', 'leave', id, {});
+  const handleReject = async (id: string) => {
+    await supabase.from('leave_requests').update({ status: 'Rejected' as any, reviewed_by: profile?.name || '', reviewed_at: new Date().toISOString() }).eq('id', id);
+    await auditLog('leave_rejected', 'leave', id, {});
     load();
   };
 
@@ -50,18 +61,19 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
     reader.readAsDataURL(file);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user || !profile) return;
     if (form.leaveType === 'Sick' && !form.document) {
       if (!confirm('Sick leave requires a medical certificate. Submit without document?')) return;
     }
     const days = calculateWorkingDays(form.startDate, form.endDate);
-    storage.push(KEYS.LEAVE, {
-      id: generateId('LVE'), employeeId: session?.userId, employeeName: session?.userName,
-      startDate: form.startDate, endDate: form.endDate, days, reason: form.reason,
-      leaveType: form.leaveType, document: form.document,
-      status: 'Pending', reviewedBy: '', reviewedAt: '', createdAt: new Date().toISOString(),
-    });
+    const displayId = await generateDisplayId('LVE');
+    await supabase.from('leave_requests').insert([{
+      display_id: displayId, employee_id: user.id, employee_name: profile.name,
+      start_date: form.startDate, end_date: form.endDate, days, reason: form.reason,
+      leave_type: form.leaveType, document: form.document as any,
+    }]);
     setShowForm(false);
     setForm({ startDate: '', endDate: '', reason: '', leaveType: 'Annual', document: null });
     load();
@@ -73,8 +85,8 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
 
   const exportCSV = () => {
     const rows = monthFiltered.map(l => ({
-      Employee: l.employeeName, Type: l.leaveType, Start: formatDate(l.startDate), End: formatDate(l.endDate),
-      Days: l.days, Reason: l.reason, Status: l.status, ReviewedBy: l.reviewedBy || '',
+      Employee: l.employee_name, Type: l.leave_type, Start: formatDate(l.start_date), End: formatDate(l.end_date),
+      Days: l.days, Reason: l.reason, Status: l.status, ReviewedBy: l.reviewed_by || '',
     }));
     if (rows.length === 0) return;
     const headers = Object.keys(rows[0]);
@@ -88,14 +100,13 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
 
   return (
     <div className="space-y-4 animate-fade-in">
-      {/* Controls */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           <input type="month" value={yearMonth} onChange={e => setYearMonth(e.target.value)} className="input-nawi w-auto" />
           {!isEmployee && (
             <select value={employeeFilter} onChange={e => setEmployeeFilter(e.target.value)} className="input-nawi w-auto text-sm">
               <option value="all">All Employees</option>
-              {employees.map((e: any) => <option key={e.id} value={e.id}>{e.name}</option>)}
+              {employees.map((e: any) => <option key={e.user_id} value={e.user_id}>{e.name}</option>)}
             </select>
           )}
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="input-nawi w-auto text-sm">
@@ -108,7 +119,6 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
         </div>
       </div>
 
-      {/* Pending Requests (Admin) */}
       {!isEmployee && pending.length > 0 && (
         <div className="card-nawi border-warning/30">
           <h3 className="font-semibold font-display mb-3 text-warning">Pending Requests ({pending.length})</h3>
@@ -116,8 +126,8 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
             {pending.map((l: any) => (
               <div key={l.id} className="flex items-center justify-between p-3 border border-border rounded-lg">
                 <div>
-                  <p className="font-medium text-foreground">{l.employeeName}</p>
-                  <p className="text-sm text-muted-foreground">{l.leaveType} • {formatDate(l.startDate)} — {formatDate(l.endDate)} ({l.days} days)</p>
+                  <p className="font-medium text-foreground">{l.employee_name}</p>
+                  <p className="text-sm text-muted-foreground">{l.leave_type} • {formatDate(l.start_date)} — {formatDate(l.end_date)} ({l.days} days)</p>
                   <p className="text-sm text-muted-foreground">{l.reason}</p>
                   {l.document && <span className="inline-flex items-center gap-1 text-xs text-secondary mt-1"><FileText className="w-3 h-3" /> {l.document.name}</span>}
                 </div>
@@ -131,7 +141,6 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
         </div>
       )}
 
-      {/* Leave Calendar (Admin) */}
       {!isEmployee && (
         <div className="card-nawi">
           <h3 className="text-base font-semibold font-display mb-3 flex items-center gap-2"><Calendar className="w-4 h-4 text-primary" /> Leave Calendar — {yearMonth}</h3>
@@ -144,14 +153,14 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
             {Array(firstDayOfWeek).fill(null).map((_, i) => <div key={`e-${i}`} />)}
             {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
               const dateStr = `${yearMonth}-${String(day).padStart(2, '0')}`;
-              const dayLeaves = leave.filter((l: any) => l.status === 'Approved' && l.startDate <= dateStr && l.endDate >= dateStr);
+              const dayLeaves = leave.filter((l: any) => l.status === 'Approved' && l.start_date <= dateStr && l.end_date >= dateStr);
               const dow = new Date(y, mo - 1, day).getDay();
               const isWE = dow === 5 || dow === 6;
               return (
                 <div key={day} className={`p-1 rounded text-xs min-h-[40px] border ${isWE ? 'bg-muted/30 border-transparent' : dayLeaves.length > 0 ? 'border-secondary/30 bg-secondary/5' : 'border-border'}`}>
                   <span className="font-medium">{day}</span>
                   {dayLeaves.slice(0, 2).map((l: any, i: number) => (
-                    <p key={i} className="text-[9px] text-secondary truncate">{l.employeeName?.split(' ')[0]}</p>
+                    <p key={i} className="text-[9px] text-secondary truncate">{l.employee_name?.split(' ')[0]}</p>
                   ))}
                   {dayLeaves.length > 2 && <p className="text-[9px] text-muted-foreground">+{dayLeaves.length - 2}</p>}
                 </div>
@@ -161,19 +170,18 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
         </div>
       )}
 
-      {/* History Table */}
       <div className="card-nawi p-0 overflow-x-auto">
         <table className="table-nawi w-full">
           <thead><tr><th>Employee</th><th>Type</th><th>Start</th><th>End</th><th>Days</th><th>Reason</th><th>Doc</th><th>Status</th><th>Reviewed By</th></tr></thead>
           <tbody>
             {(isEmployee ? leave : [...pending, ...history]).map((l: any) => (
               <tr key={l.id}>
-                <td>{l.employeeName}</td>
-                <td><span className="badge-new text-xs">{l.leaveType || 'Annual'}</span></td>
-                <td>{formatDate(l.startDate)}</td><td>{formatDate(l.endDate)}</td><td>{l.days}</td>
+                <td>{l.employee_name}</td>
+                <td><span className="badge-new text-xs">{l.leave_type || 'Annual'}</span></td>
+                <td>{formatDate(l.start_date)}</td><td>{formatDate(l.end_date)}</td><td>{l.days}</td>
                 <td className="max-w-[150px] truncate">{l.reason}</td>
                 <td>{l.document ? <FileText className="w-4 h-4 text-secondary" /> : '—'}</td>
-                <td><StatusBadge status={l.status} /></td><td>{l.reviewedBy || '—'}</td>
+                <td><StatusBadge status={l.status} /></td><td>{l.reviewed_by || '—'}</td>
               </tr>
             ))}
             {(isEmployee ? leave : [...pending, ...history]).length === 0 && <tr><td colSpan={9} className="text-center text-muted-foreground py-8">No leave records</td></tr>}
@@ -181,7 +189,6 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
         </table>
       </div>
 
-      {/* Apply Form */}
       {showForm && (
         <div className="fixed inset-0 bg-foreground/50 z-50 flex items-center justify-center p-4" onClick={() => setShowForm(false)}>
           <div className="bg-card rounded-xl shadow-elevated w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
