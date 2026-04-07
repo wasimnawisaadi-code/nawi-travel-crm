@@ -1,25 +1,38 @@
 import { useState, useEffect } from 'react';
 import { Save, Target } from 'lucide-react';
-import { storage, KEYS, generateId } from '@/lib/storage';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/lib/auth-context';
+import { generateDisplayId } from '@/lib/supabase-service';
 
 const SERVICES = ['Air Ticket', 'UAE Visa', 'Global Visa', 'Holiday Package', 'Travel Insurance', 'Pilgrimage', 'Meet & Assist', 'Hotel Booking'];
 
 export default function GoalsManagement() {
+  const { user } = useAuth();
   const now = new Date();
   const [yearMonth, setYearMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
   const [goals, setGoals] = useState<any[]>([]);
 
-  const load = () => setGoals(storage.getAll(KEYS.GOALS).filter((g: any) => g.yearMonth === yearMonth));
-  useEffect(load, [yearMonth]);
+  const load = async () => {
+    const { data } = await supabase
+      .from('goals')
+      .select('*')
+      .eq('year_month', yearMonth);
+    setGoals(data || []);
+  };
+  useEffect(() => { load(); }, [yearMonth]);
 
-  const getGoal = (service: string) => goals.find((g: any) => g.service === service);
+  const getGoal = (service: string) => goals.find(g => g.service === service);
 
-  const updateTarget = (service: string, target: number) => {
+  const updateTarget = async (service: string, target: number) => {
     const existing = getGoal(service);
     if (existing) {
-      storage.update(KEYS.GOALS, existing.id, { target });
+      await supabase.from('goals').update({ target }).eq('id', existing.id);
     } else {
-      storage.push(KEYS.GOALS, { id: generateId('GOAL'), yearMonth, service, target, achieved: 0, createdBy: 'ADM-001' });
+      const displayId = await generateDisplayId('GOAL');
+      await supabase.from('goals').insert({
+        display_id: displayId, year_month: yearMonth, service, target, achieved: 0,
+        created_by: user?.id || null,
+      });
     }
     load();
   };

@@ -1,46 +1,56 @@
 import { useState, useEffect } from 'react';
 import { Users, TrendingUp, CheckSquare, Target, Clock } from 'lucide-react';
-import { storage, KEYS, formatCurrency, formatDate, daysUntil, getCurrentUser } from '@/lib/storage';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/lib/auth-context';
+import { formatCurrency, formatDate, daysUntil } from '@/lib/supabase-service';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { Link } from 'react-router-dom';
 
 export default function EmployeeDashboard() {
-  const session = getCurrentUser();
+  const { user } = useAuth();
   const [data, setData] = useState<any>(null);
 
   useEffect(() => {
-    if (!session) return;
-    const clients = storage.getAll(KEYS.CLIENTS).filter((c: any) => c.assignedTo === session.userId || c.createdBy === session.userId);
-    const tasks = storage.getAll(KEYS.TASKS).filter((t: any) => t.assignedTo === session.userId);
-    const now = new Date();
-    const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const today = now.toISOString().split('T')[0];
+    if (!user) return;
+    const fetchData = async () => {
+      const now = new Date();
+      const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const today = now.toISOString().split('T')[0];
 
-    const revenue = clients.filter((c: any) => c.createdAt?.startsWith(thisMonth)).reduce((s: number, c: any) => s + (c.revenue || 0), 0);
-    const todayTasks = tasks.filter((t: any) => t.dueDate === today && t.status !== 'Completed' && t.status !== 'Failed');
-    const upcomingTasks = tasks.filter((t: any) => t.dueDate > today && t.status !== 'Completed').sort((a: any, b: any) => a.dueDate.localeCompare(b.dueDate)).slice(0, 5);
-    const completedTasks = tasks.filter((t: any) => t.status === 'Completed').length;
+      const [clientsRes, tasksRes, attendanceRes] = await Promise.all([
+        supabase.from('clients').select('*').or(`assigned_to.eq.${user.id},created_by.eq.${user.id}`),
+        supabase.from('tasks').select('*').or(`assigned_to.eq.${user.id},created_by.eq.${user.id}`),
+        supabase.from('attendance').select('*').eq('employee_id', user.id).eq('date', today).maybeSingle(),
+      ]);
 
-    const upcomingDates: any[] = [];
-    clients.forEach((c: any) => {
-      Object.entries(c.importantDates || {}).forEach(([type, val]) => {
-        if (!val) return;
-        const days = daysUntil(val as string);
-        if (days >= 0 && days <= 14) upcomingDates.push({ clientName: c.name, clientId: c.id, type, date: val, days });
+      const clients = clientsRes.data || [];
+      const tasks = tasksRes.data || [];
+
+      const revenue = clients.filter(c => c.created_at?.startsWith(thisMonth)).reduce((s, c) => s + (c.revenue || 0), 0);
+      const todayTasks = tasks.filter(t => t.due_date === today && t.status !== 'Completed');
+      const upcomingTasks = tasks.filter(t => t.due_date && t.due_date > today && t.status !== 'Completed').sort((a, b) => (a.due_date || '').localeCompare(b.due_date || '')).slice(0, 5);
+      const completedTasks = tasks.filter(t => t.status === 'Completed').length;
+
+      const upcomingDates: any[] = [];
+      clients.forEach(c => {
+        const dates = (c.important_dates as Record<string, string>) || {};
+        Object.entries(dates).forEach(([type, val]) => {
+          if (!val) return;
+          const days = daysUntil(val);
+          if (days >= 0 && days <= 14) upcomingDates.push({ clientName: c.name, clientId: c.id, type, date: val, days });
+        });
       });
-    });
-    upcomingDates.sort((a, b) => a.days - b.days);
+      upcomingDates.sort((a, b) => a.days - b.days);
 
-    // Attendance
-    const attendance = storage.getAll(KEYS.ATTENDANCE).find((a: any) => a.employeeId === session.userId && a.date === today);
-
-    setData({
-      totalClients: clients.length, revenue, todayTasks, upcomingTasks, completedTasks,
-      upcomingDates: upcomingDates.slice(0, 8),
-      recentClients: clients.sort((a: any, b: any) => (b.createdAt || '').localeCompare(a.createdAt || '')).slice(0, 5),
-      attendance,
-    });
-  }, [session]);
+      setData({
+        totalClients: clients.length, revenue, todayTasks, upcomingTasks, completedTasks,
+        upcomingDates: upcomingDates.slice(0, 8),
+        recentClients: clients.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')).slice(0, 5),
+        attendance: attendanceRes.data,
+      });
+    };
+    fetchData();
+  }, [user]);
 
   if (!data) return <div className="skeleton-nawi h-96 w-full" />;
 
@@ -53,7 +63,6 @@ export default function EmployeeDashboard() {
         <div className="stat-card"><div className="stat-card-icon bg-primary"><Target className="w-6 h-6 text-primary-foreground" /></div><div><p className="text-xs text-muted-foreground">Tasks Completed</p><p className="text-xl font-bold font-display">{data.completedTasks}</p></div></div>
       </div>
 
-      {/* Attendance Status */}
       {data.attendance && (
         <div className="card-nawi flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -61,8 +70,8 @@ export default function EmployeeDashboard() {
             <div>
               <p className="text-sm font-medium">Today's Attendance</p>
               <p className="text-xs text-muted-foreground">
-                Login: {new Date(data.attendance.loginTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                {data.attendance.logoutTime ? ` • Logout: ${new Date(data.attendance.logoutTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}` : ' • Active'}
+                Login: {data.attendance.login_time ? new Date(data.attendance.login_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                {data.attendance.logout_time ? ` • Logout: ${new Date(data.attendance.logout_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}` : ' • Active'}
               </p>
             </div>
           </div>
@@ -75,7 +84,7 @@ export default function EmployeeDashboard() {
           <h3 className="font-semibold font-display mb-3">Today's Tasks</h3>
           {data.todayTasks.length === 0 ? <p className="text-sm text-muted-foreground text-center py-6">No tasks due today 🎉</p> : data.todayTasks.map((t: any) => (
             <div key={t.id} className="flex items-center justify-between p-2.5 rounded-lg hover:bg-muted mb-2">
-              <div><p className="text-sm font-medium">{t.title}</p><p className="text-xs text-muted-foreground">{t.clientName}</p></div>
+              <div><p className="text-sm font-medium">{t.title}</p><p className="text-xs text-muted-foreground">{t.client_name}</p></div>
               <StatusBadge status={t.status} />
             </div>
           ))}
@@ -91,7 +100,6 @@ export default function EmployeeDashboard() {
         </div>
       </div>
 
-      {/* Recent Clients */}
       <div className="card-nawi">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-semibold font-display">Recent Clients</h3>
@@ -102,7 +110,7 @@ export default function EmployeeDashboard() {
             {data.recentClients.map((c: any) => (
               <Link key={c.id} to={`/employee/clients/${c.id}`} className="p-3 border border-border rounded-lg hover:bg-muted transition-colors">
                 <div className="flex items-center justify-between mb-1"><p className="text-sm font-medium truncate">{c.name}</p><StatusBadge status={c.status} /></div>
-                <p className="text-xs text-muted-foreground">{c.service} • {formatDate(c.createdAt)}</p>
+                <p className="text-xs text-muted-foreground">{c.service} • {formatDate(c.created_at)}</p>
               </Link>
             ))}
           </div>
