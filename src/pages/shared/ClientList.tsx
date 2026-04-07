@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Search, Eye, LayoutGrid, LayoutList, Briefcase, Filter, Download, MessageCircle } from 'lucide-react';
-import { storage, KEYS, formatCurrency, formatDate, getCurrentUser, isAdmin } from '@/lib/storage';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/lib/auth-context';
+import { formatCurrency, formatDate } from '@/lib/supabase-service';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
 
 export default function ClientList({ adminView = false }: { adminView?: boolean }) {
   const navigate = useNavigate();
-  const session = getCurrentUser();
+  const { user, isAdmin } = useAuth();
   const [clients, setClients] = useState<any[]>([]);
+  const [profiles, setProfiles] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [serviceFilter, setServiceFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -19,37 +22,39 @@ export default function ClientList({ adminView = false }: { adminView?: boolean 
   const [viewMode, setViewMode] = useState<'table' | 'card'>('table');
 
   useEffect(() => {
-    let all = storage.getAll(KEYS.CLIENTS);
-    if (!adminView && session) {
-      all = all.filter((c: any) => c.assignedTo === session.userId || c.createdBy === session.userId);
-    }
-    setClients(all);
-  }, [adminView, session]);
+    const fetchData = async () => {
+      const { data } = await supabase.from('clients').select('*').order('created_at', { ascending: false });
+      setClients(data || []);
+      const { data: profs } = await supabase.from('profiles').select('user_id, name');
+      setProfiles(profs || []);
+    };
+    fetchData();
+  }, []);
 
-  const services = [...new Set(clients.map((c: any) => c.service).filter(Boolean))];
-  const nationalities = [...new Set(clients.map((c: any) => c.nationality || c.serviceDetails?.nationality).filter(Boolean))];
-  const months = [...new Set(clients.map((c: any) => c.createdAt?.substring(0, 7)).filter(Boolean))].sort().reverse();
-  const employees = storage.getAll(KEYS.EMPLOYEES);
-  const leadSources = [...new Set(clients.map((c: any) => c.leadSource).filter(Boolean))];
+  const services = [...new Set(clients.map(c => c.service).filter(Boolean))];
+  const nationalities = [...new Set(clients.map(c => c.nationality || (c.service_details as any)?.nationality).filter(Boolean))];
+  const months = [...new Set(clients.map(c => c.created_at?.substring(0, 7)).filter(Boolean))].sort().reverse();
+  const leadSources = [...new Set(clients.map(c => c.lead_source).filter(Boolean))];
 
-  const filtered = clients.filter((c: any) => {
+  const filtered = clients.filter(c => {
     if (serviceFilter !== 'all' && c.service !== serviceFilter) return false;
     if (statusFilter !== 'all' && c.status !== statusFilter) return false;
-    if (leadFilter !== 'all' && c.leadSource !== leadFilter) return false;
-    if (nationalityFilter !== 'all' && (c.nationality || c.serviceDetails?.nationality) !== nationalityFilter) return false;
-    if (monthFilter !== 'all' && !c.createdAt?.startsWith(monthFilter)) return false;
-    if (employeeFilter !== 'all' && c.assignedTo !== employeeFilter) return false;
+    if (leadFilter !== 'all' && c.lead_source !== leadFilter) return false;
+    if (nationalityFilter !== 'all' && (c.nationality || (c.service_details as any)?.nationality) !== nationalityFilter) return false;
+    if (monthFilter !== 'all' && !c.created_at?.startsWith(monthFilter)) return false;
+    if (employeeFilter !== 'all' && c.assigned_to !== employeeFilter) return false;
     if (search) {
       const q = search.toLowerCase();
-      return c.name?.toLowerCase().includes(q) || c.id?.toLowerCase().includes(q) || c.mobile?.includes(q) || c.passportNo?.toLowerCase().includes(q);
+      return c.name?.toLowerCase().includes(q) || c.display_id?.toLowerCase().includes(q) || c.mobile?.includes(q) || c.passport_no?.toLowerCase().includes(q);
     }
     return true;
   });
 
-  const basePath = adminView ? '/admin' : '/employee';
+  const basePath = isAdmin ? '/admin' : '/employee';
+  const getEmpName = (userId: string) => profiles.find(p => p.user_id === userId)?.name || '—';
 
   const exportCSV = () => {
-    const rows = filtered.map(c => ({ ID: c.id, Name: c.name, Mobile: c.mobile, Service: c.service, Status: c.status, LeadSource: c.leadSource, Revenue: c.revenue || 0, Profit: c.profit || 0, Created: formatDate(c.createdAt) }));
+    const rows = filtered.map(c => ({ ID: c.display_id, Name: c.name, Mobile: c.mobile, Service: c.service, Status: c.status, LeadSource: c.lead_source, Revenue: c.revenue || 0, Profit: c.profit || 0, Created: formatDate(c.created_at) }));
     if (rows.length === 0) return;
     const headers = Object.keys(rows[0]);
     const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${(r as any)[h] || ''}"`).join(','))].join('\n');
@@ -70,7 +75,7 @@ export default function ClientList({ adminView = false }: { adminView?: boolean 
           </div>
           <select value={serviceFilter} onChange={(e) => setServiceFilter(e.target.value)} className="input-nawi w-auto text-sm">
             <option value="all">All Services</option>
-            {services.map((s: any) => <option key={s} value={s}>{s}</option>)}
+            {services.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input-nawi w-auto text-sm">
             <option value="all">All Status</option>
@@ -91,12 +96,11 @@ export default function ClientList({ adminView = false }: { adminView?: boolean 
         </div>
       </div>
 
-      {/* Additional filters row */}
       <div className="flex flex-wrap gap-2">
         {adminView && (
           <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)} className="input-nawi w-auto text-sm">
             <option value="all">All Employees</option>
-            {employees.map((e: any) => <option key={e.id} value={e.id}>{e.name}</option>)}
+            {profiles.map(e => <option key={e.user_id} value={e.user_id}>{e.name}</option>)}
           </select>
         )}
         <select value={leadFilter} onChange={(e) => setLeadFilter(e.target.value)} className="input-nawi w-auto text-sm">
@@ -119,43 +123,40 @@ export default function ClientList({ adminView = false }: { adminView?: boolean 
           <table className="table-nawi w-full">
             <thead><tr><th>ID</th><th>Name</th><th>Mobile</th><th>Service</th><th>Status</th><th>Source</th><th>Assigned</th><th>Created</th><th>Revenue</th><th></th></tr></thead>
             <tbody>
-              {filtered.map((c: any) => {
-                const emp = employees.find((e: any) => e.id === c.assignedTo);
-                return (
-                  <tr key={c.id} className="cursor-pointer" onClick={() => navigate(`${basePath}/clients/${c.id}`)}>
-                    <td className="font-mono text-xs">{c.id}</td>
-                    <td className="font-medium">{c.name}</td>
-                    <td>{c.mobile}</td>
-                    <td><span className="text-xs">{c.service || '—'}</span></td>
-                    <td><StatusBadge status={c.status} /></td>
-                    <td className="text-xs">{c.leadSource || '—'}</td>
-                    <td className="text-xs">{emp?.name || '—'}</td>
-                    <td className="text-xs">{formatDate(c.createdAt)}</td>
-                    <td className="text-xs">{formatCurrency(c.revenue || 0)}</td>
-                    <td className="flex gap-1">
-                      <Eye className="w-4 h-4 text-muted-foreground" />
-                      {(c.status === 'New' || c.status === 'Processing') && c.mobile && (
-                        <button onClick={(e) => { e.stopPropagation(); window.open(`https://wa.me/${c.mobile.replace(/[^0-9]/g, '')}?text=Dear ${c.name},%0AThis is a follow-up regarding your ${c.service || 'service'} enquiry with Nawi Saadi Travel %26 Tourism.%0APlease let us know if you need any updates.%0ARegards`, '_blank'); }} className="text-success hover:text-success/80" title="WhatsApp Follow-up">
-                          <MessageCircle className="w-4 h-4" />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
+              {filtered.map(c => (
+                <tr key={c.id} className="cursor-pointer" onClick={() => navigate(`${basePath}/clients/${c.id}`)}>
+                  <td className="font-mono text-xs">{c.display_id}</td>
+                  <td className="font-medium">{c.name}</td>
+                  <td>{c.mobile}</td>
+                  <td><span className="text-xs">{c.service || '—'}</span></td>
+                  <td><StatusBadge status={c.status} /></td>
+                  <td className="text-xs">{c.lead_source || '—'}</td>
+                  <td className="text-xs">{getEmpName(c.assigned_to)}</td>
+                  <td className="text-xs">{formatDate(c.created_at)}</td>
+                  <td className="text-xs">{formatCurrency(c.revenue || 0)}</td>
+                  <td className="flex gap-1">
+                    <Eye className="w-4 h-4 text-muted-foreground" />
+                    {(c.status === 'New' || c.status === 'Processing') && c.mobile && (
+                      <button onClick={(e) => { e.stopPropagation(); window.open(`https://wa.me/${c.mobile.replace(/[^0-9]/g, '')}?text=Dear ${c.name},%0AThis is a follow-up regarding your ${c.service || 'service'} enquiry with Nawi Saadi Travel %26 Tourism.%0APlease let us know if you need any updates.%0ARegards`, '_blank'); }} className="text-success hover:text-success/80" title="WhatsApp Follow-up">
+                        <MessageCircle className="w-4 h-4" />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((c: any) => (
+          {filtered.map(c => (
             <Link key={c.id} to={`${basePath}/clients/${c.id}`} className="card-nawi-hover">
               <div className="flex items-start justify-between mb-2">
-                <div><p className="font-medium">{c.name}</p><p className="font-mono text-xs text-muted-foreground">{c.id}</p></div>
+                <div><p className="font-medium">{c.name}</p><p className="font-mono text-xs text-muted-foreground">{c.display_id}</p></div>
                 <StatusBadge status={c.status} />
               </div>
               <div className="space-y-1 text-sm text-muted-foreground">
-                <p>{c.service || 'No service'} • {c.leadSource}</p>
+                <p>{c.service || 'No service'} • {c.lead_source}</p>
                 <p>{c.mobile}</p>
                 <p className="font-medium text-foreground">{formatCurrency(c.revenue || 0)}</p>
               </div>
