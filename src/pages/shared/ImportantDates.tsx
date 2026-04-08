@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Calendar, AlertTriangle, Bell, Download, Search, MessageCircle, Filter } from 'lucide-react';
-import { storage, KEYS, formatDate, daysUntil, getDateStatus, getCurrentUser, isAdmin } from '@/lib/storage';
+import { formatDate, daysUntil, getDateStatus } from '@/lib/supabase-service';
+import { useAuth } from '@/lib/auth-context';
+import { supabase } from '@/integrations/supabase/client';
 
 const DATE_TYPES = ['All', 'dob', 'passportExpiry', 'visaExpiry', 'travelDate', 'weddingAnniversary', 'emiratesIdExpiry', 'medicalExpiry', 'contractEndDate'];
 const DATE_LABELS: Record<string, string> = {
@@ -27,25 +29,43 @@ const REMINDER_MESSAGES: Record<string, (name: string, days: number, date: strin
   contractEndDate: (name, days, date) => `Dear ${name}, your contract ends ${days === 0 ? 'today' : `in ${days} days`} (${date}). Please contact us for next steps. — Nawi Saadi Travel`,
 };
 
+function getDobDays(dob: string): number {
+  const today = new Date();
+  const birth = new Date(dob);
+  const nextBirthday = new Date(today.getFullYear(), birth.getMonth(), birth.getDate());
+  if (nextBirthday < today) nextBirthday.setFullYear(today.getFullYear() + 1);
+  today.setHours(0, 0, 0, 0);
+  nextBirthday.setHours(0, 0, 0, 0);
+  return Math.ceil((nextBirthday.getTime() - today.getTime()) / 86400000);
+}
+
 export default function ImportantDates() {
-  const session = getCurrentUser();
-  const admin = isAdmin();
+  const { user, isAdmin } = useAuth();
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [timeFilter, setTimeFilter] = useState('all');
   const [nationalityFilter, setNationalityFilter] = useState('all');
   const [showMessage, setShowMessage] = useState<any>(null);
-  const basePath = admin ? '/admin' : '/employee';
+  const [clients, setClients] = useState<any[]>([]);
+  const basePath = isAdmin ? '/admin' : '/employee';
 
-  let clients = storage.getAll(KEYS.CLIENTS);
-  if (!admin && session) clients = clients.filter((c: any) => c.assignedTo === session.userId || c.createdBy === session.userId);
+  useEffect(() => {
+    const load = async () => {
+      let query = supabase.from('clients').select('*');
+      if (!isAdmin && user) {
+        query = query.or(`assigned_to.eq.${user.id},created_by.eq.${user.id}`);
+      }
+      const { data } = await query;
+      setClients(data || []);
+    };
+    load();
+  }, [isAdmin, user]);
 
   const nationalities = [...new Set(clients.map((c: any) => c.nationality).filter(Boolean))];
 
-  // Collect all dates including family member dates
   const allDates: any[] = [];
   clients.forEach((c: any) => {
-    Object.entries(c.importantDates || {}).forEach(([type, val]) => {
+    Object.entries((c.important_dates as Record<string, string>) || {}).forEach(([type, val]) => {
       if (!val || type === 'passportNo') return;
       if (!DATE_LABELS[type]) return;
       const days = type === 'dob' ? getDobDays(val as string) : daysUntil(val as string);
@@ -55,8 +75,7 @@ export default function ImportantDates() {
         type, date: val, days, status, service: c.service, nationality: c.nationality, isFamilyMember: false,
       });
     });
-    // Family member dates
-    (c.familyMembers || []).forEach((fm: any) => {
+    ((c.family_members as any[]) || []).forEach((fm: any) => {
       if (fm.passportExpiry) {
         const days = daysUntil(fm.passportExpiry);
         allDates.push({
@@ -76,7 +95,6 @@ export default function ImportantDates() {
     });
   });
 
-  // Filter
   let filtered = allDates;
   if (filter !== 'All') filtered = filtered.filter(d => d.type === filter);
   if (search) filtered = filtered.filter(d => d.clientName.toLowerCase().includes(search.toLowerCase()));
@@ -161,8 +179,6 @@ export default function ImportantDates() {
         <h2 className="text-xl font-bold font-display flex items-center gap-2"><Calendar className="w-5 h-5 text-primary" /> Important Dates</h2>
         <button onClick={exportCSV} className="btn-outline"><Download className="w-4 h-4" /> Export</button>
       </div>
-
-      {/* Filters */}
       <div className="flex flex-wrap gap-2">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -181,28 +197,22 @@ export default function ImportantDates() {
           </select>
         )}
       </div>
-
-      {/* Summary */}
       <div className="flex flex-wrap gap-3">
         {overdue.length > 0 && <div className="flex items-center gap-2 px-3 py-1.5 bg-destructive/10 text-destructive rounded-full text-sm font-medium"><AlertTriangle className="w-4 h-4" />{overdue.length} Overdue</div>}
         {urgent.length > 0 && <div className="flex items-center gap-2 px-3 py-1.5 bg-destructive/10 text-destructive rounded-full text-sm font-medium"><Bell className="w-4 h-4" />{urgent.length} Urgent (0-2d)</div>}
         {warning.length > 0 && <div className="flex items-center gap-2 px-3 py-1.5 bg-warning/10 text-warning rounded-full text-sm font-medium">{warning.length} Warning (3-30d)</div>}
         <div className="flex items-center gap-2 px-3 py-1.5 bg-muted text-muted-foreground rounded-full text-sm">{filtered.length} total</div>
       </div>
-
       <Section title="Overdue" items={overdue} emoji="⚠️" />
       <Section title="Urgent (0-2 days)" items={urgent} emoji="🔴" />
       <Section title="Coming Up (3-30 days)" items={warning} emoji="🟠" />
       <Section title="Safe (30+ days)" items={safe} emoji="🟢" />
-
       {filtered.length === 0 && (
         <div className="text-center py-16">
           <Calendar className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
           <p className="text-muted-foreground">No important dates found</p>
         </div>
       )}
-
-      {/* WhatsApp Message Modal */}
       {showMessage && (
         <div className="fixed inset-0 bg-foreground/50 z-50 flex items-center justify-center p-4" onClick={() => setShowMessage(null)}>
           <div className="bg-card rounded-xl shadow-elevated w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
@@ -219,17 +229,4 @@ export default function ImportantDates() {
       )}
     </div>
   );
-}
-
-// Calculate days until next birthday (not calendar days)
-function getDobDays(dob: string): number {
-  const today = new Date();
-  const birth = new Date(dob);
-  const nextBirthday = new Date(today.getFullYear(), birth.getMonth(), birth.getDate());
-  if (nextBirthday < today) {
-    nextBirthday.setFullYear(today.getFullYear() + 1);
-  }
-  today.setHours(0, 0, 0, 0);
-  nextBirthday.setHours(0, 0, 0, 0);
-  return Math.ceil((nextBirthday.getTime() - today.getTime()) / 86400000);
 }

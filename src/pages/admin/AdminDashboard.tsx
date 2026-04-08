@@ -1,144 +1,142 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Users, TrendingUp, CheckSquare, UserCheck, AlertTriangle, ArrowUpRight, ArrowDownRight, DollarSign, Briefcase, Download, Calendar, Clock, Target } from 'lucide-react';
-import { storage, KEYS, formatCurrency, formatDate, daysUntil, getCurrentUser } from '@/lib/storage';
+import { formatCurrency, formatDate, daysUntil } from '@/lib/supabase-service';
+import { useAuth } from '@/lib/auth-context';
+import { supabase } from '@/integrations/supabase/client';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area, Legend, LineChart, Line } from 'recharts';
 
 const COLORS = ['#052F59', '#1A5B96', '#0A7040', '#C45000', '#C0392B', '#64748B', '#7C3AED', '#0891B2'];
 
 export default function AdminDashboard() {
+  const { user } = useAuth();
   const [data, setData] = useState<any>(null);
   const [tab, setTab] = useState('dashboard');
   const [reportMonth, setReportMonth] = useState(() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`; });
   const [viewType, setViewType] = useState<'monthly' | 'weekly' | 'annual'>('monthly');
 
   useEffect(() => {
-    const clients = storage.getAll(KEYS.CLIENTS);
-    const tasks = storage.getAll(KEYS.TASKS);
-    const employees = storage.getAll(KEYS.EMPLOYEES);
-    const attendance = storage.getAll(KEYS.ATTENDANCE);
-    const quotations = storage.getAll(KEYS.QUOTATIONS);
-    const auditLog = storage.getAll(KEYS.AUDIT_LOG);
-    const leave = storage.getAll(KEYS.LEAVE);
+    const load = async () => {
+      const [clientsRes, tasksRes, profilesRes, attendanceRes, quotationsRes, auditRes, leaveRes] = await Promise.all([
+        supabase.from('clients').select('*'),
+        supabase.from('tasks').select('*'),
+        supabase.from('profiles').select('*'),
+        supabase.from('attendance').select('*'),
+        supabase.from('quotations').select('*'),
+        supabase.from('audit_log').select('*').order('created_at', { ascending: false }).limit(15),
+        supabase.from('leave_requests').select('*'),
+      ]);
 
-    const now = new Date();
-    const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const lastMonth = `${now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()}-${String(now.getMonth() === 0 ? 12 : now.getMonth()).padStart(2, '0')}`;
-    const today = now.toISOString().split('T')[0];
+      const clients = clientsRes.data || [];
+      const tasks = tasksRes.data || [];
+      const employees = profilesRes.data || [];
+      const attendance = attendanceRes.data || [];
+      const quotations = quotationsRes.data || [];
+      const auditLog = auditRes.data || [];
+      const leave = leaveRes.data || [];
 
-    const revenueThisMonth = clients.filter((c: any) => c.createdAt?.startsWith(thisMonth)).reduce((s: number, c: any) => s + (c.revenue || 0), 0);
-    const revenueLastMonth = clients.filter((c: any) => c.createdAt?.startsWith(lastMonth)).reduce((s: number, c: any) => s + (c.revenue || 0), 0);
-    const profitThisMonth = clients.filter((c: any) => c.createdAt?.startsWith(thisMonth)).reduce((s: number, c: any) => s + (c.profit || 0), 0);
-    const totalRevenue = clients.reduce((s: number, c: any) => s + (c.revenue || 0), 0);
-    const totalProfit = clients.reduce((s: number, c: any) => s + (c.profit || 0), 0);
+      const now = new Date();
+      const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const lastMonth = `${now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()}-${String(now.getMonth() === 0 ? 12 : now.getMonth()).padStart(2, '0')}`;
+      const today = now.toISOString().split('T')[0];
 
-    const activeTasks = tasks.filter((t: any) => t.status === 'New' || t.status === 'Processing').length;
-    const overdueTasks = tasks.filter((t: any) => (t.status === 'New' || t.status === 'Processing') && t.dueDate && new Date(t.dueDate) < now).length;
-    const completedTasks = tasks.filter((t: any) => t.status === 'Completed' && t.completedDate?.startsWith(thisMonth)).length;
-    const employeesOnline = attendance.filter((a: any) => a.date === today && !a.logoutTime).length;
-    const totalActiveEmp = employees.filter((e: any) => e.status === 'active').length;
-    const pendingLeave = leave.filter((l: any) => l.status === 'Pending').length;
+      const revenueThisMonth = clients.filter((c: any) => c.created_at?.startsWith(thisMonth)).reduce((s: number, c: any) => s + (c.revenue || 0), 0);
+      const revenueLastMonth = clients.filter((c: any) => c.created_at?.startsWith(lastMonth)).reduce((s: number, c: any) => s + (c.revenue || 0), 0);
+      const profitThisMonth = clients.filter((c: any) => c.created_at?.startsWith(thisMonth)).reduce((s: number, c: any) => s + (c.profit || 0), 0);
+      const totalRevenue = clients.reduce((s: number, c: any) => s + (c.revenue || 0), 0);
+      const totalProfit = clients.reduce((s: number, c: any) => s + (c.profit || 0), 0);
 
-    const clientsThisMonth = clients.filter((c: any) => c.createdAt?.startsWith(thisMonth)).length;
-    const clientsLastMonth = clients.filter((c: any) => c.createdAt?.startsWith(lastMonth)).length;
+      const activeTasks = tasks.filter((t: any) => t.status === 'New' || t.status === 'Processing').length;
+      const overdueTasks = tasks.filter((t: any) => (t.status === 'New' || t.status === 'Processing') && t.due_date && new Date(t.due_date) < now).length;
+      const completedTasks = tasks.filter((t: any) => t.status === 'Completed' && t.completed_date?.startsWith(thisMonth)).length;
+      const employeesOnline = attendance.filter((a: any) => a.date === today && !a.logout_time).length;
+      const totalActiveEmp = employees.filter((e: any) => e.status === 'active').length;
+      const pendingLeave = leave.filter((l: any) => l.status === 'Pending').length;
 
-    // Service distribution
-    const serviceCounts: Record<string, number> = {};
-    const serviceRevenue: Record<string, number> = {};
-    clients.forEach((c: any) => {
-      if (c.service) {
-        serviceCounts[c.service] = (serviceCounts[c.service] || 0) + 1;
-        serviceRevenue[c.service] = (serviceRevenue[c.service] || 0) + (c.revenue || 0);
-      }
-    });
-    const serviceData = Object.entries(serviceCounts).map(([name, value]) => ({ name, value, revenue: serviceRevenue[name] || 0 }));
+      const clientsThisMonth = clients.filter((c: any) => c.created_at?.startsWith(thisMonth)).length;
+      const clientsLastMonth = clients.filter((c: any) => c.created_at?.startsWith(lastMonth)).length;
 
-    // Monthly revenue trend (12 months)
-    const revenueData: any[] = [];
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const label = d.toLocaleDateString('en-US', { month: 'short' });
-      const rev = clients.filter((c: any) => c.createdAt?.startsWith(key)).reduce((s: number, c: any) => s + (c.revenue || 0), 0);
-      const prof = clients.filter((c: any) => c.createdAt?.startsWith(key)).reduce((s: number, c: any) => s + (c.profit || 0), 0);
-      const clt = clients.filter((c: any) => c.createdAt?.startsWith(key)).length;
-      revenueData.push({ month: label, revenue: rev, profit: prof, clients: clt });
-    }
-
-    // Client status distribution
-    const statusCounts: Record<string, number> = { New: 0, Processing: 0, Success: 0, Failed: 0 };
-    clients.forEach((c: any) => { if (statusCounts[c.status] !== undefined) statusCounts[c.status]++; });
-
-    // Upcoming dates
-    const upcomingDates: any[] = [];
-    clients.forEach((c: any) => {
-      Object.entries(c.importantDates || {}).forEach(([type, val]) => {
-        if (!val) return;
-        const days = daysUntil(val as string);
-        if (days >= 0 && days <= 30) upcomingDates.push({ clientName: c.name, clientId: c.id, type, date: val, days, mobile: c.mobile });
+      const serviceCounts: Record<string, number> = {};
+      const serviceRevenue: Record<string, number> = {};
+      clients.forEach((c: any) => {
+        if (c.service) {
+          serviceCounts[c.service] = (serviceCounts[c.service] || 0) + 1;
+          serviceRevenue[c.service] = (serviceRevenue[c.service] || 0) + (c.revenue || 0);
+        }
       });
-    });
-    upcomingDates.sort((a, b) => a.days - b.days);
+      const serviceData = Object.entries(serviceCounts).map(([name, value]) => ({ name, value, revenue: serviceRevenue[name] || 0 }));
 
-    // Today attendance
-    const todayAttendance = attendance.filter((a: any) => a.date === today).map((a: any) => {
-      const emp = employees.find((e: any) => e.id === a.employeeId);
-      return { ...a, name: emp?.name || a.employeeId, photo: emp?.photo };
-    });
-
-    // Top employees by revenue
-    const topEmployees = employees.filter((e: any) => e.status === 'active').map((e: any) => ({
-      name: e.name, id: e.id, photo: e.photo,
-      clients: clients.filter((c: any) => c.assignedTo === e.id).length,
-      revenue: clients.filter((c: any) => c.assignedTo === e.id).reduce((s: number, c: any) => s + (c.revenue || 0), 0),
-      profit: clients.filter((c: any) => c.assignedTo === e.id).reduce((s: number, c: any) => s + (c.profit || 0), 0),
-      tasks: tasks.filter((t: any) => t.assignedTo === e.id && t.status === 'Completed').length,
-      successRate: (() => { const ec = clients.filter((c: any) => c.assignedTo === e.id); return ec.length > 0 ? Math.round((ec.filter((c: any) => c.status === 'Success').length / ec.length) * 100) : 0; })(),
-      presentDays: attendance.filter((a: any) => a.employeeId === e.id && a.date?.startsWith(reportMonth)).filter((a: any) => a.status === 'Present' || a.status === 'Late').length,
-    })).sort((a, b) => b.revenue - a.revenue);
-
-    // Lead sources
-    const leadCounts: Record<string, number> = {};
-    const leadRevenue: Record<string, number> = {};
-    clients.forEach((c: any) => {
-      if (c.leadSource) {
-        leadCounts[c.leadSource] = (leadCounts[c.leadSource] || 0) + 1;
-        leadRevenue[c.leadSource] = (leadRevenue[c.leadSource] || 0) + (c.revenue || 0);
+      const revenueData: any[] = [];
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const label = d.toLocaleDateString('en-US', { month: 'short' });
+        const rev = clients.filter((c: any) => c.created_at?.startsWith(key)).reduce((s: number, c: any) => s + (c.revenue || 0), 0);
+        const prof = clients.filter((c: any) => c.created_at?.startsWith(key)).reduce((s: number, c: any) => s + (c.profit || 0), 0);
+        const clt = clients.filter((c: any) => c.created_at?.startsWith(key)).length;
+        revenueData.push({ month: label, revenue: rev, profit: prof, clients: clt });
       }
-    });
-    const leadData = Object.entries(leadCounts).map(([name, value]) => ({ name, value, revenue: leadRevenue[name] || 0 }));
 
-    // Nationality distribution
-    const nationalityCounts: Record<string, number> = {};
-    clients.forEach((c: any) => {
-      const nat = c.nationality || c.serviceDetails?.nationality || 'Unknown';
-      if (nat) nationalityCounts[nat] = (nationalityCounts[nat] || 0) + 1;
-    });
-    const nationalityData = Object.entries(nationalityCounts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 10);
+      const statusCounts: Record<string, number> = { New: 0, Processing: 0, Success: 0, Failed: 0 };
+      clients.forEach((c: any) => { if (statusCounts[c.status] !== undefined) statusCounts[c.status]++; });
 
-    // Monthly client trend
-    const clientsByMonth: Record<string, { total: number; success: number }> = {};
-    clients.forEach((c: any) => {
-      const m = c.createdAt?.substring(0, 7);
-      if (!m) return;
-      if (!clientsByMonth[m]) clientsByMonth[m] = { total: 0, success: 0 };
-      clientsByMonth[m].total++;
-      if (c.status === 'Success') clientsByMonth[m].success++;
-    });
+      const upcomingDates: any[] = [];
+      clients.forEach((c: any) => {
+        Object.entries((c.important_dates as Record<string, string>) || {}).forEach(([type, val]) => {
+          if (!val || type === 'passportNo') return;
+          const days = daysUntil(val as string);
+          if (days >= 0 && days <= 30) upcomingDates.push({ clientName: c.name, clientId: c.id, type, date: val, days, mobile: c.mobile });
+        });
+      });
+      upcomingDates.sort((a, b) => a.days - b.days);
 
-    setData({
-      totalClients: clients.length, clientsThisMonth, clientsLastMonth,
-      revenueThisMonth, revenueLastMonth, profitThisMonth, totalRevenue, totalProfit,
-      activeTasks, overdueTasks, completedTasks, pendingLeave,
-      employeesOnline, totalActiveEmp,
-      serviceData, revenueData, statusCounts,
-      upcomingDates,
-      todayAttendance,
-      recentAudit: auditLog.slice(-15).reverse(),
-      topEmployees, leadData, nationalityData,
-      allClients: clients, allEmployees: employees, allTasks: tasks, allQuotations: quotations,
-    });
+      const todayAttendance = attendance.filter((a: any) => a.date === today).map((a: any) => {
+        const emp = employees.find((e: any) => e.user_id === a.employee_id);
+        return { ...a, name: emp?.name || 'Unknown', photo: emp?.photo_url };
+      });
+
+      const topEmployees = employees.filter((e: any) => e.status === 'active').map((e: any) => ({
+        name: e.name, id: e.user_id, photo: e.photo_url,
+        clients: clients.filter((c: any) => c.assigned_to === e.user_id).length,
+        revenue: clients.filter((c: any) => c.assigned_to === e.user_id).reduce((s: number, c: any) => s + (c.revenue || 0), 0),
+        profit: clients.filter((c: any) => c.assigned_to === e.user_id).reduce((s: number, c: any) => s + (c.profit || 0), 0),
+        tasks: tasks.filter((t: any) => t.assigned_to === e.user_id && t.status === 'Completed').length,
+        successRate: (() => { const ec = clients.filter((c: any) => c.assigned_to === e.user_id); return ec.length > 0 ? Math.round((ec.filter((c: any) => c.status === 'Success').length / ec.length) * 100) : 0; })(),
+        presentDays: attendance.filter((a: any) => a.employee_id === e.user_id && a.date?.startsWith(reportMonth)).filter((a: any) => a.status === 'Present' || a.status === 'Late').length,
+      })).sort((a, b) => b.revenue - a.revenue);
+
+      const leadCounts: Record<string, number> = {};
+      const leadRevenue: Record<string, number> = {};
+      clients.forEach((c: any) => {
+        if (c.lead_source) {
+          leadCounts[c.lead_source] = (leadCounts[c.lead_source] || 0) + 1;
+          leadRevenue[c.lead_source] = (leadRevenue[c.lead_source] || 0) + (c.revenue || 0);
+        }
+      });
+      const leadData = Object.entries(leadCounts).map(([name, value]) => ({ name, value, revenue: leadRevenue[name] || 0 }));
+
+      const nationalityCounts: Record<string, number> = {};
+      clients.forEach((c: any) => {
+        const nat = c.nationality || (c.service_details as any)?.nationality || 'Unknown';
+        if (nat) nationalityCounts[nat] = (nationalityCounts[nat] || 0) + 1;
+      });
+      const nationalityData = Object.entries(nationalityCounts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 10);
+
+      setData({
+        totalClients: clients.length, clientsThisMonth, clientsLastMonth,
+        revenueThisMonth, revenueLastMonth, profitThisMonth, totalRevenue, totalProfit,
+        activeTasks, overdueTasks, completedTasks, pendingLeave,
+        employeesOnline, totalActiveEmp,
+        serviceData, revenueData, statusCounts,
+        upcomingDates,
+        todayAttendance,
+        recentAudit: auditLog,
+        topEmployees, leadData, nationalityData,
+        allClients: clients, allEmployees: employees, allTasks: tasks, allQuotations: quotations,
+      });
+    };
+    load();
   }, [reportMonth]);
 
   if (!data) return <div className="skeleton-nawi h-96 w-full" />;
@@ -161,7 +159,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Tabs */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex gap-1 border-b border-border overflow-x-auto">
           {tabs.map(t => (
@@ -176,10 +173,8 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* DASHBOARD TAB */}
       {tab === 'dashboard' && (
         <>
-          {/* Stat Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <div className="card-nawi relative overflow-hidden">
               <div className="absolute top-0 right-0 w-16 h-16 bg-secondary/10 rounded-bl-[40px]" />
@@ -234,7 +229,6 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Status Mini Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {Object.entries(data.statusCounts).map(([status, count]) => (
               <div key={status} className="card-nawi flex items-center justify-between py-3">
@@ -244,7 +238,6 @@ export default function AdminDashboard() {
             ))}
           </div>
 
-          {/* Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="card-nawi lg:col-span-2">
               <h3 className="text-base font-semibold font-display mb-4">Revenue & Profit Trend</h3>
@@ -279,7 +272,6 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Mid Section */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="card-nawi">
               <h3 className="text-base font-semibold font-display mb-3">Top Performers</h3>
@@ -336,7 +328,6 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Today Attendance + Activity */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="card-nawi">
               <div className="flex items-center justify-between mb-3">
@@ -352,8 +343,8 @@ export default function AdminDashboard() {
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium truncate">{a.name}</p>
                         <p className="text-[10px] text-muted-foreground">
-                          {a.loginTime ? new Date(a.loginTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—'}
-                          {a.logoutTime ? ` → ${new Date(a.logoutTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}` : ''}
+                          {a.login_time ? new Date(a.login_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                          {a.logout_time ? ` → ${new Date(a.logout_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}` : ''}
                         </p>
                       </div>
                       <StatusBadge status={a.status} />
@@ -371,8 +362,8 @@ export default function AdminDashboard() {
                     <div key={a.id} className="flex items-start gap-2 text-sm">
                       <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${a.action.includes('delete') ? 'bg-destructive' : a.action.includes('create') ? 'bg-success' : 'bg-secondary'}`} />
                       <div>
-                        <p><span className="font-medium">{a.userName}</span> {a.action.replace(/_/g, ' ')}</p>
-                        <p className="text-xs text-muted-foreground">{formatDate(a.timestamp)}</p>
+                        <p><span className="font-medium">{a.user_name}</span> {a.action.replace(/_/g, ' ')}</p>
+                        <p className="text-xs text-muted-foreground">{formatDate(a.created_at)}</p>
                       </div>
                     </div>
                   ))}
@@ -382,7 +373,6 @@ export default function AdminDashboard() {
         </>
       )}
 
-      {/* REPORTS TAB */}
       {tab === 'reports' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
@@ -423,21 +413,19 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* CLIENTS TAB */}
       {tab === 'clients' && (
         <div className="card-nawi">
           <div className="flex justify-end mb-3">
-            <button onClick={() => exportCSV(data.allClients.map((c: any) => ({ ID: c.id, Name: c.name, Service: c.service, Status: c.status, Revenue: c.revenue, Profit: c.profit, LeadSource: c.leadSource, Nationality: c.nationality || '', Created: formatDate(c.createdAt) })), 'clients_report.csv')} className="btn-outline text-sm"><Download className="w-4 h-4" /> Export</button>
+            <button onClick={() => exportCSV(data.allClients.map((c: any) => ({ ID: c.display_id, Name: c.name, Service: c.service, Status: c.status, Revenue: c.revenue, Profit: c.profit, LeadSource: c.lead_source, Nationality: c.nationality || '', Created: formatDate(c.created_at) })), 'clients_report.csv')} className="btn-outline text-sm"><Download className="w-4 h-4" /> Export</button>
           </div>
           <div className="overflow-x-auto">
             <table className="table-nawi w-full"><thead><tr><th>ID</th><th>Name</th><th>Service</th><th>Status</th><th>Lead Source</th><th>Revenue</th><th>Profit</th><th>Created</th></tr></thead>
-              <tbody>{data.allClients.slice(0, 50).map((c: any) => <tr key={c.id}><td className="font-mono text-xs">{c.id}</td><td>{c.name}</td><td>{c.service}</td><td><StatusBadge status={c.status} /></td><td>{c.leadSource}</td><td>{formatCurrency(c.revenue || 0)}</td><td className="text-success">{formatCurrency(c.profit || 0)}</td><td>{formatDate(c.createdAt)}</td></tr>)}</tbody>
+              <tbody>{data.allClients.slice(0, 50).map((c: any) => <tr key={c.id}><td className="font-mono text-xs">{c.display_id}</td><td>{c.name}</td><td>{c.service}</td><td><StatusBadge status={c.status} /></td><td>{c.lead_source}</td><td>{formatCurrency(c.revenue || 0)}</td><td className="text-success">{formatCurrency(c.profit || 0)}</td><td>{formatDate(c.created_at)}</td></tr>)}</tbody>
             </table>
           </div>
         </div>
       )}
 
-      {/* EMPLOYEES TAB */}
       {tab === 'employees' && (
         <div className="card-nawi p-0 overflow-x-auto">
           <div className="p-4 flex justify-end"><button onClick={() => exportCSV(data.topEmployees.map((e: any) => ({ Name: e.name, Clients: e.clients, Revenue: e.revenue, Profit: e.profit, TasksDone: e.tasks, SuccessRate: e.successRate + '%', PresentDays: e.presentDays })), 'employee_performance.csv')} className="btn-outline text-sm"><Download className="w-4 h-4" /> Export</button></div>
@@ -462,7 +450,6 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* SERVICES TAB */}
       {tab === 'services' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="card-nawi">
@@ -480,7 +467,6 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* REVENUE TAB */}
       {tab === 'revenue' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
