@@ -92,7 +92,7 @@ export default function AddClientWizard() {
             clientType: data.client_type || '', companyName: data.company_name || '', companyNumber: data.company_number || '',
             nationality: data.nationality || '', dob: dates.dob || '',
             leadSource: data.lead_source || '', importantDates: dates as any,
-            familyMembers: (data.family_members || []) as FamilyMember[],
+            familyMembers: (data.family_members as unknown as FamilyMember[]) || [],
           }));
           setStep(0);
         }
