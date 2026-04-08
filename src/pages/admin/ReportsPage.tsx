@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { storage, KEYS, formatCurrency, formatDate, getCurrentUser, generateId, auditLog } from '@/lib/storage';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { formatCurrency, formatDate } from '@/lib/supabase-service';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
 import { Download, TrendingUp, Users, Briefcase, DollarSign } from 'lucide-react';
 
@@ -9,14 +10,27 @@ export default function ReportsPage() {
   const [tab, setTab] = useState('overview');
   const now = new Date();
   const [yearMonth, setYearMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
-  const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [viewType, setViewType] = useState<'monthly' | 'weekly' | 'annual'>('monthly');
+  const [clients, setClients] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [attendance, setAttendance] = useState<any[]>([]);
 
-  const clients = storage.getAll(KEYS.CLIENTS);
-  const employees = storage.getAll(KEYS.EMPLOYEES);
-  const tasks = storage.getAll(KEYS.TASKS);
-  const quotations = storage.getAll(KEYS.QUOTATIONS);
-  const attendance = storage.getAll(KEYS.ATTENDANCE);
+  useEffect(() => {
+    const load = async () => {
+      const [c, e, t, a] = await Promise.all([
+        supabase.from('clients').select('*'),
+        supabase.from('profiles').select('*'),
+        supabase.from('tasks').select('*'),
+        supabase.from('attendance').select('*'),
+      ]);
+      setClients(c.data || []);
+      setEmployees(e.data || []);
+      setTasks(t.data || []);
+      setAttendance(a.data || []);
+    };
+    load();
+  }, []);
 
   const exportCSV = (data: any[], filename: string) => {
     if (data.length === 0) return;
@@ -29,7 +43,6 @@ export default function ReportsPage() {
     link.click();
   };
 
-  // Service distribution
   const serviceCounts: Record<string, number> = {};
   const serviceRevenue: Record<string, number> = {};
   clients.forEach((c: any) => {
@@ -40,12 +53,10 @@ export default function ReportsPage() {
   });
   const serviceData = Object.entries(serviceCounts).map(([name, count]) => ({ name, count, revenue: serviceRevenue[name] || 0 }));
 
-  // Revenue by lead source
   const leadRevenue: Record<string, number> = {};
-  clients.forEach((c: any) => { if (c.leadSource) leadRevenue[c.leadSource] = (leadRevenue[c.leadSource] || 0) + (c.revenue || 0); });
+  clients.forEach((c: any) => { if (c.lead_source) leadRevenue[c.lead_source] = (leadRevenue[c.lead_source] || 0) + (c.revenue || 0); });
   const leadData = Object.entries(leadRevenue).map(([name, revenue]) => ({ name, revenue }));
 
-  // Monthly trend (12 months)
   const monthlyTrend: any[] = [];
   for (let i = 11; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -53,19 +64,18 @@ export default function ReportsPage() {
     const label = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
     monthlyTrend.push({
       month: label,
-      clients: clients.filter((c: any) => c.createdAt?.startsWith(key)).length,
-      revenue: clients.filter((c: any) => c.createdAt?.startsWith(key)).reduce((s: number, c: any) => s + (c.revenue || 0), 0),
-      profit: clients.filter((c: any) => c.createdAt?.startsWith(key)).reduce((s: number, c: any) => s + (c.profit || 0), 0),
+      clients: clients.filter((c: any) => c.created_at?.startsWith(key)).length,
+      revenue: clients.filter((c: any) => c.created_at?.startsWith(key)).reduce((s: number, c: any) => s + (c.revenue || 0), 0),
+      profit: clients.filter((c: any) => c.created_at?.startsWith(key)).reduce((s: number, c: any) => s + (c.profit || 0), 0),
     });
   }
 
-  // Employee performance
   const empPerformance = employees.filter((e: any) => e.status === 'active').map((e: any) => {
-    const empClients = clients.filter((c: any) => c.assignedTo === e.id);
-    const empTasks = tasks.filter((t: any) => t.assignedTo === e.id);
-    const empAttendance = attendance.filter((a: any) => a.employeeId === e.id && a.date?.startsWith(yearMonth));
+    const empClients = clients.filter((c: any) => c.assigned_to === e.user_id);
+    const empTasks = tasks.filter((t: any) => t.assigned_to === e.user_id);
+    const empAttendance = attendance.filter((a: any) => a.employee_id === e.user_id && a.date?.startsWith(yearMonth));
     return {
-      name: e.name, id: e.id,
+      name: e.name, id: e.user_id,
       totalClients: empClients.length,
       revenue: empClients.reduce((s: number, c: any) => s + (c.revenue || 0), 0),
       profit: empClients.reduce((s: number, c: any) => s + (c.profit || 0), 0),
@@ -76,7 +86,6 @@ export default function ReportsPage() {
     };
   }).sort((a, b) => b.revenue - a.revenue);
 
-  // Totals
   const totalRevenue = clients.reduce((s: number, c: any) => s + (c.revenue || 0), 0);
   const totalProfit = clients.reduce((s: number, c: any) => s + (c.profit || 0), 0);
 
@@ -106,7 +115,6 @@ export default function ReportsPage() {
             <div className="stat-card"><div className="stat-card-icon bg-secondary"><DollarSign className="w-6 h-6 text-primary-foreground" /></div><div><p className="text-xs text-muted-foreground">Total Profit</p><p className="text-xl font-bold font-display">{formatCurrency(totalProfit)}</p></div></div>
             <div className="stat-card"><div className="stat-card-icon bg-warning"><Users className="w-6 h-6 text-primary-foreground" /></div><div><p className="text-xs text-muted-foreground">Active Employees</p><p className="text-xl font-bold font-display">{employees.filter((e: any) => e.status === 'active').length}</p></div></div>
           </div>
-
           <div className="card-nawi">
             <h3 className="text-base font-semibold font-display mb-4">Revenue & Profit Trend</h3>
             <ResponsiveContainer width="100%" height={300}>
@@ -127,10 +135,10 @@ export default function ReportsPage() {
 
       {tab === 'clients' && (
         <div className="card-nawi">
-          <div className="flex justify-end mb-3"><button onClick={() => exportCSV(clients.map((c: any) => ({ ID: c.id, Name: c.name, Service: c.service, Status: c.status, Revenue: c.revenue, Profit: c.profit, LeadSource: c.leadSource, Created: formatDate(c.createdAt) })), 'clients_report.csv')} className="btn-outline text-sm"><Download className="w-4 h-4" /> Export</button></div>
+          <div className="flex justify-end mb-3"><button onClick={() => exportCSV(clients.map((c: any) => ({ ID: c.display_id, Name: c.name, Service: c.service, Status: c.status, Revenue: c.revenue, Profit: c.profit, LeadSource: c.lead_source, Created: formatDate(c.created_at) })), 'clients_report.csv')} className="btn-outline text-sm"><Download className="w-4 h-4" /> Export</button></div>
           <div className="overflow-x-auto">
             <table className="table-nawi w-full"><thead><tr><th>ID</th><th>Name</th><th>Service</th><th>Status</th><th>Lead Source</th><th>Revenue</th><th>Profit</th><th>Created</th></tr></thead>
-              <tbody>{clients.map((c: any) => <tr key={c.id}><td className="font-mono text-xs">{c.id}</td><td>{c.name}</td><td>{c.service}</td><td>{c.status}</td><td>{c.leadSource}</td><td>{formatCurrency(c.revenue || 0)}</td><td className="text-success">{formatCurrency(c.profit || 0)}</td><td>{formatDate(c.createdAt)}</td></tr>)}</tbody>
+              <tbody>{clients.map((c: any) => <tr key={c.id}><td className="font-mono text-xs">{c.display_id}</td><td>{c.name}</td><td>{c.service}</td><td>{c.status}</td><td>{c.lead_source}</td><td>{formatCurrency(c.revenue || 0)}</td><td className="text-success">{formatCurrency(c.profit || 0)}</td><td>{formatDate(c.created_at)}</td></tr>)}</tbody>
             </table>
           </div>
         </div>

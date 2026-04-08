@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { Upload, Download, AlertTriangle, Check } from 'lucide-react';
-import { storage, KEYS, generateId, getCurrentUser, auditLog } from '@/lib/storage';
+import { Upload, Download, Check } from 'lucide-react';
+import { useAuth } from '@/lib/auth-context';
+import { supabase } from '@/integrations/supabase/client';
+import { generateDisplayId, auditLog } from '@/lib/supabase-service';
 import Papa from 'papaparse';
 
 const TEMPLATES: Record<string, string[]> = {
@@ -9,7 +11,7 @@ const TEMPLATES: Record<string, string[]> = {
 };
 
 export default function BulkUpload() {
-  const session = getCurrentUser();
+  const { user } = useAuth();
   const [service, setService] = useState('Air Ticket');
   const [step, setStep] = useState(0);
   const [rows, setRows] = useState<any[]>([]);
@@ -31,11 +33,9 @@ export default function BulkUpload() {
     Papa.parse(file, {
       header: true,
       complete: (results) => {
-        const clients = storage.getAll(KEYS.CLIENTS);
         const errs: number[] = [];
         results.data.forEach((row: any, i: number) => {
           if (!row.Name || !row.Mobile) errs.push(i);
-          if (clients.some((c: any) => c.mobile === row.Mobile)) row._duplicate = true;
         });
         setRows(results.data.filter((r: any) => r.Name));
         setErrors(errs);
@@ -44,22 +44,23 @@ export default function BulkUpload() {
     });
   };
 
-  const handleImport = () => {
+  const handleImport = async () => {
+    if (!user) return;
     let count = 0;
-    rows.forEach((row: any, i: number) => {
-      if (errors.includes(i) || row._duplicate) return;
-      const id = generateId('CLT');
-      storage.push(KEYS.CLIENTS, {
-        id, name: row.Name, mobile: row.Mobile, email: row.Email || '',
-        clientType: 'Individual', service, leadSource: 'Bulk Upload',
-        serviceDetails: row, documents: [],
-        importantDates: { dob: '', passportExpiry: '', visaExpiry: '', travelDate: row.TravelDate || '', weddingAnniversary: '' },
-        status: 'New', assignedTo: session?.userId || '', revenue: 0, profit: 0, notes: '',
-        createdAt: new Date().toISOString(), createdBy: session?.userId || '', updatedAt: new Date().toISOString(), history: [],
+    for (let i = 0; i < rows.length; i++) {
+      if (errors.includes(i)) continue;
+      const row = rows[i];
+      const displayId = await generateDisplayId('CLT');
+      await supabase.from('clients').insert({
+        display_id: displayId, name: row.Name, mobile: row.Mobile, email: row.Email || null,
+        client_type: 'Individual', service, lead_source: 'Bulk Upload',
+        service_details: row as any, documents: [] as any,
+        important_dates: { dob: '', passportExpiry: '', visaExpiry: '', travelDate: row.TravelDate || '' } as any,
+        status: 'New' as const, assigned_to: user.id, created_by: user.id,
       });
       count++;
-    });
-    auditLog('bulk_import', 'client', '', { count, service });
+    }
+    await auditLog('bulk_import', 'client', '', { count, service });
     setImported(count);
     setStep(2);
   };
@@ -85,19 +86,19 @@ export default function BulkUpload() {
 
       {step === 1 && (
         <div className="card-nawi space-y-4">
-          <p className="text-sm text-muted-foreground">{rows.length} rows found • {errors.length} errors • {rows.filter((r: any) => r._duplicate).length} duplicates</p>
+          <p className="text-sm text-muted-foreground">{rows.length} rows found • {errors.length} errors</p>
           <div className="overflow-x-auto max-h-96">
             <table className="table-nawi w-full text-xs">
               <thead><tr>{TEMPLATES[service].map(h => <th key={h}>{h}</th>)}<th>Status</th></tr></thead>
               <tbody>{rows.map((r: any, i: number) => (
-                <tr key={i} className={errors.includes(i) ? 'bg-destructive/10' : r._duplicate ? 'bg-warning/10' : ''}>
+                <tr key={i} className={errors.includes(i) ? 'bg-destructive/10' : ''}>
                   {TEMPLATES[service].map(h => <td key={h}>{r[h] || '—'}</td>)}
-                  <td>{errors.includes(i) ? <span className="text-destructive text-xs">Error</span> : r._duplicate ? <span className="text-warning text-xs">Duplicate</span> : <span className="text-success text-xs">OK</span>}</td>
+                  <td>{errors.includes(i) ? <span className="text-destructive text-xs">Error</span> : <span className="text-success text-xs">OK</span>}</td>
                 </tr>
               ))}</tbody>
             </table>
           </div>
-          <div className="flex justify-between"><button onClick={() => setStep(0)} className="btn-outline">Back</button><button onClick={handleImport} className="btn-primary">Import {rows.length - errors.length - rows.filter((r: any) => r._duplicate).length} Clients</button></div>
+          <div className="flex justify-between"><button onClick={() => setStep(0)} className="btn-outline">Back</button><button onClick={handleImport} className="btn-primary">Import {rows.length - errors.length} Clients</button></div>
         </div>
       )}
 
