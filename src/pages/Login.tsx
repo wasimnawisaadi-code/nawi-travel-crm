@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Plane, Globe, Hotel, Shield } from 'lucide-react';
+import { Eye, EyeOff, Plane, Globe, Hotel, Shield, MapPin, Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { recordLoginAttendance, generateDailyNotifications } from '@/lib/supabase-service';
+import { getCurrentPosition, isInsideZone } from '@/lib/geofence';
+import { supabase } from '@/integrations/supabase/client';
 import logo from '@/assets/logo.png';
 
 export default function Login() {
@@ -14,11 +16,13 @@ export default function Login() {
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [locationStatus, setLocationStatus] = useState('');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
+    setLocationStatus('');
 
     const { error: loginError } = await signIn(email, password);
     if (loginError) {
@@ -27,26 +31,67 @@ export default function Login() {
       return;
     }
 
-    // Wait for auth state to settle, then get user info
-    const { supabase } = await import('@/integrations/supabase/client');
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      setError('Login failed');
-      setLoading(false);
-      return;
-    }
+    if (!user) { setError('Login failed'); setLoading(false); return; }
 
-    // Check role
-    const { data: roleData } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', user.id)
-      .single();
+    // Get role & profile
+    const [{ data: roleData }, { data: profileData }] = await Promise.all([
+      supabase.from('user_roles').select('role').eq('user_id', user.id).single(),
+      supabase.from('profiles').select('profile_type, assigned_zone_id').eq('user_id', user.id).single(),
+    ]);
 
     const role = roleData?.role || 'employee';
+    const profileType = profileData?.profile_type || 'office';
+    const assignedZoneId = profileData?.assigned_zone_id;
 
-    // Record attendance & generate notifications
-    await recordLoginAttendance(user.id);
+    // Geofence check — only for employees with assigned zones
+    let loginLat: number | null = null;
+    let loginLng: number | null = null;
+    let locationStatusText = 'no_zone';
+
+    if (role !== 'admin' && assignedZoneId) {
+      setLocationStatus('Checking your location...');
+      try {
+        const pos = await getCurrentPosition();
+        loginLat = pos.lat;
+        loginLng = pos.lng;
+
+        // Get the zone
+        const { data: zone } = await supabase
+          .from('geofence_zones').select('*').eq('id', assignedZoneId).eq('is_active', true).single();
+
+        if (zone) {
+          const inside = isInsideZone(pos, zone as any);
+          if (!inside) {
+            // Block login for office employees outside zone
+            if (profileType === 'office') {
+              await supabase.auth.signOut();
+              setError(`You must be within the ${zone.name} zone (${zone.radius}m radius) to login. You are outside the allowed area.`);
+              setLoading(false);
+              setLocationStatus('');
+              return;
+            }
+            // Sales employees: allow but mark
+            locationStatusText = 'outside_zone';
+          } else {
+            locationStatusText = 'inside_zone';
+          }
+        }
+      } catch {
+        if (profileType === 'office') {
+          await supabase.auth.signOut();
+          setError('Location access is required for office employees. Please enable location services and try again.');
+          setLoading(false);
+          setLocationStatus('');
+          return;
+        }
+        locationStatusText = 'location_denied';
+      }
+    }
+
+    setLocationStatus('Recording attendance...');
+    // Record attendance with location
+    await recordLoginAttendanceWithLocation(user.id, loginLat, loginLng, locationStatusText);
     await generateDailyNotifications(user.id, role === 'admin');
 
     navigate(role === 'admin' ? '/admin/dashboard' : '/employee/dashboard');
@@ -87,50 +132,39 @@ export default function Login() {
           <form onSubmit={handleLogin} className="space-y-5">
             <div>
               <label className="block text-sm font-medium text-foreground mb-1.5">Email Address</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="input-nawi"
-                placeholder="you@nawisaadi.com"
-                required
-              />
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                className="input-nawi" placeholder="you@nawisaadi.com" required />
             </div>
-
             <div>
               <label className="block text-sm font-medium text-foreground mb-1.5">Password</label>
               <div className="relative">
-                <input
-                  type={showPass ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="input-nawi pr-10"
-                  placeholder="••••••••"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPass(!showPass)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
+                <input type={showPass ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)}
+                  className="input-nawi pr-10" placeholder="••••••••" required />
+                <button type="button" onClick={() => setShowPass(!showPass)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                   {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="remember"
-                checked={remember}
-                onChange={(e) => setRemember(e.target.checked)}
-                className="w-4 h-4 rounded border-border text-primary"
-              />
+              <input type="checkbox" id="remember" checked={remember} onChange={(e) => setRemember(e.target.checked)}
+                className="w-4 h-4 rounded border-border text-primary" />
               <label htmlFor="remember" className="text-sm text-muted-foreground">Remember me</label>
             </div>
 
             {error && (
-              <div className="bg-destructive/10 text-destructive text-sm px-4 py-2.5 rounded-lg">{error}</div>
+              <div className="bg-destructive/10 text-destructive text-sm px-4 py-2.5 rounded-lg flex items-start gap-2">
+                {error.includes('zone') && <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0" />}
+                <span>{error}</span>
+              </div>
+            )}
+
+            {locationStatus && (
+              <div className="bg-primary/10 text-primary text-sm px-4 py-2.5 rounded-lg flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>{locationStatus}</span>
+              </div>
             )}
 
             <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
@@ -141,4 +175,27 @@ export default function Login() {
       </div>
     </div>
   );
+}
+
+// Enhanced attendance with location
+async function recordLoginAttendanceWithLocation(
+  userId: string, lat: number | null, lng: number | null, locationStatus: string
+) {
+  const today = new Date().toISOString().split('T')[0];
+  const { data: existing } = await supabase
+    .from('attendance').select('id').eq('employee_id', userId).eq('date', today).single();
+
+  if (!existing) {
+    const now = new Date();
+    const isLate = now.getHours() > 9 || (now.getHours() === 9 && now.getMinutes() > 0);
+    await supabase.from('attendance').insert({
+      employee_id: userId,
+      date: today,
+      login_time: now.toISOString(),
+      status: isLate ? 'Late' : 'Present',
+      login_lat: lat,
+      login_lng: lng,
+      login_location_status: locationStatus,
+    } as any);
+  }
 }

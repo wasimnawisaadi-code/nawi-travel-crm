@@ -13,6 +13,7 @@ import EmployeeProfile from "./pages/admin/EmployeeProfile";
 import AdminAttendance from "./pages/admin/AdminAttendance";
 import PayrollManagement from "./pages/admin/PayrollManagement";
 import AuditLog from "./pages/admin/AuditLog";
+import GeofenceManagement from "./pages/admin/GeofenceManagement";
 import ReportsPage from "./pages/admin/ReportsPage";
 import EmployeeDashboard from "./pages/employee/EmployeeDashboard";
 import AttendancePage from "./pages/employee/AttendancePage";
@@ -53,6 +54,7 @@ const App = () => (
               <Route path="/admin/payroll" element={<PayrollManagement />} />
               <Route path="/admin/reports" element={<ReportsPage />} />
               <Route path="/admin/audit-log" element={<AuditLog />} />
+              <Route path="/admin/geofence" element={<GeofenceManagement />} />
               <Route path="/admin/important-dates" element={<ImportantDates />} />
               <Route path="/admin/chat" element={<TeamChat />} />
 

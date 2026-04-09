@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Briefcase, Calendar, FileText,
   DollarSign, Shield, LogOut, Menu,
-  Search, ChevronLeft, Clock, PlaneTakeoff, MessageCircle, CalendarDays, Bell
+  Search, ChevronLeft, Clock, PlaneTakeoff, MessageCircle, CalendarDays, Bell, MapPin
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/integrations/supabase/client';
@@ -18,6 +18,7 @@ const adminLinks = [
   { to: '/admin/attendance', label: 'Attendance', icon: Clock },
   { to: '/admin/leave', label: 'Leave & HR', icon: FileText },
   { to: '/admin/payroll', label: 'Payroll', icon: DollarSign },
+  { to: '/admin/geofence', label: 'Geofence Zones', icon: MapPin },
   { to: '/admin/audit-log', label: 'Audit Log', icon: Shield },
   { to: '/admin/chat', label: 'Team Chat', icon: MessageCircle },
 ];
