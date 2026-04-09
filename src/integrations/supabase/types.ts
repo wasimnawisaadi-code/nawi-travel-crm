@@ -21,7 +21,12 @@ export type Database = {
           employee_id: string
           hours_worked: number | null
           id: string
+          login_lat: number | null
+          login_lng: number | null
+          login_location_status: string | null
           login_time: string | null
+          logout_lat: number | null
+          logout_lng: number | null
           logout_time: string | null
           status: Database["public"]["Enums"]["attendance_status"] | null
           work_summary: string | null
@@ -32,7 +37,12 @@ export type Database = {
           employee_id: string
           hours_worked?: number | null
           id?: string
+          login_lat?: number | null
+          login_lng?: number | null
+          login_location_status?: string | null
           login_time?: string | null
+          logout_lat?: number | null
+          logout_lng?: number | null
           logout_time?: string | null
           status?: Database["public"]["Enums"]["attendance_status"] | null
           work_summary?: string | null
@@ -43,7 +53,12 @@ export type Database = {
           employee_id?: string
           hours_worked?: number | null
           id?: string
+          login_lat?: number | null
+          login_lng?: number | null
+          login_location_status?: string | null
           login_time?: string | null
+          logout_lat?: number | null
+          logout_lng?: number | null
           logout_time?: string | null
           status?: Database["public"]["Enums"]["attendance_status"] | null
           work_summary?: string | null
@@ -294,6 +309,45 @@ export type Database = {
         }
         Relationships: []
       }
+      geofence_zones: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          latitude: number
+          longitude: number
+          name: string
+          radius: number
+          updated_at: string
+          zone_type: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          latitude: number
+          longitude: number
+          name: string
+          radius?: number
+          updated_at?: string
+          zone_type?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          latitude?: number
+          longitude?: number
+          name?: string
+          radius?: number
+          updated_at?: string
+          zone_type?: string
+        }
+        Relationships: []
+      }
       goals: {
         Row: {
           achieved: number | null
@@ -524,6 +578,7 @@ export type Database = {
       profiles: {
         Row: {
           allowed_ips: string[] | null
+          assigned_zone_id: string | null
           base_salary: number | null
           created_at: string
           email: string
@@ -543,6 +598,7 @@ export type Database = {
         }
         Insert: {
           allowed_ips?: string[] | null
+          assigned_zone_id?: string | null
           base_salary?: number | null
           created_at?: string
           email: string
@@ -562,6 +618,7 @@ export type Database = {
         }
         Update: {
           allowed_ips?: string[] | null
+          assigned_zone_id?: string | null
           base_salary?: number | null
           created_at?: string
           email?: string
@@ -579,7 +636,15 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_assigned_zone_id_fkey"
+            columns: ["assigned_zone_id"]
+            isOneToOne: false
+            referencedRelation: "geofence_zones"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       quotations: {
         Row: {
