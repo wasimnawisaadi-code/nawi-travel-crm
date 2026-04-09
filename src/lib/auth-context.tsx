@@ -1,6 +1,8 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { isInsideZone, watchPosition, type GeoPosition, type GeofenceZone } from '@/lib/geofence';
 import type { User, Session } from '@supabase/supabase-js';
+import { toast } from 'sonner';
 
 interface Profile {
   id: string;
@@ -16,6 +18,7 @@ interface Profile {
   base_salary: number;
   leave_balance: number;
   status: string;
+  assigned_zone_id: string | null;
 }
 
 interface AuthContextType {
@@ -27,6 +30,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   isAdmin: boolean;
+  isInZone: boolean | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -37,6 +41,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [role, setRole] = useState<'admin' | 'employee' | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isInZone, setIsInZone] = useState<boolean | null>(null);
+  const watchIdRef = useRef<number | null>(null);
 
   const fetchProfile = async (userId: string) => {
     const { data: profileData } = await supabase
@@ -53,7 +59,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq('user_id', userId)
       .single();
     
-    setRole(roleData?.role as 'admin' | 'employee' || 'employee');
+    const userRole = (roleData?.role as 'admin' | 'employee') || 'employee';
+    setRole(userRole);
+
+    // Start geofence watching for non-admin employees with assigned zones
+    if (userRole !== 'admin' && profileData?.assigned_zone_id) {
+      startZoneWatching(profileData.assigned_zone_id as string, profileData.profile_type as string);
+    } else {
+      setIsInZone(true); // No restriction
+    }
+  };
+
+  const startZoneWatching = async (zoneId: string, profileType: string) => {
+    const { data: zone } = await supabase
+      .from('geofence_zones')
+      .select('*')
+      .eq('id', zoneId)
+      .eq('is_active', true)
+      .single();
+
+    if (!zone) { setIsInZone(true); return; }
+
+    const geoZone = zone as unknown as GeofenceZone;
+    
+    // Watch position and auto-logout if leaving zone (office employees)
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+    }
+
+    watchIdRef.current = watchPosition(
+      (pos: GeoPosition) => {
+        const inside = isInsideZone(pos, geoZone);
+        setIsInZone(inside);
+        if (!inside && profileType === 'office') {
+          toast.error('You have left the authorized zone. Auto-logging out...');
+          setTimeout(() => signOut(), 3000);
+        }
+      },
+      () => { /* ignore errors during watching */ }
+    );
   };
 
   useEffect(() => {
@@ -62,11 +106,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          // Use setTimeout to avoid deadlock with Supabase auth
           setTimeout(() => fetchProfile(session.user.id), 0);
         } else {
           setProfile(null);
           setRole(null);
+          setIsInZone(null);
         }
         setLoading(false);
       }
@@ -81,7 +125,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
@@ -91,6 +140,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    // Stop watching
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+
     // Record logout attendance
     if (user) {
       const today = new Date().toISOString().split('T')[0];
@@ -107,9 +162,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const loginDate = new Date(todayRecord.login_time as string);
         const logoutDate = new Date(logoutTime);
         const hoursWorked = Math.round(((logoutDate.getTime() - loginDate.getTime()) / 3600000) * 10) / 10;
+        
+        // Get current position for logout location
+        let logoutLat = null, logoutLng = null;
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+          });
+          logoutLat = pos.coords.latitude;
+          logoutLng = pos.coords.longitude;
+        } catch { /* ignore */ }
+
         await supabase
           .from('attendance')
-          .update({ logout_time: logoutTime, hours_worked: hoursWorked })
+          .update({ 
+            logout_time: logoutTime, 
+            hours_worked: hoursWorked,
+            logout_lat: logoutLat,
+            logout_lng: logoutLng,
+          } as any)
           .eq('id', todayRecord.id);
       }
     }
@@ -121,6 +192,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user, session, profile, role, loading,
       signIn, signOut,
       isAdmin: role === 'admin',
+      isInZone,
     }}>
       {children}
     </AuthContext.Provider>
