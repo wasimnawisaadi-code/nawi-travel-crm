@@ -123,20 +123,33 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
         <div className="card-nawi border-warning/30">
           <h3 className="font-semibold font-display mb-3 text-warning">Pending Requests ({pending.length})</h3>
           <div className="space-y-3">
-            {pending.map((l: any) => (
-              <div key={l.id} className="flex items-center justify-between p-3 border border-border rounded-lg">
-                <div>
+            {pending.map((l: any) => {
+              const docBase64 = l.document?.base64?.startsWith('NAWI_ENC::') ? l.document.base64.replace('NAWI_ENC::', '') : l.document?.base64;
+              const isImage = l.document?.type?.startsWith('image/') || l.document?.name?.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+              return (
+              <div key={l.id} className="flex items-start justify-between p-3 border border-border rounded-lg gap-3">
+                <div className="flex-1 min-w-0">
                   <p className="font-medium text-foreground">{l.employee_name}</p>
                   <p className="text-sm text-muted-foreground">{l.leave_type} • {formatDate(l.start_date)} — {formatDate(l.end_date)} ({l.days} days)</p>
                   <p className="text-sm text-muted-foreground">{l.reason}</p>
-                  {l.document && <span className="inline-flex items-center gap-1 text-xs text-secondary mt-1"><FileText className="w-3 h-3" /> {l.document.name}</span>}
+                  {l.document && (
+                    <div className="mt-2">
+                      <span className="inline-flex items-center gap-1 text-xs text-secondary"><FileText className="w-3 h-3" /> {l.document.name}</span>
+                      {isImage && docBase64 && (
+                        <a href={docBase64} target="_blank" rel="noopener">
+                          <img src={docBase64} alt={l.document.name} className="mt-1 w-32 h-24 object-cover rounded border border-border hover:opacity-80" />
+                        </a>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-shrink-0">
                   <button onClick={() => handleApprove(l.id)} className="btn-success p-2"><Check className="w-4 h-4" /></button>
                   <button onClick={() => handleReject(l.id)} className="btn-danger p-2"><X className="w-4 h-4" /></button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -180,7 +193,14 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
                 <td><span className="badge-new text-xs">{l.leave_type || 'Annual'}</span></td>
                 <td>{formatDate(l.start_date)}</td><td>{formatDate(l.end_date)}</td><td>{l.days}</td>
                 <td className="max-w-[150px] truncate">{l.reason}</td>
-                <td>{l.document ? <FileText className="w-4 h-4 text-secondary" /> : '—'}</td>
+                <td>{(() => {
+                  if (!l.document) return '—';
+                  const docBase64 = l.document.base64?.startsWith('NAWI_ENC::') ? l.document.base64.replace('NAWI_ENC::', '') : l.document.base64;
+                  const isImg = l.document.type?.startsWith('image/') || l.document.name?.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+                  return isImg && docBase64 ? (
+                    <a href={docBase64} target="_blank" rel="noopener"><img src={docBase64} alt="" className="w-8 h-8 object-cover rounded border border-border" /></a>
+                  ) : <FileText className="w-4 h-4 text-secondary" />;
+                })()}</td>
                 <td><StatusBadge status={l.status} /></td><td>{l.reviewed_by || '—'}</td>
               </tr>
             ))}
