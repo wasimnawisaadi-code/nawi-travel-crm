@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Check, ChevronLeft, ChevronRight, Upload, AlertTriangle, FileUp, X, Users, Plus, Trash2, Search, Link2, History, Calendar } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Upload, AlertTriangle, FileUp, X, Users, Plus, Trash2, Search, Link2, History, Calendar, Loader2, Sparkles } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/integrations/supabase/client';
 import { generateDisplayId, auditLog, formatDate } from '@/lib/supabase-service';
@@ -54,6 +54,8 @@ export default function AddClientWizard() {
   const existingClientId = searchParams.get('existingClient');
   const { user, profile, isAdmin } = useAuth();
   const [step, setStep] = useState(0);
+  const [ocrLoading, setOcrLoading] = useState<string | null>(null);
+  const [ocrResults, setOcrResults] = useState<Record<string, any>>({});
   const [duplicates, setDuplicates] = useState<any[]>([]);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [bulkData, setBulkData] = useState<any[]>([]);
@@ -146,10 +148,64 @@ export default function AddClientWizard() {
     return reqs.default || [];
   };
 
-  const handleDocUpload = (docType: string, file: File) => {
+  const handleDocUpload = async (docType: string, file: File) => {
     const reader = new FileReader();
-    reader.onload = () => {
-      updateForm({ documents: [...form.documents, { name: file.name, type: file.type, docType, base64: `NAWI_ENC::${reader.result}`, uploadedAt: new Date().toISOString(), ocrExtracted: true }] });
+    reader.onload = async () => {
+      const base64Data = reader.result as string;
+      const docEntry = { name: file.name, type: file.type, docType, base64: `NAWI_ENC::${base64Data}`, uploadedAt: new Date().toISOString(), ocrExtracted: false };
+      updateForm({ documents: [...form.documents, docEntry] });
+
+      // Run OCR extraction for images
+      const isImage = file.type.startsWith('image/');
+      if (isImage) {
+        setOcrLoading(docType);
+        try {
+          const { data, error } = await supabase.functions.invoke('extract-document', {
+            body: { imageBase64: base64Data, docType, service: form.service, serviceSubcategory: form.serviceSubcategory },
+          });
+          if (error) throw error;
+          if (data?.success && data.data) {
+            const extracted = data.data;
+            setOcrResults(prev => ({ ...prev, [docType]: extracted }));
+
+            // Auto-fill form fields from OCR
+            const updates: any = {};
+            if (extracted.fullName && !form.name) updates.name = extracted.fullName;
+            if (extracted.passportNo && !form.passportNo) updates.passportNo = extracted.passportNo;
+            if (extracted.nationality && !form.nationality) updates.nationality = extracted.nationality;
+
+            const dateUpdates: any = { ...form.importantDates };
+            if (extracted.dateOfBirth && !form.dob) { updates.dob = extracted.dateOfBirth; dateUpdates.dob = extracted.dateOfBirth; }
+            if (extracted.passportExpiry) dateUpdates.passportExpiry = extracted.passportExpiry;
+            if (extracted.visaExpiry) dateUpdates.visaExpiry = extracted.visaExpiry;
+            updates.importantDates = dateUpdates;
+
+            // Auto-fill service details
+            const sdUpdates: any = { ...form.serviceDetails };
+            if (extracted.gender) sdUpdates.gender = extracted.gender;
+            if (extracted.profession) sdUpdates.profession = extracted.profession;
+            if (extracted.placeOfBirth) sdUpdates.placeOfBirth = extracted.placeOfBirth;
+            if (extracted.emiratesId) sdUpdates.emiratesId = extracted.emiratesId;
+            if (extracted.sponsor) sdUpdates.sponsor = extracted.sponsor;
+            if (extracted.visaType) sdUpdates.visaType = extracted.visaType;
+            if (extracted.visaNumber) sdUpdates.visaNumber = extracted.visaNumber;
+            updates.serviceDetails = sdUpdates;
+
+            // Mark doc as OCR extracted
+            const updatedDocs = [...form.documents];
+            const lastIdx = updatedDocs.length - 1;
+            if (lastIdx >= 0) updatedDocs[lastIdx] = { ...updatedDocs[lastIdx], ocrExtracted: true };
+            updates.documents = updatedDocs;
+
+            updateForm(updates);
+            toast.success(`✨ AI extracted data from ${docType}. Review auto-filled fields.`);
+          }
+        } catch (err: any) {
+          console.error('OCR extraction failed:', err);
+          toast.error('Could not extract data from document. Fill fields manually.');
+        }
+        setOcrLoading(null);
+      }
     };
     reader.readAsDataURL(file);
   };
