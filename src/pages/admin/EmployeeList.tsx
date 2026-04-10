@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Trash2, Eye, Users, Camera, Shield, Wifi, MapPin } from 'lucide-react';
+import { Plus, Search, Trash2, Eye, Users, Camera, Shield, MapPin } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { auditLog } from '@/lib/supabase-service';
@@ -21,7 +21,6 @@ export default function EmployeeList() {
     name: '', mobile: '', email: '', password: '',
     passportNo: '', emiratesId: '', photo: '',
     profileType: 'office' as 'office' | 'sales',
-    allowedIPs: '' as string,
   });
 
   const load = async () => {
@@ -99,7 +98,6 @@ export default function EmployeeList() {
       emirates_id: form.emiratesId || null,
       photo_url: form.photo || null,
       profile_type: form.profileType as any,
-      allowed_ips: form.allowedIPs ? form.allowedIPs.split(',').map(ip => ip.trim()).filter(Boolean) : [],
     }).eq('user_id', authData.user.id);
 
     // Assign employee role
@@ -107,7 +105,7 @@ export default function EmployeeList() {
 
     await auditLog('employee_created', 'employee', authData.user.id, { name: form.name, profileType: form.profileType });
     setShowCreateForm(false);
-    setForm({ name: '', mobile: '', email: '', password: '', passportNo: '', emiratesId: '', photo: '', profileType: 'office', allowedIPs: '' });
+    setForm({ name: '', mobile: '', email: '', password: '', passportNo: '', emiratesId: '', photo: '', profileType: 'office' });
     load();
   };
 
@@ -169,7 +167,7 @@ export default function EmployeeList() {
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <p className="text-xs text-muted-foreground font-mono">{e.user_id?.slice(0, 8)}</p>
                       {isSales && <span className="text-xs bg-warning/10 text-warning px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><MapPin className="w-3 h-3" />Sales</span>}
-                      {!isSales && e.allowed_ips?.length > 0 && <span title="IP restricted"><Wifi className="w-3 h-3 text-secondary" /></span>}
+                      {!isSales && <span className="text-xs bg-secondary/10 text-secondary px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><MapPin className="w-3 h-3" />Office</span>}
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">{e.email}</p>
                     <p className="text-xs text-muted-foreground">{e.mobile}</p>
@@ -215,13 +213,13 @@ export default function EmployeeList() {
                 <div className="grid grid-cols-2 gap-3">
                   <button type="button" onClick={() => setForm({ ...form, profileType: 'office' })}
                     className={`p-3 rounded-xl border-2 text-center transition-all ${form.profileType === 'office' ? 'border-primary bg-primary/5' : 'border-border'}`}>
-                    <Wifi className="w-5 h-5 mx-auto mb-1" /><span className="text-sm font-medium">Office</span>
-                    <p className="text-xs text-muted-foreground mt-0.5">IP restricted access</p>
+                    <MapPin className="w-5 h-5 mx-auto mb-1" /><span className="text-sm font-medium">Office</span>
+                    <p className="text-xs text-muted-foreground mt-0.5">Location-based login</p>
                   </button>
                   <button type="button" onClick={() => setForm({ ...form, profileType: 'sales' })}
                     className={`p-3 rounded-xl border-2 text-center transition-all ${form.profileType === 'sales' ? 'border-primary bg-primary/5' : 'border-border'}`}>
                     <MapPin className="w-5 h-5 mx-auto mb-1" /><span className="text-sm font-medium">Sales</span>
-                    <p className="text-xs text-muted-foreground mt-0.5">Login from anywhere</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Flexible location</p>
                   </button>
                 </div>
               </div>
@@ -242,13 +240,6 @@ export default function EmployeeList() {
                 <div><label className="block text-sm font-medium mb-1">Emirates ID</label><input value={form.emiratesId} onChange={(e) => setForm({ ...form, emiratesId: e.target.value })} className="input-nawi" /></div>
               </div>
 
-              {form.profileType === 'office' && (
-                <div>
-                  <label className="block text-sm font-medium mb-1 flex items-center gap-1"><Wifi className="w-3 h-3" /> Allowed WiFi IP Addresses</label>
-                  <input value={form.allowedIPs} onChange={(e) => setForm({ ...form, allowedIPs: e.target.value })} className="input-nawi" placeholder="e.g., 192.168.1.1, 10.0.0.1 (comma separated)" />
-                  <p className="text-xs text-muted-foreground mt-1">Leave empty for now — you can add IPs later from employee profile</p>
-                </div>
-              )}
 
               <div className="flex justify-end gap-3 pt-2">
                 <button type="button" onClick={() => setShowCreateForm(false)} className="btn-outline">Cancel</button>

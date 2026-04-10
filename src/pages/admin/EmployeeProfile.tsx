@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Edit, Save, X, Camera, Wifi, MapPin } from 'lucide-react';
+import { ArrowLeft, Edit, Save, X, Camera, MapPin } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { formatCurrency, formatDate } from '@/lib/supabase-service';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -52,9 +52,6 @@ export default function EmployeeProfile() {
 
   const handleSave = async () => {
     const updates: any = { name: form.name, email: form.email, mobile: form.mobile, passport_no: form.passport_no, emirates_id: form.emirates_id, base_salary: Number(form.base_salary) || 0 };
-    if (typeof form.allowed_ips === 'string') {
-      updates.allowed_ips = form.allowed_ips.split(',').map((ip: string) => ip.trim()).filter(Boolean);
-    }
     await supabase.from('profiles').update(updates).eq('id', emp.id);
     setEmp({ ...emp, ...updates });
     setEditing(false);
@@ -79,7 +76,7 @@ export default function EmployeeProfile() {
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-foreground font-display">{emp.name}</h1>
             {isSales && <span className="text-xs bg-warning/10 text-warning px-2 py-0.5 rounded-full flex items-center gap-1"><MapPin className="w-3 h-3" />Sales</span>}
-            {!isSales && <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full flex items-center gap-1"><Wifi className="w-3 h-3" />Office</span>}
+            {!isSales && <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full flex items-center gap-1"><MapPin className="w-3 h-3" />Office</span>}
           </div>
           <div className="flex items-center gap-2 mt-1">
             <StatusBadge status={emp.status} />
@@ -119,29 +116,14 @@ export default function EmployeeProfile() {
               </div>
             ))}
           </div>
-          {!isSales && (
-            <div className="mt-4 pt-4 border-t border-border">
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><Wifi className="w-4 h-4" /> WiFi IP Restriction</h3>
-              {editing ? (
-                <div>
-                  <input value={Array.isArray(form.allowed_ips) ? form.allowed_ips.join(', ') : form.allowed_ips || ''} onChange={(e) => setForm({ ...form, allowed_ips: e.target.value })} className="input-nawi" placeholder="192.168.1.1, 10.0.0.1 (comma separated)" />
-                  <p className="text-xs text-muted-foreground mt-1">Employee can only login from these IP addresses. Leave empty to allow all.</p>
-                </div>
-              ) : (
-                <div>
-                  {emp.allowed_ips?.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {emp.allowed_ips.map((ip: string, i: number) => (
-                        <span key={i} className="text-xs bg-secondary/10 text-secondary px-2 py-1 rounded-full font-mono">{ip}</span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No IP restriction — employee can login from anywhere</p>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+          <div className="mt-4 pt-4 border-t border-border">
+            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><MapPin className="w-4 h-4" /> Location Zone</h3>
+            <p className="text-sm text-muted-foreground">
+              {emp.assigned_zone_id
+                ? 'Employee has a location zone assigned. Manage zones in Geofence Management.'
+                : 'No location restriction — employee can login from anywhere (WFH mode).'}
+            </p>
+          </div>
         </div>
       )}
 

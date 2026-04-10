@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Check, ChevronLeft, ChevronRight, Upload, AlertTriangle, FileUp, X, Users, Plus, Trash2, Search, Link2, History, Calendar } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Upload, AlertTriangle, FileUp, X, Users, Plus, Trash2, Search, Link2, History, Calendar, Loader2, Sparkles } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/integrations/supabase/client';
 import { generateDisplayId, auditLog, formatDate } from '@/lib/supabase-service';
 import Papa from 'papaparse';
+import { toast } from 'sonner';
 
 const SERVICES = [
   { key: 'Air Ticket', emoji: '✈️' },
@@ -54,6 +55,8 @@ export default function AddClientWizard() {
   const existingClientId = searchParams.get('existingClient');
   const { user, profile, isAdmin } = useAuth();
   const [step, setStep] = useState(0);
+  const [ocrLoading, setOcrLoading] = useState<string | null>(null);
+  const [ocrResults, setOcrResults] = useState<Record<string, any>>({});
   const [duplicates, setDuplicates] = useState<any[]>([]);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [bulkData, setBulkData] = useState<any[]>([]);
@@ -146,10 +149,64 @@ export default function AddClientWizard() {
     return reqs.default || [];
   };
 
-  const handleDocUpload = (docType: string, file: File) => {
+  const handleDocUpload = async (docType: string, file: File) => {
     const reader = new FileReader();
-    reader.onload = () => {
-      updateForm({ documents: [...form.documents, { name: file.name, type: file.type, docType, base64: `NAWI_ENC::${reader.result}`, uploadedAt: new Date().toISOString(), ocrExtracted: true }] });
+    reader.onload = async () => {
+      const base64Data = reader.result as string;
+      const docEntry = { name: file.name, type: file.type, docType, base64: `NAWI_ENC::${base64Data}`, uploadedAt: new Date().toISOString(), ocrExtracted: false };
+      updateForm({ documents: [...form.documents, docEntry] });
+
+      // Run OCR extraction for images
+      const isImage = file.type.startsWith('image/');
+      if (isImage) {
+        setOcrLoading(docType);
+        try {
+          const { data, error } = await supabase.functions.invoke('extract-document', {
+            body: { imageBase64: base64Data, docType, service: form.service, serviceSubcategory: form.serviceSubcategory },
+          });
+          if (error) throw error;
+          if (data?.success && data.data) {
+            const extracted = data.data;
+            setOcrResults(prev => ({ ...prev, [docType]: extracted }));
+
+            // Auto-fill form fields from OCR
+            const updates: any = {};
+            if (extracted.fullName && !form.name) updates.name = extracted.fullName;
+            if (extracted.passportNo && !form.passportNo) updates.passportNo = extracted.passportNo;
+            if (extracted.nationality && !form.nationality) updates.nationality = extracted.nationality;
+
+            const dateUpdates: any = { ...form.importantDates };
+            if (extracted.dateOfBirth && !form.dob) { updates.dob = extracted.dateOfBirth; dateUpdates.dob = extracted.dateOfBirth; }
+            if (extracted.passportExpiry) dateUpdates.passportExpiry = extracted.passportExpiry;
+            if (extracted.visaExpiry) dateUpdates.visaExpiry = extracted.visaExpiry;
+            updates.importantDates = dateUpdates;
+
+            // Auto-fill service details
+            const sdUpdates: any = { ...form.serviceDetails };
+            if (extracted.gender) sdUpdates.gender = extracted.gender;
+            if (extracted.profession) sdUpdates.profession = extracted.profession;
+            if (extracted.placeOfBirth) sdUpdates.placeOfBirth = extracted.placeOfBirth;
+            if (extracted.emiratesId) sdUpdates.emiratesId = extracted.emiratesId;
+            if (extracted.sponsor) sdUpdates.sponsor = extracted.sponsor;
+            if (extracted.visaType) sdUpdates.visaType = extracted.visaType;
+            if (extracted.visaNumber) sdUpdates.visaNumber = extracted.visaNumber;
+            updates.serviceDetails = sdUpdates;
+
+            // Mark doc as OCR extracted
+            const updatedDocs = [...form.documents];
+            const lastIdx = updatedDocs.length - 1;
+            if (lastIdx >= 0) updatedDocs[lastIdx] = { ...updatedDocs[lastIdx], ocrExtracted: true };
+            updates.documents = updatedDocs;
+
+            updateForm(updates);
+            toast.success(`✨ AI extracted data from ${docType}. Review auto-filled fields.`);
+          }
+        } catch (err: any) {
+          console.error('OCR extraction failed:', err);
+          toast.error('Could not extract data from document. Fill fields manually.');
+        }
+        setOcrLoading(null);
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -566,19 +623,37 @@ export default function AddClientWizard() {
             <h2 className="text-lg font-bold font-display">Documents & Important Dates</h2>
             <div>
               <h3 className="text-sm font-semibold mb-3">Required Documents for {form.service}{form.serviceSubcategory ? ` (${form.serviceSubcategory})` : ''}</h3>
+              <p className="text-xs text-muted-foreground mb-3">📸 Upload document images and AI will auto-extract details to fill the form.</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {getRequiredDocs().map((doc: string) => {
                   const uploaded = form.documents.find(d => d.docType === doc);
+                  const isExtracting = ocrLoading === doc;
+                  const hasOcrData = ocrResults[doc];
+                  const base64Src = uploaded?.base64?.startsWith('NAWI_ENC::') ? uploaded.base64.replace('NAWI_ENC::', '') : uploaded?.base64;
+                  const isImage = uploaded?.type?.startsWith('image/');
                   return (
                     <div key={doc} className={`p-3 rounded-lg border ${uploaded ? 'border-success/30 bg-success/5' : 'border-border'}`}>
                       <div className="flex items-center justify-between">
                         <span className="text-sm">{doc} {uploaded && <Check className="w-4 h-4 text-success inline ml-1" />}</span>
-                        <label className="btn-outline cursor-pointer text-xs py-1">
+                        <label className={`btn-outline cursor-pointer text-xs py-1 ${isExtracting ? 'opacity-50 pointer-events-none' : ''}`}>
                           <Upload className="w-3 h-3" /> {uploaded ? 'Replace' : 'Upload'}
-                          <input type="file" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleDocUpload(doc, e.target.files[0]); }} />
+                          <input type="file" className="hidden" accept="image/*,.pdf" onChange={(e) => { if (e.target.files?.[0]) handleDocUpload(doc, e.target.files[0]); }} />
                         </label>
                       </div>
+                      {uploaded && isImage && base64Src && (
+                        <img src={base64Src} alt={doc} className="w-full h-24 object-cover rounded mt-2 border border-border" />
+                      )}
                       {uploaded && <p className="text-xs text-muted-foreground mt-1">{uploaded.name}</p>}
+                      {isExtracting && (
+                        <div className="flex items-center gap-1.5 mt-1 text-xs text-primary">
+                          <Loader2 className="w-3 h-3 animate-spin" /> AI extracting data...
+                        </div>
+                      )}
+                      {hasOcrData && (
+                        <div className="flex items-center gap-1 mt-1 text-xs text-success">
+                          <Sparkles className="w-3 h-3" /> Data extracted & auto-filled
+                        </div>
+                      )}
                     </div>
                   );
                 })}
