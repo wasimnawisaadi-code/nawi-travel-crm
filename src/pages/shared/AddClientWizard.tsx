@@ -623,19 +623,37 @@ export default function AddClientWizard() {
             <h2 className="text-lg font-bold font-display">Documents & Important Dates</h2>
             <div>
               <h3 className="text-sm font-semibold mb-3">Required Documents for {form.service}{form.serviceSubcategory ? ` (${form.serviceSubcategory})` : ''}</h3>
+              <p className="text-xs text-muted-foreground mb-3">📸 Upload document images and AI will auto-extract details to fill the form.</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {getRequiredDocs().map((doc: string) => {
                   const uploaded = form.documents.find(d => d.docType === doc);
+                  const isExtracting = ocrLoading === doc;
+                  const hasOcrData = ocrResults[doc];
+                  const base64Src = uploaded?.base64?.startsWith('NAWI_ENC::') ? uploaded.base64.replace('NAWI_ENC::', '') : uploaded?.base64;
+                  const isImage = uploaded?.type?.startsWith('image/');
                   return (
                     <div key={doc} className={`p-3 rounded-lg border ${uploaded ? 'border-success/30 bg-success/5' : 'border-border'}`}>
                       <div className="flex items-center justify-between">
                         <span className="text-sm">{doc} {uploaded && <Check className="w-4 h-4 text-success inline ml-1" />}</span>
-                        <label className="btn-outline cursor-pointer text-xs py-1">
+                        <label className={`btn-outline cursor-pointer text-xs py-1 ${isExtracting ? 'opacity-50 pointer-events-none' : ''}`}>
                           <Upload className="w-3 h-3" /> {uploaded ? 'Replace' : 'Upload'}
-                          <input type="file" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleDocUpload(doc, e.target.files[0]); }} />
+                          <input type="file" className="hidden" accept="image/*,.pdf" onChange={(e) => { if (e.target.files?.[0]) handleDocUpload(doc, e.target.files[0]); }} />
                         </label>
                       </div>
+                      {uploaded && isImage && base64Src && (
+                        <img src={base64Src} alt={doc} className="w-full h-24 object-cover rounded mt-2 border border-border" />
+                      )}
                       {uploaded && <p className="text-xs text-muted-foreground mt-1">{uploaded.name}</p>}
+                      {isExtracting && (
+                        <div className="flex items-center gap-1.5 mt-1 text-xs text-primary">
+                          <Loader2 className="w-3 h-3 animate-spin" /> AI extracting data...
+                        </div>
+                      )}
+                      {hasOcrData && (
+                        <div className="flex items-center gap-1 mt-1 text-xs text-success">
+                          <Sparkles className="w-3 h-3" /> Data extracted & auto-filled
+                        </div>
+                      )}
                     </div>
                   );
                 })}
