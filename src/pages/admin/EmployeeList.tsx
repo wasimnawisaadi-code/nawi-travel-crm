@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Trash2, Eye, Users, Camera, Shield, MapPin } from 'lucide-react';
+import { Plus, Search, Trash2, Eye, Users, Camera, Shield } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { auditLog } from '@/lib/supabase-service';
