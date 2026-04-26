@@ -3,11 +3,14 @@ import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Briefcase, Calendar, FileText,
   DollarSign, Shield, LogOut, Menu,
-  Search, ChevronLeft, Clock, PlaneTakeoff, MessageCircle, CalendarDays, Bell, MapPin
+  Search, ChevronLeft, Clock, PlaneTakeoff, MessageCircle, CalendarDays, Bell, MapPin,
+  ClipboardList, Settings as SettingsIcon
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/integrations/supabase/client';
 import logo from '@/assets/logo.png';
+import AIChatbot from '@/components/AIChatbot';
+import CalculatorWidget from '@/components/CalculatorWidget';
 
 const adminLinks = [
   { to: '/admin/dashboard', label: 'Dashboard & Reports', icon: LayoutDashboard },
@@ -15,12 +18,14 @@ const adminLinks = [
   { to: '/admin/clients', label: 'Clients', icon: Briefcase },
   { to: '/admin/calendar', label: 'Calendar', icon: Calendar },
   { to: '/admin/important-dates', label: 'Important Dates', icon: CalendarDays },
+  { to: '/admin/dsr', label: 'Daily Status', icon: ClipboardList },
   { to: '/admin/attendance', label: 'Attendance', icon: Clock },
   { to: '/admin/leave', label: 'Leave & HR', icon: FileText },
   { to: '/admin/payroll', label: 'Payroll', icon: DollarSign },
   { to: '/admin/geofence', label: 'Geofence Zones', icon: MapPin },
   { to: '/admin/audit-log', label: 'Audit Log', icon: Shield },
   { to: '/admin/chat', label: 'Team Chat', icon: MessageCircle },
+  { to: '/admin/settings', label: 'Settings', icon: SettingsIcon },
 ];
 
 const employeeLinks = [
@@ -28,6 +33,7 @@ const employeeLinks = [
   { to: '/employee/clients', label: 'My Clients', icon: Briefcase },
   { to: '/employee/calendar', label: 'Calendar', icon: Calendar },
   { to: '/employee/important-dates', label: 'Important Dates', icon: CalendarDays },
+  { to: '/employee/dsr', label: 'My Daily Status', icon: ClipboardList },
   { to: '/employee/attendance', label: 'Attendance', icon: Clock },
   { to: '/employee/leave', label: 'Leave', icon: FileText },
   { to: '/employee/chat', label: 'Team Chat', icon: MessageCircle },
