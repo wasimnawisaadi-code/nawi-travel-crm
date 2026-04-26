@@ -223,22 +223,29 @@ export default function TeamChat() {
         <div className="flex-1 overflow-y-auto">
           <div className="px-3 py-2">
             <p className="text-xs font-medium text-muted-foreground mb-1">Groups</p>
-            {groups.map((g: any) => (
-              <button key={g.id} onClick={() => { setActiveChat(g.id); setActiveChatType('group'); }}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${activeChat === g.id && activeChatType === 'group' ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted text-foreground'}`}>
-                <Hash className="w-4 h-4 flex-shrink-0" />
-                <span className="truncate">{g.name}</span>
-              </button>
-            ))}
+            {groups.map((g: any) => {
+              const unread = unreadCounts[g.id] || 0;
+              const isActive = activeChat === g.id && activeChatType === 'group';
+              return (
+                <button key={g.id} onClick={() => { setActiveChat(g.id); setActiveChatType('group'); }}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${isActive ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted text-foreground'}`}>
+                  <Hash className="w-4 h-4 flex-shrink-0" />
+                  <span className="truncate flex-1">{g.name}</span>
+                  {unread > 0 && !isActive && <span className="bg-destructive text-destructive-foreground text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{unread}</span>}
+                </button>
+              );
+            })}
           </div>
           <div className="px-3 py-2 border-t border-border">
             <p className="text-xs font-medium text-muted-foreground mb-1">Direct Messages</p>
             {dmConversations.map((userId) => {
               const u = allUsers.find(au => au.user_id === userId);
               if (!u) return null;
+              const unread = unreadCounts[userId] || 0;
+              const isActive = activeChat === userId && activeChatType === 'direct';
               return (
                 <button key={userId} onClick={() => startDM(userId)}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${activeChat === userId && activeChatType === 'direct' ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted text-foreground'}`}>
+                  className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${isActive ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted text-foreground'}`}>
                   {u.photo_url ? (
                     <img src={u.photo_url} alt="" className="w-5 h-5 rounded-full object-cover" />
                   ) : (
@@ -246,7 +253,8 @@ export default function TeamChat() {
                       {u.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
                     </div>
                   )}
-                  <span className="truncate">{u.name}</span>
+                  <span className="truncate flex-1">{u.name}</span>
+                  {unread > 0 && !isActive && <span className="bg-destructive text-destructive-foreground text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{unread}</span>}
                 </button>
               );
             })}
