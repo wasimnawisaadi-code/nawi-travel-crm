@@ -82,6 +82,13 @@ export default function TeamChat() {
       }
       const { data } = await query;
       setMessages(data || []);
+
+      // Mark unread messages as read
+      const toMark = (data || []).filter((m: any) => !m.is_read && m.sender_id !== user.id).map((m: any) => m.id);
+      if (toMark.length > 0) {
+        await supabase.from('chat_messages').update({ is_read: true }).in('id', toMark);
+        loadUnread();
+      }
     };
     fetchMessages();
 
