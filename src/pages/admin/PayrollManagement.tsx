@@ -182,11 +182,26 @@ export default function PayrollManagement() {
           <h2 className="text-lg font-bold font-display">Payroll Management</h2>
           <input type="month" value={yearMonth} onChange={(e) => setYearMonth(e.target.value)} className="input-nawi w-auto" />
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button onClick={exportCSV} className="btn-outline"><Download className="w-4 h-4" /> Export</button>
-          <button onClick={calculatePayroll} className="btn-primary"><Calculator className="w-4 h-4" /> Calculate Payroll</button>
+          {payroll.length > 0 && (
+            monthLocked
+              ? <button onClick={() => setPwdAction({ type: 'unlock', row: null })} className="btn-outline"><Unlock className="w-4 h-4" /> Unlock Month</button>
+              : <button onClick={() => setPwdAction({ type: 'lock', row: null })} className="btn-outline"><Lock className="w-4 h-4" /> Lock Month</button>
+          )}
+          <button onClick={calculatePayroll} disabled={monthLocked} className="btn-primary disabled:opacity-50"><Calculator className="w-4 h-4" /> Calculate Payroll</button>
         </div>
       </div>
+
+      {monthLocked && (
+        <div className="card-nawi bg-warning/5 border-warning/30 flex items-center gap-3 py-3">
+          <Lock className="w-5 h-5 text-warning" />
+          <div className="text-sm">
+            <strong className="text-warning">Payroll for {yearMonth} is locked.</strong>
+            <span className="text-muted-foreground ml-2">No further edits, confirmations, or recalculations are allowed. Unlock to make changes.</span>
+          </div>
+        </div>
+      )}
 
       {payroll.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -220,11 +235,21 @@ export default function PayrollManagement() {
                   <td className="font-bold">{formatCurrency(p.final_salary)}</td>
                   <td><StatusBadge status={p.status} /></td>
                   <td>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 items-center">
                       {isEditing ? (
-                        <><button onClick={() => handleSaveEdit(p)} className="text-success p-1"><Save className="w-3 h-3" /></button><button onClick={() => setEditingId(null)} className="text-muted-foreground p-1"><X className="w-3 h-3" /></button></>
+                        <><button onClick={() => handleSaveEdit(p)} className="text-success p-1" title="Save"><Save className="w-3 h-3" /></button><button onClick={() => setEditingId(null)} className="text-muted-foreground p-1" title="Cancel"><X className="w-3 h-3" /></button></>
+                      ) : p.locked ? (
+                        <><Lock className="w-3 h-3 text-warning" /><button onClick={() => downloadPayslip(p)} className="text-primary p-1" title="Download payslip"><FileText className="w-3 h-3" /></button></>
                       ) : (
-                        <>{p.status === 'Draft' && <><button onClick={() => handleEdit(p)} className="text-secondary p-1"><Edit className="w-3 h-3" /></button><button onClick={() => confirmPayroll(p.id)} className="btn-success text-xs px-2 py-0.5">Confirm</button></>}</>
+                        <>
+                          {p.status === 'Draft' && (
+                            <>
+                              <button onClick={() => handleEdit(p)} className="text-secondary p-1" title="Edit"><Edit className="w-3 h-3" /></button>
+                              <button onClick={() => setPwdAction({ type: 'confirm', row: p })} className="btn-success text-xs px-2 py-0.5">Confirm</button>
+                            </>
+                          )}
+                          <button onClick={() => downloadPayslip(p)} className="text-primary p-1" title="Download payslip"><FileText className="w-3 h-3" /></button>
+                        </>
                       )}
                     </div>
                   </td>
