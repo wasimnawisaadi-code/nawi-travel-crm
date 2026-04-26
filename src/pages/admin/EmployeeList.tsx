@@ -14,7 +14,6 @@ export default function EmployeeList() {
   const { user } = useAuth();
   const [employees, setEmployees] = useState<any[]>([]);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
   const [roleFilter, setRoleFilter] = useState('all');
   const [pwdAction, setPwdAction] = useState<{ type: 'delete'; emp: any } | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -34,7 +33,6 @@ export default function EmployeeList() {
   useEffect(() => { load(); }, []);
 
   const filtered = employees.filter((e: any) => {
-    if (statusFilter !== 'all' && e.status !== statusFilter) return false;
     if (roleFilter !== 'all' && (e.profile_type || 'office') !== roleFilter) return false;
     if (search && !e.name.toLowerCase().includes(search.toLowerCase()) && !e.email.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
@@ -136,11 +134,6 @@ export default function EmployeeList() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input value={search} onChange={(e) => setSearch(e.target.value)} className="input-nawi pl-9" placeholder="Search employees..." />
           </div>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input-nawi w-auto">
-            <option value="all">All Status</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
           <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="input-nawi w-auto">
             <option value="all">All Types</option>
             <option value="office">Office</option>
