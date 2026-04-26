@@ -274,26 +274,25 @@ export default function EmployeeList() {
         </div>
       )}
 
-      {/* Delete Modal */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 bg-foreground/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-card rounded-xl shadow-elevated w-full max-w-md p-6">
-            <h2 className="text-lg font-bold text-foreground font-display mb-2">Deactivate Employee</h2>
-            <p className="text-sm text-muted-foreground mb-3">This will permanently deactivate <strong>{showDeleteModal.name}</strong>'s account and unassign all their clients.</p>
-            <div className="bg-destructive/10 text-destructive text-sm px-4 py-2.5 rounded-lg mb-4">
-              <p>⚠️ This action cannot be undone.</p>
-              <p className="text-xs mt-1">{clientCounts[showDeleteModal.user_id] || 0} clients will be unassigned.</p>
-            </div>
-            <p className="text-sm text-foreground mb-2">Type the employee's full name to confirm:</p>
-            <div className="inline-block bg-primary text-primary-foreground text-sm px-3 py-1 rounded-full mb-3">{showDeleteModal.name}</div>
-            <input value={deleteConfirmName} onChange={(e) => setDeleteConfirmName(e.target.value)} className="input-nawi mb-4" placeholder="Type employee name..." />
-            <div className="flex justify-end gap-3">
-              <button onClick={() => { setShowDeleteModal(null); setDeleteConfirmName(''); }} className="btn-outline">Cancel</button>
-              <button onClick={handleDelete} disabled={deleteConfirmName !== showDeleteModal.name} className="btn-danger disabled:opacity-40">Confirm Deactivate</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <PasswordConfirmDialog
+        open={!!pwdAction}
+        onClose={() => setPwdAction(null)}
+        onConfirm={runPwdAction}
+        title={
+          pwdAction?.type === 'delete' ? `Delete ${pwdAction.emp.name}` :
+          pwdAction?.type === 'activate' ? `Activate ${pwdAction?.emp.name}` :
+          `Deactivate ${pwdAction?.emp.name}`
+        }
+        description={
+          pwdAction?.type === 'delete'
+            ? `This will PERMANENTLY delete the employee, their login, and unassign ${clientCounts[pwdAction.emp.user_id] || 0} client(s). Cannot be undone.`
+            : pwdAction?.type === 'activate'
+              ? 'This employee will be able to log in again.'
+              : `Login will be disabled. ${clientCounts[pwdAction?.emp.user_id] || 0} client(s) remain assigned.`
+        }
+        actionLabel={pwdAction?.type === 'delete' ? 'Delete Permanently' : pwdAction?.type === 'activate' ? 'Activate' : 'Deactivate'}
+        destructive={pwdAction?.type !== 'activate'}
+      />
     </div>
   );
 }
