@@ -262,20 +262,10 @@ export default function EmployeeList() {
         open={!!pwdAction}
         onClose={() => setPwdAction(null)}
         onConfirm={runPwdAction}
-        title={
-          pwdAction?.type === 'delete' ? `Delete ${pwdAction.emp.name}` :
-          pwdAction?.type === 'activate' ? `Activate ${pwdAction?.emp.name}` :
-          `Deactivate ${pwdAction?.emp.name}`
-        }
-        description={
-          pwdAction?.type === 'delete'
-            ? `This will PERMANENTLY delete the employee, their login, and unassign ${clientCounts[pwdAction.emp.user_id] || 0} client(s). Cannot be undone.`
-            : pwdAction?.type === 'activate'
-              ? 'This employee will be able to log in again.'
-              : `Login will be disabled. ${clientCounts[pwdAction?.emp.user_id] || 0} client(s) remain assigned.`
-        }
-        actionLabel={pwdAction?.type === 'delete' ? 'Delete Permanently' : pwdAction?.type === 'activate' ? 'Activate' : 'Deactivate'}
-        destructive={pwdAction?.type !== 'activate'}
+        title={pwdAction ? `Delete ${pwdAction.emp.name}` : ''}
+        description={pwdAction ? `This will PERMANENTLY delete the employee, their login, and unassign ${clientCounts[pwdAction.emp.user_id] || 0} client(s). Cannot be undone.` : ''}
+        actionLabel="Delete Permanently"
+        destructive
       />
     </div>
   );
