@@ -747,6 +747,44 @@ export type Database = {
         }
         Relationships: []
       }
+      payroll_entries: {
+        Row: {
+          amount: number
+          created_at: string
+          created_by: string | null
+          description: string
+          entry_type: string
+          id: string
+          payroll_id: string
+        }
+        Insert: {
+          amount?: number
+          created_at?: string
+          created_by?: string | null
+          description?: string
+          entry_type: string
+          id?: string
+          payroll_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          created_by?: string | null
+          description?: string
+          entry_type?: string
+          id?: string
+          payroll_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payroll_entries_payroll_id_fkey"
+            columns: ["payroll_id"]
+            isOneToOne: false
+            referencedRelation: "payroll"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           allowed_ips: string[] | null
@@ -970,6 +1008,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_superadmin: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
       app_role: "admin" | "employee" | "superadmin"
