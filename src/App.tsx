@@ -65,7 +65,6 @@ const App = () => (
               <Route path="/admin/dsr" element={<DailyStatusReport />} />
               <Route path="/admin/dsr-assignments" element={<DSRTemplateAssignment />} />
               <Route path="/admin/admins" element={<AdminManagement />} />
-              <Route path="/admin/superadmin" element={<SuperAdminDashboard />} />
 
               {/* Employee */}
               <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
