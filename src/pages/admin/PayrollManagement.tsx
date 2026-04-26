@@ -83,6 +83,21 @@ export default function PayrollManagement() {
   const confirmPayroll = async (id: string) => {
     await supabase.from('payroll').update({ status: 'Confirmed', confirmed_by: user?.email || '', confirmed_at: new Date().toISOString() }).eq('id', id);
     await auditLog('payroll_confirmed', 'payroll', id, {});
+    toast.success('Payroll confirmed');
+    load();
+  };
+
+  const lockMonth = async () => {
+    await supabase.from('payroll').update({ locked: true, locked_at: new Date().toISOString(), locked_by: user?.email || '' } as any).eq('year_month', yearMonth);
+    await auditLog('payroll_locked', 'payroll', yearMonth, {});
+    toast.success(`Payroll for ${yearMonth} locked`);
+    load();
+  };
+
+  const unlockMonth = async () => {
+    await supabase.from('payroll').update({ locked: false, locked_at: null, locked_by: null } as any).eq('year_month', yearMonth);
+    await auditLog('payroll_unlocked', 'payroll', yearMonth, {});
+    toast.success(`Payroll for ${yearMonth} unlocked`);
     load();
   };
 
@@ -96,6 +111,51 @@ export default function PayrollManagement() {
     await supabase.from('payroll').update({ bonus, allowances, overtime, final_salary: Math.round(finalSalary) }).eq('id', p.id);
     setEditingId(null);
     load();
+  };
+
+  const downloadPayslip = (p: any) => {
+    const emp = employees.find(e => e.user_id === p.employee_id);
+    const lines = [
+      `PAYSLIP — ${yearMonth}`,
+      `Payslip ID: ${p.display_id}`,
+      `Employee: ${emp?.name || '—'}`,
+      `Email: ${emp?.email || '—'}`,
+      `Status: ${p.status}${p.locked ? ' (Locked)' : ''}`,
+      ``,
+      `--- Attendance ---`,
+      `Present Days: ${p.present_days || 0} / 22`,
+      `Late Days: ${p.late_days || 0}`,
+      `Absent Days: ${p.absent_days || 0}`,
+      `Paid Leave: ${p.paid_leave_days || 0}`,
+      `Sick Leave: ${p.sick_leave || 0}`,
+      `Unpaid Leave: ${p.unpaid_leave || 0}`,
+      `Total Hours: ${p.total_hours || 0}`,
+      ``,
+      `--- Earnings ---`,
+      `Base Salary:        ${formatCurrency(p.base_salary || 0)}`,
+      `Bonus:              ${formatCurrency(p.bonus || 0)}`,
+      `Allowances:         ${formatCurrency(p.allowances || 0)}`,
+      `Overtime:           ${formatCurrency(p.overtime || 0)}`,
+      ``,
+      `--- Deductions ---`,
+      `Sick Deduction:     ${formatCurrency(p.sick_deduction || 0)}`,
+      `Unpaid Deduction:   ${formatCurrency(p.unpaid_deduction || 0)}`,
+      `Absence Deduction:  ${formatCurrency(p.absence_deduction || 0)}`,
+      `Late Deduction:     ${formatCurrency(p.late_deduction || 0)}`,
+      `Total Deductions:   ${formatCurrency(p.total_deductions || 0)}`,
+      ``,
+      `=================================`,
+      `FINAL SALARY:       ${formatCurrency(p.final_salary || 0)}`,
+      `=================================`,
+      ``,
+      p.confirmed_by ? `Confirmed by: ${p.confirmed_by} at ${p.confirmed_at}` : '',
+      p.locked_by ? `Locked by: ${p.locked_by} at ${p.locked_at}` : '',
+    ].filter(Boolean);
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `payslip_${emp?.name?.replace(/\s+/g, '_') || p.employee_id}_${yearMonth}.txt`;
+    link.click();
   };
 
   const totalPayroll = payroll.reduce((s, p) => s + (p.final_salary || 0), 0);
