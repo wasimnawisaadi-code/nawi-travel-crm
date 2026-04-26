@@ -156,4 +156,38 @@ export async function generateDailyNotifications(userId: string, isAdmin: boolea
   if (inserts.length > 0) {
     await supabase.from('notifications').insert(inserts);
   }
+
+  // Admin morning summary — runs once per day for admins
+  if (isAdmin) {
+    const summaryKey = `morning_summary`;
+    if (!existingSet.has(`null-${summaryKey}`)) {
+      const { data: existingSummary } = await supabase
+        .from('notifications')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('type', summaryKey)
+        .gte('created_at', `${today}T00:00:00`)
+        .maybeSingle();
+
+      if (!existingSummary) {
+        const [tasksRes, leaveRes, attRes] = await Promise.all([
+          supabase.from('tasks').select('id, status, due_date'),
+          supabase.from('leave_requests').select('id').eq('status', 'Pending'),
+          supabase.from('attendance').select('id, status').eq('date', today),
+        ]);
+        const tasks = tasksRes.data || [];
+        const overdue = tasks.filter((t: any) => (t.status === 'New' || t.status === 'Processing') && t.due_date && new Date(t.due_date) < new Date()).length;
+        const pendingLeave = (leaveRes.data || []).length;
+        const presentToday = (attRes.data || []).filter((a: any) => a.status === 'Present' || a.status === 'Late').length;
+        const newClientsToday = clients.length;
+
+        await supabase.from('notifications').insert([{
+          user_id: userId,
+          type: summaryKey,
+          title: '☀️ Morning Summary',
+          message: `${presentToday} present today · ${pendingLeave} pending leave · ${overdue} overdue tasks · ${newClientsToday} active clients in your scope`,
+        }]);
+      }
+    }
+  }
 }
