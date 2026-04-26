@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { exportToExcel } from '@/lib/excel-export';
 import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Search, Eye, LayoutGrid, LayoutList, Briefcase, Filter, Download, MessageCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
