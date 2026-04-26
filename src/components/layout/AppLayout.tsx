@@ -222,6 +222,10 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
+
+      {/* Floating productivity widgets */}
+      <CalculatorWidget />
+      <AIChatbot />
     </div>
   );
 }
