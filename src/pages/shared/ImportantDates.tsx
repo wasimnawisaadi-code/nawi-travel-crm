@@ -266,7 +266,7 @@ export default function ImportantDates() {
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h2 className="text-xl font-bold font-display flex items-center gap-2"><CalendarIcon className="w-5 h-5 text-primary" /> Important Dates</h2>
+      <h2 className="text-xl font-bold font-display flex items-center gap-2"><CalendarIcon className="w-5 h-5 text-primary" /> Important Dates</h2>
         <div className="flex items-center gap-2">
           <div className="flex border border-border rounded-lg p-0.5">
             <button onClick={() => setView('cards')} className={`px-3 py-1 text-xs rounded ${view === 'cards' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}><LayoutGrid className="w-3 h-3 inline mr-1" /> Cards</button>
