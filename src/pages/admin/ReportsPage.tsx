@@ -91,15 +91,29 @@ export default function ReportsPage() {
 
   const tabs = ['overview', 'clients', 'services', 'employees', 'revenue'];
 
+  // Date-range filter for clients
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const filteredClients = clients.filter((c: any) => {
+    if (!c.created_at) return true;
+    const d = c.created_at.slice(0, 10);
+    if (dateFrom && d < dateFrom) return false;
+    if (dateTo && d > dateTo) return false;
+    return true;
+  });
+
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-xl font-bold font-display">Reports & Analytics</h2>
-        <div className="flex items-center gap-3">
-          <select value={viewType} onChange={(e) => setViewType(e.target.value as any)} className="input-nawi w-auto">
+        <div className="flex items-center gap-2 flex-wrap">
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="input-nawi w-auto text-sm" placeholder="From" />
+          <span className="text-xs text-muted-foreground">→</span>
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="input-nawi w-auto text-sm" placeholder="To" />
+          <select value={viewType} onChange={(e) => setViewType(e.target.value as any)} className="input-nawi w-auto text-sm">
             <option value="monthly">Monthly</option><option value="weekly">Weekly</option><option value="annual">Annual</option>
           </select>
-          <input type="month" value={yearMonth} onChange={(e) => setYearMonth(e.target.value)} className="input-nawi w-auto" />
+          <input type="month" value={yearMonth} onChange={(e) => setYearMonth(e.target.value)} className="input-nawi w-auto text-sm" />
         </div>
       </div>
 
