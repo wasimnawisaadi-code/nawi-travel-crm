@@ -188,7 +188,7 @@ async function recordLoginAttendanceWithLocation(
   if (!existing) {
     const now = new Date();
     const { getAttendanceSettings, classifyLogin } = await import('@/lib/settings');
-    const settings = await getAttendanceSettings();
+    const settings = await getAttendanceSettings(userId);
     const status = classifyLogin(now, settings);
     await supabase.from('attendance').insert({
       employee_id: userId,
