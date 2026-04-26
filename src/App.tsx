@@ -15,7 +15,6 @@ import PayrollManagement from "./pages/admin/PayrollManagement";
 import AuditLog from "./pages/admin/AuditLog";
 import GeofenceManagement from "./pages/admin/GeofenceManagement";
 import ReportsPage from "./pages/admin/ReportsPage";
-import SettingsPage from "./pages/admin/SettingsPage";
 import EmployeeDashboard from "./pages/employee/EmployeeDashboard";
 import AttendancePage from "./pages/employee/AttendancePage";
 import ClientList from "./pages/shared/ClientList";
@@ -43,8 +42,8 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<Navigate to="/login" replace />} />
 
-            {/* Admin Routes */}
             <Route element={<AppLayout />}>
+              {/* Admin */}
               <Route path="/admin/dashboard" element={<AdminDashboard />} />
               <Route path="/admin/employees" element={<EmployeeList />} />
               <Route path="/admin/employees/new" element={<EmployeeList />} />
@@ -62,11 +61,10 @@ const App = () => (
               <Route path="/admin/important-dates" element={<ImportantDates />} />
               <Route path="/admin/chat" element={<TeamChat />} />
               <Route path="/admin/notifications" element={<NotificationsPage />} />
-              <Route path="/admin/settings" element={<SettingsPage />} />
               <Route path="/admin/dsr" element={<DailyStatusReport />} />
               <Route path="/admin/dsr-assignments" element={<DSRTemplateAssignment />} />
 
-              {/* Employee Routes */}
+              {/* Employee */}
               <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
               <Route path="/employee/clients" element={<ClientList />} />
               <Route path="/employee/clients/new" element={<AddClientWizard />} />

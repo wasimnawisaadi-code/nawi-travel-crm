@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Briefcase, Calendar, FileText,
   DollarSign, Shield, LogOut, Menu,
   Search, ChevronLeft, Clock, PlaneTakeoff, MessageCircle, CalendarDays, Bell, MapPin,
-  ClipboardList, Settings as SettingsIcon
+  ClipboardList,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/integrations/supabase/client';
@@ -25,7 +25,6 @@ const adminLinks = [
   { to: '/admin/geofence', label: 'Geofence Zones', icon: MapPin },
   { to: '/admin/audit-log', label: 'Audit Log', icon: Shield },
   { to: '/admin/chat', label: 'Team Chat', icon: MessageCircle },
-  { to: '/admin/settings', label: 'Settings', icon: SettingsIcon },
 ];
 
 const employeeLinks = [
@@ -55,7 +54,6 @@ export default function AppLayout() {
     if (!loading && !user) navigate('/login');
   }, [user, loading, navigate]);
 
-  // Fetch unread counts
   useEffect(() => {
     if (!user) return;
     const fetchCounts = async () => {
@@ -75,7 +73,6 @@ export default function AppLayout() {
     };
     fetchCounts();
 
-    // Subscribe to realtime notifications
     const channel = supabase
       .channel('notification-counts')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => {
@@ -116,7 +113,6 @@ export default function AppLayout() {
         <div className="fixed inset-0 bg-foreground/50 z-40 lg:hidden" onClick={() => setMobileOpen(false)} />
       )}
 
-      {/* Sidebar */}
       <aside className={`
         fixed lg:static inset-y-0 left-0 z-50 flex flex-col bg-sidebar transition-all duration-200
         ${collapsed ? 'w-[72px]' : 'w-[260px]'}
@@ -146,8 +142,8 @@ export default function AppLayout() {
                 title={collapsed ? link.label : undefined}>
                 <link.icon className="w-5 h-5 flex-shrink-0" />
                 {!collapsed && <span>{link.label}</span>}
-                {link.label === 'Team Chat' && (unreadChats + unreadNotifications) > 0 && !collapsed && (
-                  <span className="ml-auto bg-destructive text-destructive-foreground text-xs px-1.5 py-0.5 rounded-full">{unreadChats + unreadNotifications}</span>
+                {link.label === 'Team Chat' && unreadChats > 0 && !collapsed && (
+                  <span className="ml-auto bg-destructive text-destructive-foreground text-xs px-1.5 py-0.5 rounded-full">{unreadChats}</span>
                 )}
               </Link>
             );
@@ -178,7 +174,6 @@ export default function AppLayout() {
         </div>
       </aside>
 
-      {/* Main */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <header className="h-14 border-b border-border bg-background flex items-center px-4 gap-4 flex-shrink-0">
           <button onClick={() => setMobileOpen(true)} className="lg:hidden text-foreground">
@@ -223,7 +218,6 @@ export default function AppLayout() {
         </main>
       </div>
 
-      {/* Floating productivity widgets */}
       <CalculatorWidget />
       <AIChatbot />
     </div>
