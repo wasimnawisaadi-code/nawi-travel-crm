@@ -168,11 +168,13 @@ export default function ClientProfile() {
     overdue: 'text-destructive border-destructive/30 bg-destructive/10',
   };
 
-  const tabList = ['overview', 'services', 'documents', 'dates', 'family', 'quotations', 'tasks', 'revenue', 'notes', 'history'];
+  const tabList = ['overview', 'services', 'documents', 'dates', 'quotations', 'tasks', 'revenue', 'notes', 'history'];
   const importantDates = (client.important_dates || {}) as Record<string, string>;
-  const familyMembers = (client.family_members || []) as any[];
   const documents = (client.documents || []) as any[];
   const serviceDetails = (client.service_details || {}) as Record<string, string>;
+
+  const buildWelcomeMessage = () =>
+    `Dear ${client.name},\n\nThank you for choosing Nawi Saadi Travel & Tourism! 🌟\n\nWe have received your enquiry${client.service ? ` for ${client.service}` : ''} and our team will be in touch shortly.\n\nFor any questions, feel free to reply to this message.\n\nWarm regards,\nNawi Saadi Travel & Tourism`;
 
   return (
     <div className="space-y-4 animate-fade-in">
