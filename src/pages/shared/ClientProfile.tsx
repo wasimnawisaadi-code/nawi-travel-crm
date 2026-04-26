@@ -460,3 +460,98 @@ export default function ClientProfile() {
     </div>
   );
 }
+
+// =============== Documents Tab ===============
+function ProfileDocumentsTab({ documents, onAdd, onDelete }: { documents: any[]; onAdd: (file: File, name: string) => void; onDelete: (idx: number) => void; }) {
+  const [pendingName, setPendingName] = useState('');
+  const triggerUpload = (camera: boolean) => {
+    if (!pendingName.trim()) { toast.error('Enter a document name first'); return; }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*,.pdf';
+    input.multiple = true;
+    if (camera) input.setAttribute('capture', 'environment');
+    input.onchange = (e: any) => {
+      const files = Array.from((e.target as HTMLInputElement).files || []) as File[];
+      files.forEach((file, i) => onAdd(file, files.length > 1 ? `${pendingName} (${i + 1})` : pendingName));
+      setPendingName('');
+    };
+    input.click();
+  };
+  return (
+    <div className="card-nawi">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold font-display">Documents ({documents.length})</h3>
+      </div>
+      <div className="card-nawi bg-muted/30 mb-4 space-y-3">
+        <input value={pendingName} onChange={e => setPendingName(e.target.value)} placeholder="Document name (e.g. Passport Copy)" className="input-nawi" />
+        <div className="flex gap-2">
+          <button onClick={() => triggerUpload(false)} className="btn-outline flex-1"><Upload className="w-4 h-4" /> Upload</button>
+          <button onClick={() => triggerUpload(true)} className="btn-outline flex-1"><Camera className="w-4 h-4" /> Take Photo</button>
+        </div>
+      </div>
+      {documents.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-8">No documents uploaded yet</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {documents.map((d: any, i: number) => {
+            const isImage = d.fileType?.startsWith('image/') || d.type?.startsWith('image/') || d.fileName?.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/i);
+            const src = d.base64?.startsWith('NAWI_ENC::') ? d.base64.replace('NAWI_ENC::', '') : d.base64;
+            return (
+              <div key={i} className="border border-border rounded-lg overflow-hidden relative group">
+                {isImage && src ? (
+                  <a href={src} target="_blank" rel="noopener"><img src={src} alt={d.name} className="w-full h-40 object-cover" /></a>
+                ) : (
+                  <div className="w-full h-40 bg-muted flex items-center justify-center"><FileText className="w-12 h-12 text-muted-foreground" /></div>
+                )}
+                <div className="p-3">
+                  <p className="text-sm font-medium truncate">{d.name || d.docType || d.fileName}</p>
+                  <p className="text-xs text-muted-foreground truncate">{d.fileName}</p>
+                  <div className="flex justify-between items-center mt-2">
+                    {src && <a href={src} download={d.fileName || d.name} className="text-xs text-primary hover:underline"><Download className="w-3 h-3 inline" /> Download</a>}
+                    <button onClick={() => onDelete(i)} className="text-xs text-destructive hover:underline"><Trash2 className="w-3 h-3 inline" /> Delete</button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============== Dates Tab ===============
+function ProfileDatesTab({ dates, dateStatusColors, onAdd, onDelete }: { dates: Record<string, string>; dateStatusColors: Record<string, string>; onAdd: (name: string, date: string) => void; onDelete: (key: string) => void; }) {
+  const [name, setName] = useState('');
+  const [date, setDate] = useState('');
+  return (
+    <div className="card-nawi">
+      <h3 className="font-semibold font-display mb-4">Important Dates</h3>
+      <div className="card-nawi bg-muted/30 mb-4 grid grid-cols-1 md:grid-cols-3 gap-2">
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Date name (Travel Date, Passport Expiry…)" className="input-nawi md:col-span-1" />
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="input-nawi" />
+        <button onClick={() => { onAdd(name, date); setName(''); setDate(''); }} className="btn-primary"><Plus className="w-4 h-4" /> Add Date</button>
+      </div>
+      {Object.keys(dates).filter(k => dates[k] && k !== 'passportNo').length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-8">No dates added yet</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {Object.entries(dates).map(([type, val]) => {
+            if (!val || type === 'passportNo') return null;
+            const days = daysUntil(val as string);
+            const status = getDateStatus(val as string);
+            return (
+              <div key={type} className={`p-4 rounded-xl border ${dateStatusColors[status]} relative group`}>
+                <button onClick={() => onDelete(type)} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-destructive hover:bg-destructive/10 p-1 rounded transition"><Trash2 className="w-3 h-3" /></button>
+                <p className="text-xs font-medium uppercase tracking-wider mb-1">{type.replace(/([A-Z])/g, ' $1').trim()}</p>
+                <p className="text-lg font-bold font-display">{formatDate(val as string)}</p>
+                <p className="text-sm font-medium mt-1">{days < 0 ? `${Math.abs(days)} days overdue` : days === 0 ? 'Today' : `${days} days left`}</p>
+              </div>
+            );
+          }).filter(Boolean)}
+        </div>
+      )}
+    </div>
+  );
+}
