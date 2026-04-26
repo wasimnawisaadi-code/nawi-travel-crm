@@ -307,17 +307,6 @@ export default function PayrollManagement() {
         </table>
       </div>
 
-      <div className="card-nawi bg-primary/5 border-primary/20">
-        <h3 className="text-sm font-semibold text-primary mb-2">UAE Payroll Rules Applied</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-muted-foreground">
-          <p>• 22 working days/month (Fri-Sat weekend)</p>
-          <p>• Sick leave: 15 days full pay, 15 days half pay, rest unpaid</p>
-          <p>• Late penalty: After 3 late days, 25% daily rate deduction</p>
-          <p>• Absent days deducted at full daily rate</p>
-          <p>• Annual, Paternity, Bereavement leaves are fully paid</p>
-          <p>• Hajj & Emergency leaves are unpaid</p>
-        </div>
-      </div>
 
       <PasswordConfirmDialog
         open={!!pwdAction}

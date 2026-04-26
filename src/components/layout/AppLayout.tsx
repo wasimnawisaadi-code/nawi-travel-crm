@@ -90,10 +90,7 @@ export default function AppLayout() {
   if (loading) return <div className="flex h-screen items-center justify-center"><div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
   if (!user || !profile) return null;
 
-  const baseLinks = isAdmin ? adminLinks : employeeLinks;
-  const links = isSuperAdmin
-    ? [...baseLinks, { to: '/admin/admins', label: 'Admin Management', icon: Shield }]
-    : baseLinks;
+  const links = isAdmin ? adminLinks : employeeLinks;
 
   const handleSearch = async (q: string) => {
     setSearchQuery(q);
@@ -166,7 +163,7 @@ export default function AppLayout() {
             {!collapsed && (
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-sidebar-foreground truncate">{profile.name}</p>
-                <p className="text-xs text-sidebar-muted capitalize">{isSuperAdmin ? 'super admin' : isAdmin ? 'admin' : 'employee'}</p>
+                <p className="text-xs text-sidebar-muted capitalize">{isAdmin ? 'admin' : 'employee'}</p>
               </div>
             )}
             {!collapsed && (
