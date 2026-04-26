@@ -343,29 +343,7 @@ export default function ClientProfile() {
         </div>
       )}
 
-      {tab === 'family' && (
-        <div className="card-nawi">
-          <h3 className="font-semibold font-display flex items-center gap-2 mb-4"><Users className="w-4 h-4" /> Family Members</h3>
-          {familyMembers.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">No family members recorded</p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {familyMembers.map((fm: any, i: number) => (
-                <div key={i} className="p-4 border border-border rounded-xl">
-                  <p className="font-semibold text-foreground">{fm.name}</p>
-                  <p className="text-sm text-muted-foreground">{fm.relation}</p>
-                  <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
-                    <div><span className="text-muted-foreground">DOB:</span> {fm.dob ? formatDate(fm.dob) : '—'}</div>
-                    <div><span className="text-muted-foreground">Nationality:</span> {fm.nationality || '—'}</div>
-                    <div><span className="text-muted-foreground">Passport:</span> {fm.passportNo || '—'}</div>
-                    <div><span className="text-muted-foreground">PP Expiry:</span> {fm.passportExpiry ? formatDate(fm.passportExpiry) : '—'}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {/* Family tab removed — simplified to one client = one record */}
 
       {tab === 'quotations' && (
         <div className="card-nawi">
