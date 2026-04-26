@@ -15,7 +15,25 @@ export default function TeamChat() {
   const [messages, setMessages] = useState<any[]>([]);
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [dmConversations, setDmConversations] = useState<string[]>([]);
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Load unread counts per chat
+  const loadUnread = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('chat_messages')
+      .select('group_id, sender_id, message_type')
+      .eq('is_read', false)
+      .neq('sender_id', user.id);
+    const counts: Record<string, number> = {};
+    (data || []).forEach((m: any) => {
+      const key = m.message_type === 'group' ? m.group_id : m.sender_id;
+      if (key) counts[key] = (counts[key] || 0) + 1;
+    });
+    setUnreadCounts(counts);
+  };
+  useEffect(() => { loadUnread(); const i = setInterval(loadUnread, 15000); return () => clearInterval(i); }, [user]);
 
   // Load users
   useEffect(() => {
