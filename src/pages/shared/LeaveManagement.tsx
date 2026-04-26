@@ -133,7 +133,19 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
         </div>
       </div>
 
-      {!isEmployee && pending.length > 0 && (
+      {isEmployee && (
+        <div className="card-nawi flex items-center gap-4">
+          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center"><Wallet className="w-6 h-6 text-primary" /></div>
+          <div className="flex-1">
+            <p className="text-xs text-muted-foreground">Annual Leave Balance</p>
+            <p className="text-2xl font-bold font-display">{profile?.leave_balance ?? 30} <span className="text-sm font-normal text-muted-foreground">days remaining</span></p>
+          </div>
+          <div className="text-right text-xs text-muted-foreground">
+            <p>Used: {leave.filter(l => l.status === 'Approved' && l.leave_type === 'Annual').reduce((s, l) => s + (l.days || 0), 0)}</p>
+            <p>Pending: {leave.filter(l => l.status === 'Pending' && l.leave_type === 'Annual').reduce((s, l) => s + (l.days || 0), 0)}</p>
+          </div>
+        </div>
+      )}
         <div className="card-nawi border-warning/30">
           <h3 className="font-semibold font-display mb-3 text-warning">Pending Requests ({pending.length})</h3>
           <div className="space-y-3">
