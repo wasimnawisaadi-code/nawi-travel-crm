@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Briefcase, Calendar, FileText,
   DollarSign, Shield, LogOut, Menu,
   Search, ChevronLeft, Clock, PlaneTakeoff, MessageCircle, CalendarDays, Bell, MapPin,
-  ClipboardList, Sparkles,
+  ClipboardList, Sparkles, MessagesSquare,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/integrations/supabase/client';
@@ -17,6 +17,7 @@ const adminLinks = [
   { to: '/admin/dashboard', label: 'Dashboard & Reports', icon: LayoutDashboard },
   { to: '/admin/employees', label: 'Employees', icon: Users },
   { to: '/admin/clients', label: 'Clients', icon: Briefcase },
+  { to: '/admin/leads', label: 'Social Leads', icon: MessagesSquare },
   { to: '/admin/calendar', label: 'Calendar', icon: Calendar },
   { to: '/admin/important-dates', label: 'Important Dates', icon: CalendarDays },
   { to: '/admin/dsr', label: 'Daily Status', icon: ClipboardList },
@@ -31,6 +32,7 @@ const adminLinks = [
 const employeeLinks = [
   { to: '/employee/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/employee/clients', label: 'My Clients', icon: Briefcase },
+  { to: '/employee/leads', label: 'Social Leads', icon: MessagesSquare },
   { to: '/employee/calendar', label: 'Calendar', icon: Calendar },
   { to: '/employee/important-dates', label: 'Important Dates', icon: CalendarDays },
   { to: '/employee/dsr', label: 'My Daily Status', icon: ClipboardList },
