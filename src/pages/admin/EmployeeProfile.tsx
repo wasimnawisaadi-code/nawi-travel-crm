@@ -107,7 +107,7 @@ export default function EmployeeProfile() {
           )}
         </div>
         <div className="flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-xl font-bold text-foreground font-display">{emp.name}</h1>
             {isSales && <span className="text-xs bg-warning/10 text-warning px-2 py-0.5 rounded-full flex items-center gap-1"><MapPin className="w-3 h-3" />Sales</span>}
             {!isSales && <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full flex items-center gap-1"><MapPin className="w-3 h-3" />Office</span>}
@@ -117,7 +117,39 @@ export default function EmployeeProfile() {
             <span className="text-xs text-muted-foreground">Joined {formatDate(emp.created_at)}</span>
           </div>
         </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {emp.status === 'active' ? (
+            <button onClick={() => setPwdAction('deactivate')} className="btn-outline text-warning border-warning/30 hover:bg-warning/10"><PowerOff className="w-4 h-4" /> Deactivate</button>
+          ) : (
+            <button onClick={() => setPwdAction('activate')} className="btn-outline text-success border-success/30 hover:bg-success/10"><Power className="w-4 h-4" /> Activate</button>
+          )}
+          <button onClick={() => setPwdAction('delete')} className="btn-danger"><Trash2 className="w-4 h-4" /> Delete</button>
+        </div>
       </div>
+
+      <PasswordConfirmDialog
+        open={!!pwdAction}
+        onClose={() => setPwdAction(null)}
+        onConfirm={runPwdAction}
+        title={
+          pwdAction === 'delete' ? `Delete ${emp.name}` :
+          pwdAction === 'activate' ? `Activate ${emp.name}` :
+          pwdAction === 'deactivate' ? `Deactivate ${emp.name}` :
+          'Confirm changes'
+        }
+        description={
+          pwdAction === 'delete' ? 'Permanently deletes this employee, their login, and unassigns all clients/tasks. Cannot be undone.' :
+          pwdAction === 'activate' ? 'Re-enable login for this employee.' :
+          pwdAction === 'deactivate' ? 'Disable login. The profile is kept for records.' :
+          'Save profile changes.'
+        }
+        actionLabel={
+          pwdAction === 'delete' ? 'Delete Permanently' :
+          pwdAction === 'activate' ? 'Activate' :
+          pwdAction === 'deactivate' ? 'Deactivate' : 'Save'
+        }
+        destructive={pwdAction !== 'activate' && pwdAction !== 'save'}
+      />
 
       <div className="flex gap-1 border-b border-border overflow-x-auto">
         {tabs.map(t => (
