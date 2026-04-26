@@ -27,6 +27,7 @@ import TeamChat from "./pages/shared/TeamChat";
 import ImportantDates from "./pages/shared/ImportantDates";
 import NotificationsPage from "./pages/shared/NotificationsPage";
 import DailyStatusReport from "./pages/shared/DailyStatusReport";
+import DSRTemplateAssignment from "./pages/admin/DSRTemplateAssignment";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
