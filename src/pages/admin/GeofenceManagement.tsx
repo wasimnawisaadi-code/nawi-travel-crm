@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
-import { MapPin, Plus, Trash2, Edit2, Check, X, Navigation, Clock, Save, Users, Activity } from 'lucide-react';
+import { MapPin, Plus, Trash2, Edit2, Check, X, Navigation, Clock, Save, Users, Activity, Settings2, ChevronDown, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { getAttendanceSettings, saveAttendanceSettings, getAttendanceOverrides, saveAttendanceOverrides, type AttendanceSettings, type EmployeeOverride } from '@/lib/settings';
 
@@ -21,18 +21,20 @@ export default function GeofenceManagement() {
   const { user } = useAuth();
   const [zones, setZones] = useState<Zone[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: '', latitude: '', longitude: '', radius: '100', zone_type: 'office' });
+  const [showZoneForm, setShowZoneForm] = useState(false);
+  const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
+  const [zoneForm, setZoneForm] = useState({ name: '', latitude: '', longitude: '', radius: '100', zone_type: 'office' });
   const [employees, setEmployees] = useState<any[]>([]);
-  const [assignModal, setAssignModal] = useState<string | null>(null);
   const [todayAtt, setTodayAtt] = useState<Record<string, any>>({});
+  const [expandedEmp, setExpandedEmp] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [showZonesPanel, setShowZonesPanel] = useState(false);
 
-  // Attendance settings (work_start, grace, weekend) — global defaults
+  // Global defaults
   const [att, setAtt] = useState<AttendanceSettings>({ work_start: '09:00', grace_minutes: 15, weekend_days: [5, 6] });
   const [savingAtt, setSavingAtt] = useState(false);
 
-  // Per-employee overrides keyed by user_id
+  // Per-employee overrides
   const [overrides, setOverrides] = useState<Record<string, EmployeeOverride>>({});
   const [savingOv, setSavingOv] = useState(false);
 
@@ -42,11 +44,10 @@ export default function GeofenceManagement() {
     setLoading(false);
   };
 
-  // Load only employees (exclude admins)
   const loadEmployees = async () => {
     const { data: roles } = await supabase.from('user_roles').select('user_id, role');
     const adminIds = new Set((roles || []).filter((r: any) => r.role === 'admin').map((r: any) => r.user_id));
-    const { data } = await supabase.from('profiles').select('id, user_id, name, profile_type, assigned_zone_id, photo_url').eq('status', 'active');
+    const { data } = await supabase.from('profiles').select('id, user_id, name, email, profile_type, assigned_zone_id, photo_url').eq('status', 'active');
     setEmployees((data || []).filter((e: any) => !adminIds.has(e.user_id)));
   };
 
@@ -72,7 +73,6 @@ export default function GeofenceManagement() {
     setOverrides(prev => {
       const cur = prev[userId] || {};
       const next = { ...cur, ...patch };
-      // Remove keys with empty string values
       Object.keys(next).forEach(k => { if ((next as any)[k] === '' || (next as any)[k] === undefined || (next as any)[k] === null) delete (next as any)[k]; });
       const out = { ...prev };
       if (Object.keys(next).length === 0) delete out[userId]; else out[userId] = next;
@@ -96,51 +96,51 @@ export default function GeofenceManagement() {
     if (!navigator.geolocation) { toast.error('Geolocation not supported'); return; }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setForm(f => ({ ...f, latitude: pos.coords.latitude.toFixed(6), longitude: pos.coords.longitude.toFixed(6) }));
+        setZoneForm(f => ({ ...f, latitude: pos.coords.latitude.toFixed(6), longitude: pos.coords.longitude.toFixed(6) }));
         toast.success('Location captured');
       },
       () => toast.error('Could not get location')
     );
   };
 
-  const handleSave = async () => {
-    if (!form.name || !form.latitude || !form.longitude) { toast.error('Fill all required fields'); return; }
+  const handleSaveZone = async () => {
+    if (!zoneForm.name || !zoneForm.latitude || !zoneForm.longitude) { toast.error('Fill all required fields'); return; }
     const payload = {
-      name: form.name,
-      latitude: parseFloat(form.latitude),
-      longitude: parseFloat(form.longitude),
-      radius: parseInt(form.radius) || 100,
-      zone_type: form.zone_type,
+      name: zoneForm.name,
+      latitude: parseFloat(zoneForm.latitude),
+      longitude: parseFloat(zoneForm.longitude),
+      radius: parseInt(zoneForm.radius) || 100,
+      zone_type: zoneForm.zone_type,
       created_by: user?.id,
     };
-    if (editingId) {
-      await supabase.from('geofence_zones').update(payload).eq('id', editingId);
+    if (editingZoneId) {
+      await supabase.from('geofence_zones').update(payload).eq('id', editingZoneId);
       toast.success('Zone updated');
     } else {
       await supabase.from('geofence_zones').insert(payload);
       toast.success('Zone created');
     }
-    setShowForm(false); setEditingId(null);
-    setForm({ name: '', latitude: '', longitude: '', radius: '100', zone_type: 'office' });
+    setShowZoneForm(false); setEditingZoneId(null);
+    setZoneForm({ name: '', latitude: '', longitude: '', radius: '100', zone_type: 'office' });
     loadZones();
   };
 
-  const handleEdit = (z: Zone) => {
-    setForm({ name: z.name, latitude: z.latitude.toString(), longitude: z.longitude.toString(), radius: z.radius.toString(), zone_type: z.zone_type });
-    setEditingId(z.id); setShowForm(true);
+  const handleEditZone = (z: Zone) => {
+    setZoneForm({ name: z.name, latitude: z.latitude.toString(), longitude: z.longitude.toString(), radius: z.radius.toString(), zone_type: z.zone_type });
+    setEditingZoneId(z.id); setShowZoneForm(true); setShowZonesPanel(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this zone? Employees assigned to it will need to be re-assigned.')) return;
+  const handleDeleteZone = async (id: string) => {
+    if (!confirm('Delete this zone? Assigned employees will be unassigned.')) return;
     await supabase.from('profiles').update({ assigned_zone_id: null }).eq('assigned_zone_id', id);
     await supabase.from('geofence_zones').delete().eq('id', id);
     toast.success('Zone deleted');
     loadZones(); loadEmployees();
   };
 
-  const handleAssignEmployee = async (employeeId: string, zoneId: string | null) => {
+  const handleAssignZone = async (employeeId: string, zoneId: string | null) => {
     await supabase.from('profiles').update({ assigned_zone_id: zoneId }).eq('id', employeeId);
-    toast.success(zoneId ? 'Employee assigned to zone' : 'Zone unassigned');
+    toast.success(zoneId ? 'Zone assigned' : 'Zone cleared');
     loadEmployees();
   };
 
@@ -153,7 +153,7 @@ export default function GeofenceManagement() {
     const { error } = await saveAttendanceSettings(att, user?.id);
     setSavingAtt(false);
     if (error) { toast.error('Save failed'); return; }
-    toast.success('Attendance rules saved');
+    toast.success('Default attendance rules saved');
   };
 
   const getGoogleMapsEmbedUrl = (lat: string | number, lng: string | number, radius?: number) => {
@@ -161,28 +161,41 @@ export default function GeofenceManagement() {
     return `https://maps.google.com/maps?q=${lat},${lng}&z=${Math.round(zoom)}&output=embed`;
   };
 
-  // Marker map of all employees who logged in today (with coordinates)
-  const liveEmployees = employees.filter(e => {
+  const filteredEmployees = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    if (!q) return employees;
+    return employees.filter(e => (e.name || '').toLowerCase().includes(q) || (e.email || '').toLowerCase().includes(q));
+  }, [employees, search]);
+
+  const liveCount = employees.filter(e => {
     const a = todayAtt[e.user_id];
-    return a && a.login_lat && a.login_lng && !a.logout_time;
-  });
+    return a && a.login_time && !a.logout_time;
+  }).length;
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-lg font-bold font-display">Geofence & Attendance Control</h2>
-          <p className="text-sm text-muted-foreground">All employees are zone-based. Define office zones, assign employees, and set attendance rules.</p>
+          <h2 className="text-lg font-bold font-display">Employee Control Room</h2>
+          <p className="text-sm text-muted-foreground">Manage every employee's zone, schedule, and live attendance from one place.</p>
         </div>
-        <button onClick={() => { setShowForm(true); setEditingId(null); setForm({ name: '', latitude: '', longitude: '', radius: '100', zone_type: 'office' }); }}
-          className="btn-primary text-sm"><Plus className="w-4 h-4" /> Add Zone</button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="px-3 py-1.5 rounded-full bg-success/10 text-success text-xs font-medium flex items-center gap-1.5">
+            <Activity className="w-3.5 h-3.5" /> {liveCount} active now
+          </div>
+          <button onClick={() => setShowZonesPanel(s => !s)} className="btn-outline text-sm">
+            <MapPin className="w-4 h-4" /> Zones ({zones.length})
+          </button>
+        </div>
       </div>
 
-      {/* Attendance Rules embedded */}
+      {/* Default Rules */}
       <div className="card-nawi space-y-4">
         <div className="flex items-center gap-2">
           <Clock className="w-5 h-5 text-primary" />
-          <h3 className="font-semibold font-display">Attendance Rules</h3>
+          <h3 className="font-semibold font-display">Default Attendance Rules</h3>
+          <span className="text-xs text-muted-foreground">(applies to all employees unless overridden below)</span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
@@ -212,302 +225,284 @@ export default function GeofenceManagement() {
           </div>
         </div>
         <button onClick={handleSaveAtt} disabled={savingAtt} className="btn-primary text-sm">
-          <Save className="w-4 h-4" /> {savingAtt ? 'Saving…' : 'Save Rules'}
+          <Save className="w-4 h-4" /> {savingAtt ? 'Saving…' : 'Save Default Rules'}
         </button>
       </div>
 
-      {/* Per-Employee Schedule Overrides */}
-      <div className="card-nawi space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Users className="w-5 h-5 text-primary" />
-            <h3 className="font-semibold font-display">Per-Employee Schedules</h3>
-          </div>
-          <button onClick={handleSaveOverrides} disabled={savingOv} className="btn-primary text-sm">
-            <Save className="w-4 h-4" /> {savingOv ? 'Saving…' : 'Save Schedules'}
-          </button>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Override the default work start, grace period, and weekend days for individual employees.
-          Leave a field blank to use the global default ({att.work_start} • {att.grace_minutes}m grace).
-        </p>
-
-        {employees.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">No employees yet.</p>
-        ) : (
-          <div className="overflow-x-auto -mx-4 sm:mx-0">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left border-b border-border">
-                  <th className="py-2 px-2 font-medium">Employee</th>
-                  <th className="py-2 px-2 font-medium">Work Start</th>
-                  <th className="py-2 px-2 font-medium">Grace (min)</th>
-                  <th className="py-2 px-2 font-medium">Weekend Days</th>
-                  <th className="py-2 px-2 font-medium"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {employees.map(emp => {
-                  const ov = overrides[emp.user_id] || {};
-                  const hasOverride = Object.keys(ov).length > 0;
-                  return (
-                    <tr key={emp.id} className="border-b border-border/50 hover:bg-muted/30">
-                      <td className="py-2 px-2">
-                        <div className="flex items-center gap-2 min-w-[160px]">
-                          {emp.photo_url ? <img src={emp.photo_url} className="w-7 h-7 rounded-full object-cover" alt="" /> :
-                            <div className="w-7 h-7 rounded-full bg-secondary text-secondary-foreground text-[10px] flex items-center justify-center font-bold">{emp.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}</div>}
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">{emp.name}</p>
-                            <p className="text-[11px] text-muted-foreground">
-                              {hasOverride ? <span className="text-primary">Custom</span> : <span>Default</span>}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-2 px-2">
-                        <input
-                          type="time"
-                          value={ov.work_start || ''}
-                          onChange={(e) => setEmpOverride(emp.user_id, { work_start: e.target.value || undefined })}
-                          placeholder={att.work_start}
-                          className="input-nawi text-sm py-1 w-28"
-                        />
-                      </td>
-                      <td className="py-2 px-2">
-                        <input
-                          type="number" min={0} max={120}
-                          value={ov.grace_minutes ?? ''}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setEmpOverride(emp.user_id, { grace_minutes: v === '' ? undefined : Math.max(0, Number(v) || 0) });
-                          }}
-                          placeholder={String(att.grace_minutes)}
-                          className="input-nawi text-sm py-1 w-20"
-                        />
-                      </td>
-                      <td className="py-2 px-2">
-                        <div className="flex flex-wrap gap-1">
-                          {DAYS.map((d, i) => {
-                            const wk = ov.weekend_days ?? null;
-                            const active = wk ? wk.includes(i) : att.weekend_days.includes(i);
-                            const isOverride = !!wk;
-                            return (
-                              <button key={d} type="button"
-                                onClick={() => {
-                                  const cur = ov.weekend_days ?? [...att.weekend_days];
-                                  const next = cur.includes(i) ? cur.filter(x => x !== i) : [...cur, i].sort();
-                                  setEmpOverride(emp.user_id, { weekend_days: next });
-                                }}
-                                className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${active ? (isOverride ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border') : 'bg-card text-muted-foreground border-border hover:border-primary/50'}`}
-                                title={isOverride ? 'Override' : 'From default'}
-                              >
-                                {d}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </td>
-                      <td className="py-2 px-2 text-right">
-                        {hasOverride && (
-                          <button onClick={() => clearEmpOverride(emp.user_id)} className="text-xs text-destructive hover:underline">Reset</button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div className="card-nawi">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Activity className="w-5 h-5 text-success" />
-            <h3 className="font-semibold font-display">Live Employee Locations — Today</h3>
-          </div>
-          <span className="text-xs text-muted-foreground">{liveEmployees.length} active now • auto-refresh 30s</span>
-        </div>
-        {liveEmployees.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-6 text-center">No employees currently logged in.</p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {liveEmployees.map(e => {
-              const a = todayAtt[e.user_id];
-              return (
-                <div key={e.id} className="bg-muted/40 border border-border rounded-lg p-3 space-y-2">
-                  <div className="flex items-center gap-2">
-                    {e.photo_url ? <img src={e.photo_url} className="w-8 h-8 rounded-full object-cover" alt="" /> :
-                      <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold">{e.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}</div>}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{e.name}</p>
-                      <p className="text-[11px] text-muted-foreground">Login {new Date(a.login_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} • {a.login_location_status === 'inside' ? '✅ Inside zone' : '⚠️ Outside zone'}</p>
-                    </div>
-                  </div>
-                  <iframe
-                    src={getGoogleMapsEmbedUrl(a.login_lat, a.login_lng, 80)}
-                    className="w-full h-32 rounded border border-border" loading="lazy" title={`${e.name} location`}
-                  />
-                  <a href={`https://www.google.com/maps?q=${a.login_lat},${a.login_lng}`} target="_blank" rel="noopener" className="text-[11px] text-primary underline">Open in Maps</a>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Zone Form */}
-      {showForm && (
+      {/* Zones Panel (collapsible) */}
+      {showZonesPanel && (
         <div className="card-nawi space-y-4">
-          <h3 className="font-semibold">{editingId ? 'Edit Zone' : 'Create New Zone'}</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Zone Name *</label>
-              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="input-nawi" placeholder="Main Office" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-primary" />
+              <h3 className="font-semibold font-display">Zones ({zones.length})</h3>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Zone Type</label>
-              <select value={form.zone_type} onChange={e => setForm(f => ({ ...f, zone_type: e.target.value }))} className="input-nawi">
-                <option value="office">Office</option>
-                <option value="sales">Sales Area</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Latitude *</label>
-              <input value={form.latitude} onChange={e => setForm(f => ({ ...f, latitude: e.target.value }))} className="input-nawi" placeholder="25.2048" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Longitude *</label>
-              <input value={form.longitude} onChange={e => setForm(f => ({ ...f, longitude: e.target.value }))} className="input-nawi" placeholder="55.2708" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Radius (meters)</label>
-              <input type="number" value={form.radius} onChange={e => setForm(f => ({ ...f, radius: e.target.value }))} className="input-nawi" min={10} max={5000} />
-              <p className="text-xs text-muted-foreground mt-1">Employees must be within this radius to login. Recommended 50–200m.</p>
-            </div>
-            <div className="flex items-end">
-              <button onClick={handleGetCurrentLocation} className="btn-outline text-sm w-full">
-                <Navigation className="w-4 h-4" /> Pin My Current Location
-              </button>
-            </div>
+            <button onClick={() => { setShowZoneForm(true); setEditingZoneId(null); setZoneForm({ name: '', latitude: '', longitude: '', radius: '100', zone_type: 'office' }); }}
+              className="btn-primary text-sm"><Plus className="w-4 h-4" /> Add Zone</button>
           </div>
 
-          {form.latitude && form.longitude && (
-            <div className="rounded-xl overflow-hidden border border-border">
-              <iframe
-                src={getGoogleMapsEmbedUrl(form.latitude, form.longitude, parseInt(form.radius))}
-                className="w-full h-64" loading="lazy" allowFullScreen
-                referrerPolicy="no-referrer-when-downgrade" title="Zone Preview"
-              />
-              <div className="bg-muted px-4 py-2 flex items-center justify-between">
-                <p className="text-xs text-muted-foreground">📍 {Number(form.latitude).toFixed(6)}, {Number(form.longitude).toFixed(6)} — Radius: {form.radius}m</p>
-                <a href={`https://www.google.com/maps?q=${form.latitude},${form.longitude}`} target="_blank" rel="noopener" className="text-xs text-primary underline">Open in Google Maps</a>
+          {showZoneForm && (
+            <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/20">
+              <h4 className="font-semibold text-sm">{editingZoneId ? 'Edit Zone' : 'Create New Zone'}</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Zone Name *</label>
+                  <input value={zoneForm.name} onChange={e => setZoneForm(f => ({ ...f, name: e.target.value }))} className="input-nawi" placeholder="Main Office" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Zone Type</label>
+                  <select value={zoneForm.zone_type} onChange={e => setZoneForm(f => ({ ...f, zone_type: e.target.value }))} className="input-nawi">
+                    <option value="office">Office</option>
+                    <option value="sales">Field / Sales</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Latitude *</label>
+                  <input value={zoneForm.latitude} onChange={e => setZoneForm(f => ({ ...f, latitude: e.target.value }))} className="input-nawi" placeholder="25.2048" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Longitude *</label>
+                  <input value={zoneForm.longitude} onChange={e => setZoneForm(f => ({ ...f, longitude: e.target.value }))} className="input-nawi" placeholder="55.2708" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Radius (meters)</label>
+                  <input type="number" value={zoneForm.radius} onChange={e => setZoneForm(f => ({ ...f, radius: e.target.value }))} className="input-nawi" min={10} max={5000} />
+                  <p className="text-xs text-muted-foreground mt-1">Recommended 50–200m. Login allowed within this circle.</p>
+                </div>
+                <div className="flex items-end">
+                  <button onClick={handleGetCurrentLocation} className="btn-outline text-sm w-full">
+                    <Navigation className="w-4 h-4" /> Pin My Current Location
+                  </button>
+                </div>
+              </div>
+
+              {zoneForm.latitude && zoneForm.longitude && (
+                <div className="rounded-xl overflow-hidden border border-border">
+                  <iframe
+                    src={getGoogleMapsEmbedUrl(zoneForm.latitude, zoneForm.longitude, parseInt(zoneForm.radius))}
+                    className="w-full h-64" loading="lazy" allowFullScreen
+                    referrerPolicy="no-referrer-when-downgrade" title="Zone Preview"
+                  />
+                  <div className="bg-muted px-4 py-2 flex items-center justify-between">
+                    <p className="text-xs text-muted-foreground">📍 {Number(zoneForm.latitude).toFixed(6)}, {Number(zoneForm.longitude).toFixed(6)} — Radius: {zoneForm.radius}m</p>
+                    <a href={`https://www.google.com/maps?q=${zoneForm.latitude},${zoneForm.longitude}`} target="_blank" rel="noopener" className="text-xs text-primary underline">Open in Google Maps</a>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button onClick={handleSaveZone} className="btn-primary text-sm"><Check className="w-4 h-4" /> Save</button>
+                <button onClick={() => { setShowZoneForm(false); setEditingZoneId(null); }} className="btn-outline text-sm"><X className="w-4 h-4" /> Cancel</button>
               </div>
             </div>
           )}
 
-          <div className="flex gap-3">
-            <button onClick={handleSave} className="btn-primary text-sm"><Check className="w-4 h-4" /> Save</button>
-            <button onClick={() => { setShowForm(false); setEditingId(null); }} className="btn-outline text-sm"><X className="w-4 h-4" /> Cancel</button>
-          </div>
+          {loading ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">Loading…</p>
+          ) : zones.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">No zones yet. Create one to start assigning employees.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {zones.map(z => {
+                const assignedCount = employees.filter(e => e.assigned_zone_id === z.id).length;
+                return (
+                  <div key={z.id} className="border border-border rounded-lg overflow-hidden bg-card">
+                    <iframe
+                      src={getGoogleMapsEmbedUrl(z.latitude, z.longitude, z.radius)}
+                      className="w-full h-32" loading="lazy" title={z.name}
+                    />
+                    <div className="p-3 space-y-2">
+                      <div className="flex items-start justify-between">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-sm truncate">{z.name}</p>
+                          <p className="text-[11px] text-muted-foreground capitalize">{z.zone_type} • {z.radius}m • {assignedCount} assigned</p>
+                        </div>
+                        <div className="flex gap-1 flex-shrink-0">
+                          <button onClick={() => handleEditZone(z)} className="p-1 hover:bg-muted rounded" title="Edit"><Edit2 className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => handleDeleteZone(z.id)} className="p-1 hover:bg-destructive/10 rounded text-destructive" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
-      {/* Zones Grid */}
-      <div>
-        <h3 className="font-semibold font-display mb-3 flex items-center gap-2"><MapPin className="w-4 h-4" /> Zones ({zones.length})</h3>
-        {loading ? (
-          <div className="text-center py-12 text-muted-foreground">Loading zones...</div>
-        ) : zones.length === 0 ? (
-          <div className="card-nawi text-center py-10">
-            <MapPin className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-            <p className="text-muted-foreground text-sm">No zones created yet.</p>
-            <p className="text-xs text-muted-foreground mt-1">Create at least one zone — every employee must be assigned to one.</p>
+      {/* EMPLOYEE CONTROL ROOM */}
+      <div className="card-nawi space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <Users className="w-5 h-5 text-primary" />
+            <h3 className="font-semibold font-display">All Employees ({employees.length})</h3>
           </div>
+          <div className="flex items-center gap-2">
+            <input
+              value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Search employee…"
+              className="input-nawi text-sm py-1.5 w-48"
+            />
+            <button onClick={handleSaveOverrides} disabled={savingOv} className="btn-primary text-sm">
+              <Save className="w-4 h-4" /> {savingOv ? 'Saving…' : 'Save Overrides'}
+            </button>
+          </div>
+        </div>
+
+        {filteredEmployees.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-6 text-center">No employees found.</p>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {zones.map(z => {
-              const assignedEmps = employees.filter(e => e.assigned_zone_id === z.id);
+          <div className="space-y-2">
+            {filteredEmployees.map(emp => {
+              const ov = overrides[emp.user_id] || {};
+              const hasOverride = Object.keys(ov).length > 0;
+              const zone = zones.find(z => z.id === emp.assigned_zone_id);
+              const att2 = todayAtt[emp.user_id];
+              const isLive = att2 && att2.login_time && !att2.logout_time;
+              const isExpanded = expandedEmp === emp.id;
+
               return (
-                <div key={z.id} className="card-nawi relative">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${z.zone_type === 'office' ? 'bg-primary/10 text-primary' : 'bg-warning/10 text-warning'}`}>
-                        <MapPin className="w-4 h-4" />
+                <div key={emp.id} className="border border-border rounded-lg overflow-hidden">
+                  {/* Row header */}
+                  <button
+                    onClick={() => setExpandedEmp(isExpanded ? null : emp.id)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40 transition-colors text-left"
+                  >
+                    {isExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
+                    {emp.photo_url ? <img src={emp.photo_url} className="w-9 h-9 rounded-full object-cover flex-shrink-0" alt="" /> :
+                      <div className="w-9 h-9 rounded-full bg-secondary text-secondary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">{emp.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}</div>}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-medium truncate">{emp.name}</p>
+                        {isLive && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-success/15 text-success font-medium">● LIVE</span>}
+                        {hasOverride && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">CUSTOM</span>}
                       </div>
-                      <div>
-                        <p className="font-semibold text-sm">{z.name}</p>
-                        <p className="text-xs text-muted-foreground capitalize">{z.zone_type} • {z.radius}m radius</p>
-                      </div>
+                      <p className="text-[11px] text-muted-foreground truncate">
+                        {zone ? <><MapPin className="w-2.5 h-2.5 inline" /> {zone.name} ({zone.radius}m)</> : <span className="text-warning">No zone — anywhere</span>}
+                        <span className="mx-1.5">•</span>
+                        Start {ov.work_start || att.work_start} · {ov.grace_minutes ?? att.grace_minutes}m grace
+                      </p>
                     </div>
-                    <div className="flex gap-1">
-                      <button onClick={() => handleEdit(z)} className="p-1 hover:bg-muted rounded" title="Edit"><Edit2 className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => handleDelete(z.id)} className="p-1 hover:bg-destructive/10 rounded text-destructive" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg overflow-hidden border border-border mb-3">
-                    <iframe
-                      src={getGoogleMapsEmbedUrl(z.latitude, z.longitude, z.radius)}
-                      className="w-full h-40" loading="lazy" allowFullScreen
-                      referrerPolicy="no-referrer-when-downgrade" title={`Map of ${z.name}`}
-                    />
-                  </div>
-
-                  <div className="bg-muted rounded-lg p-3 mb-3">
-                    <p className="text-xs font-mono text-muted-foreground">📍 {z.latitude.toFixed(6)}, {z.longitude.toFixed(6)}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Login allowed within {z.radius}m radius</p>
-                  </div>
-
-                  <button onClick={() => setAssignModal(z.id)} className="btn-outline text-xs w-full">
-                    <Users className="w-3.5 h-3.5" /> {assignedEmps.length} employee{assignedEmps.length !== 1 ? 's' : ''} assigned — manage
+                    {isLive && (
+                      <span className="text-[11px] text-muted-foreground flex-shrink-0">
+                        Login {new Date(att2.login_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
                   </button>
+
+                  {/* Expanded controls */}
+                  {isExpanded && (
+                    <div className="border-t border-border bg-muted/20 p-4 space-y-4">
+                      {/* Zone assignment */}
+                      <div>
+                        <label className="block text-xs font-semibold mb-2 flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> Geofence Zone</label>
+                        <div className="flex gap-2 items-center flex-wrap">
+                          <select
+                            value={emp.assigned_zone_id || ''}
+                            onChange={(e) => handleAssignZone(emp.id, e.target.value || null)}
+                            className="input-nawi text-sm py-1.5 flex-1 min-w-[200px]"
+                          >
+                            <option value="">— No zone (login from anywhere) —</option>
+                            {zones.map(z => (
+                              <option key={z.id} value={z.id}>{z.name} ({z.zone_type}, {z.radius}m)</option>
+                            ))}
+                          </select>
+                          {zone && (
+                            <a href={`https://www.google.com/maps?q=${zone.latitude},${zone.longitude}`} target="_blank" rel="noopener" className="text-xs text-primary underline">Open</a>
+                          )}
+                        </div>
+                        {zone && (
+                          <div className="mt-2 rounded-lg overflow-hidden border border-border">
+                            <iframe
+                              src={getGoogleMapsEmbedUrl(zone.latitude, zone.longitude, zone.radius)}
+                              className="w-full h-40" loading="lazy" title={`${zone.name} radius`}
+                            />
+                            <div className="bg-muted px-3 py-1.5 text-[11px] text-muted-foreground">
+                              📍 {zone.latitude.toFixed(6)}, {zone.longitude.toFixed(6)} — Radius {zone.radius}m
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Schedule overrides */}
+                      <div>
+                        <label className="block text-xs font-semibold mb-2 flex items-center gap-1.5"><Settings2 className="w-3.5 h-3.5" /> Schedule Override</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-[11px] text-muted-foreground mb-1">Work Start</label>
+                            <input
+                              type="time"
+                              value={ov.work_start || ''}
+                              onChange={(e) => setEmpOverride(emp.user_id, { work_start: e.target.value || undefined })}
+                              placeholder={att.work_start}
+                              className="input-nawi text-sm py-1.5 w-full"
+                            />
+                            <p className="text-[10px] text-muted-foreground mt-0.5">Default: {att.work_start}</p>
+                          </div>
+                          <div>
+                            <label className="block text-[11px] text-muted-foreground mb-1">Grace (min)</label>
+                            <input
+                              type="number" min={0} max={120}
+                              value={ov.grace_minutes ?? ''}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setEmpOverride(emp.user_id, { grace_minutes: v === '' ? undefined : Math.max(0, Number(v) || 0) });
+                              }}
+                              placeholder={String(att.grace_minutes)}
+                              className="input-nawi text-sm py-1.5 w-full"
+                            />
+                            <p className="text-[10px] text-muted-foreground mt-0.5">Default: {att.grace_minutes}m</p>
+                          </div>
+                          <div className="flex items-end">
+                            {hasOverride && (
+                              <button onClick={() => clearEmpOverride(emp.user_id)} className="text-xs text-destructive hover:underline py-1.5">
+                                Reset to defaults
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="mt-3">
+                          <label className="block text-[11px] text-muted-foreground mb-1">Weekend Days {ov.weekend_days ? '(custom)' : '(using default)'}</label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {DAYS.map((d, i) => {
+                              const wk = ov.weekend_days ?? null;
+                              const active = wk ? wk.includes(i) : att.weekend_days.includes(i);
+                              const isOverride = !!wk;
+                              return (
+                                <button key={d} type="button"
+                                  onClick={() => {
+                                    const cur = ov.weekend_days ?? [...att.weekend_days];
+                                    const next = cur.includes(i) ? cur.filter(x => x !== i) : [...cur, i].sort();
+                                    setEmpOverride(emp.user_id, { weekend_days: next });
+                                  }}
+                                  className={`px-2.5 py-1 rounded text-[11px] font-medium border transition-colors ${active ? (isOverride ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-foreground border-border') : 'bg-card text-muted-foreground border-border hover:border-primary/50'}`}
+                                >
+                                  {d}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Today's attendance */}
+                      {att2 && (
+                        <div className="bg-card border border-border rounded-lg p-3 text-xs space-y-1">
+                          <p className="font-semibold text-foreground mb-1 flex items-center gap-1.5"><Activity className="w-3.5 h-3.5 text-success" /> Today</p>
+                          <p className="text-muted-foreground">Login: {att2.login_time ? new Date(att2.login_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—'} {att2.login_location_status === 'inside' ? '✅' : att2.login_location_status === 'outside' ? '⚠️ Outside zone' : ''}</p>
+                          <p className="text-muted-foreground">Logout: {att2.logout_time ? new Date(att2.logout_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—'}</p>
+                          <p className="text-muted-foreground">Status: <span className="font-medium text-foreground">{att2.status || '—'}</span></p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
         )}
       </div>
-
-      {/* Assign Modal */}
-      {assignModal && (
-        <div className="fixed inset-0 bg-foreground/50 z-50 flex items-center justify-center p-4" onClick={() => setAssignModal(null)}>
-          <div className="bg-card rounded-xl shadow-elevated w-full max-w-md p-6 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold font-display mb-2">Assign Employees</h3>
-            <p className="text-xs text-muted-foreground mb-4">
-              Zone: <strong>{zones.find(z => z.id === assignModal)?.name}</strong>
-            </p>
-            <div className="space-y-2">
-              {employees.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No employees yet.</p>}
-              {employees.map(emp => (
-                <div key={emp.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-muted">
-                  <div className="flex items-center gap-2 min-w-0">
-                    {emp.photo_url ? <img src={emp.photo_url} className="w-7 h-7 rounded-full object-cover" alt="" /> :
-                      <div className="w-7 h-7 rounded-full bg-secondary text-secondary-foreground text-[10px] flex items-center justify-center font-bold">{emp.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}</div>}
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{emp.name}</p>
-                      <p className="text-[11px] text-muted-foreground capitalize">
-                        {emp.profile_type || 'office'}
-                        {emp.assigned_zone_id && emp.assigned_zone_id !== assignModal && (
-                          <span className="ml-1 text-warning">• Other zone</span>
-                        )}
-                        {!emp.assigned_zone_id && <span className="ml-1 text-destructive">• Unassigned</span>}
-                      </p>
-                    </div>
-                  </div>
-                  {emp.assigned_zone_id === assignModal ? (
-                    <button onClick={() => handleAssignEmployee(emp.id, null)} className="text-xs bg-destructive/10 text-destructive px-2 py-1 rounded">Remove</button>
-                  ) : (
-                    <button onClick={() => handleAssignEmployee(emp.id, assignModal)} className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Assign</button>
-                  )}
-                </div>
-              ))}
-            </div>
-            <button onClick={() => setAssignModal(null)} className="btn-outline w-full mt-4 text-sm">Close</button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
