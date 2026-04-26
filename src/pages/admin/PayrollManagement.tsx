@@ -5,8 +5,16 @@ import { useAuth } from '@/lib/auth-context';
 import { formatCurrency, generateDisplayId, auditLog } from '@/lib/supabase-service';
 import StatusBadge from '@/components/ui/StatusBadge';
 import PasswordConfirmDialog from '@/components/PasswordConfirmDialog';
-import { Download, Calculator, Edit, Save, X, Lock, Unlock, FileText } from 'lucide-react';
+import PayrollEntriesModal from '@/components/PayrollEntriesModal';
+import { Download, Calculator, Edit, Save, X, Lock, Unlock, FileText, ListPlus } from 'lucide-react';
 import { toast } from 'sonner';
+
+const NUMERIC_FIELDS = [
+  'base_salary', 'present_days', 'late_days', 'absent_days',
+  'paid_leave_days', 'sick_leave', 'unpaid_leave', 'total_hours',
+  'sick_deduction', 'unpaid_deduction', 'absence_deduction', 'late_deduction',
+  'bonus', 'allowances', 'overtime',
+];
 
 export default function PayrollManagement() {
   const { user } = useAuth();
@@ -17,6 +25,8 @@ export default function PayrollManagement() {
   const [editForm, setEditForm] = useState<any>({});
   const [employees, setEmployees] = useState<any[]>([]);
   const [pwdAction, setPwdAction] = useState<{ type: 'lock' | 'unlock' | 'confirm'; row: any } | null>(null);
+  const [entriesModal, setEntriesModal] = useState<any | null>(null);
+  const [entriesByPayroll, setEntriesByPayroll] = useState<Record<string, { credit: number; debit: number }>>({});
 
   const monthLocked = payroll.length > 0 && payroll.every(p => p.locked);
 
@@ -28,9 +38,24 @@ export default function PayrollManagement() {
     fetchEmps();
   }, []);
 
+  const loadEntries = async (payrollIds: string[]) => {
+    if (payrollIds.length === 0) { setEntriesByPayroll({}); return; }
+    const { data } = await supabase.from('payroll_entries').select('payroll_id, entry_type, amount').in('payroll_id', payrollIds);
+    const credits = new Set(['bonus', 'allowance', 'overtime', 'reimbursement']);
+    const map: Record<string, { credit: number; debit: number }> = {};
+    (data || []).forEach((e: any) => {
+      if (!map[e.payroll_id]) map[e.payroll_id] = { credit: 0, debit: 0 };
+      if (credits.has(e.entry_type)) map[e.payroll_id].credit += Number(e.amount || 0);
+      else map[e.payroll_id].debit += Number(e.amount || 0);
+    });
+    setEntriesByPayroll(map);
+  };
+
   const load = async () => {
     const { data } = await supabase.from('payroll').select('*').eq('year_month', yearMonth);
-    setPayroll(data || []);
+    const rows = data || [];
+    setPayroll(rows);
+    await loadEntries(rows.map((r: any) => r.id));
   };
   useEffect(() => { load(); }, [yearMonth]);
 
@@ -79,6 +104,15 @@ export default function PayrollManagement() {
       });
     }
     load();
+    toast.success('Payroll auto-calculated. You can now edit any field manually.');
+  };
+
+  const recomputeRowFinal = (row: any) => {
+    const base = Number(row.base_salary) || 0;
+    const totalDed = (Number(row.sick_deduction) || 0) + (Number(row.unpaid_deduction) || 0) + (Number(row.absence_deduction) || 0) + (Number(row.late_deduction) || 0);
+    const earnings = (Number(row.bonus) || 0) + (Number(row.allowances) || 0) + (Number(row.overtime) || 0);
+    const adj = entriesByPayroll[row.id] || { credit: 0, debit: 0 };
+    return { totalDed, finalSalary: Math.max(0, Math.round(base - totalDed + earnings + adj.credit - adj.debit)) };
   };
 
   const confirmPayroll = async (id: string) => {
@@ -102,20 +136,58 @@ export default function PayrollManagement() {
     load();
   };
 
-  const handleEdit = (p: any) => { setEditingId(p.id); setEditForm({ bonus: p.bonus || 0, allowances: p.allowances || 0, overtime: p.overtime || 0 }); };
+  const handleEdit = (p: any) => {
+    setEditingId(p.id);
+    const f: any = {};
+    NUMERIC_FIELDS.forEach(k => { f[k] = p[k] ?? 0; });
+    setEditForm(f);
+  };
 
   const handleSaveEdit = async (p: any) => {
-    const bonus = Number(editForm.bonus) || 0;
-    const allowances = Number(editForm.allowances) || 0;
-    const overtime = Number(editForm.overtime) || 0;
-    const finalSalary = (p.base_salary || 0) - (p.total_deductions || 0) + bonus + allowances + overtime;
-    await supabase.from('payroll').update({ bonus, allowances, overtime, final_salary: Math.round(finalSalary) }).eq('id', p.id);
+    const update: any = {};
+    NUMERIC_FIELDS.forEach(k => { update[k] = Number(editForm[k]) || 0; });
+    update.total_deductions = (update.sick_deduction || 0) + (update.unpaid_deduction || 0) + (update.absence_deduction || 0) + (update.late_deduction || 0);
+    const earnings = (update.bonus || 0) + (update.allowances || 0) + (update.overtime || 0);
+    const adj = entriesByPayroll[p.id] || { credit: 0, debit: 0 };
+    update.final_salary = Math.max(0, Math.round((update.base_salary || 0) - update.total_deductions + earnings + adj.credit - adj.debit));
+    const { error } = await supabase.from('payroll').update(update).eq('id', p.id);
+    if (error) { toast.error(error.message); return; }
     setEditingId(null);
+    toast.success('Saved');
+    load();
+  };
+
+  const recomputeWithAdjustments = async (p: any) => {
+    // Called after manual entries change — recalc final salary in DB
+    const adj = entriesByPayroll[p.id] || { credit: 0, debit: 0 };
+    const base = Number(p.base_salary) || 0;
+    const totalDed = Number(p.total_deductions) || 0;
+    const earnings = (Number(p.bonus) || 0) + (Number(p.allowances) || 0) + (Number(p.overtime) || 0);
+    const finalSalary = Math.max(0, Math.round(base - totalDed + earnings + adj.credit - adj.debit));
+    await supabase.from('payroll').update({ final_salary: finalSalary }).eq('id', p.id);
+  };
+
+  const handleEntriesSaved = async () => {
+    if (!entriesModal) return;
+    await load();
+    // After load, entriesByPayroll is fresh — recompute the affected row's final salary
+    const fresh = await supabase.from('payroll_entries').select('entry_type, amount').eq('payroll_id', entriesModal.id);
+    const credits = new Set(['bonus', 'allowance', 'overtime', 'reimbursement']);
+    let credit = 0, debit = 0;
+    (fresh.data || []).forEach((e: any) => {
+      if (credits.has(e.entry_type)) credit += Number(e.amount || 0); else debit += Number(e.amount || 0);
+    });
+    const base = Number(entriesModal.base_salary) || 0;
+    const totalDed = Number(entriesModal.total_deductions) || 0;
+    const earnings = (Number(entriesModal.bonus) || 0) + (Number(entriesModal.allowances) || 0) + (Number(entriesModal.overtime) || 0);
+    const finalSalary = Math.max(0, Math.round(base - totalDed + earnings + credit - debit));
+    await supabase.from('payroll').update({ final_salary: finalSalary }).eq('id', entriesModal.id);
     load();
   };
 
   const downloadPayslip = async (p: any) => {
     const emp = employees.find(e => e.user_id === p.employee_id);
+    const { data: entries } = await supabase.from('payroll_entries').select('*').eq('payroll_id', p.id).order('created_at');
     const jsPDF = (await import('jspdf')).default;
     const { drawBrandHeader, drawBrandFooter } = await import('@/lib/pdf-helpers');
     const doc = new jsPDF();
@@ -131,7 +203,6 @@ export default function PayrollManagement() {
     y += 5; doc.text(emp?.email || '—', 18, y);
     y += 5; doc.text(`Status: ${p.status}${p.locked ? ' (Locked)' : ''}`, 18, y);
 
-    // Attendance table
     y += 10;
     doc.setFillColor(5, 47, 89); doc.rect(18, y, 174, 8, 'F');
     doc.setTextColor(255); doc.setFontSize(9);
@@ -148,31 +219,34 @@ export default function PayrollManagement() {
     ];
     attRows.forEach(([k, v]) => { doc.text(k, 22, y); doc.text(v, 188, y, { align: 'right' }); y += 6; });
 
-    // Earnings
     y += 4;
     doc.setFillColor(10, 112, 64); doc.rect(18, y, 174, 8, 'F');
     doc.setTextColor(255); doc.text('EARNINGS', 22, y + 5.5);
     y += 12; doc.setTextColor(0);
-    const earnings = [
+    const earnings: any[] = [
       ['Base Salary', p.base_salary || 0],
       ['Bonus', p.bonus || 0],
       ['Allowances', p.allowances || 0],
       ['Overtime', p.overtime || 0],
     ];
+    (entries || []).filter((e: any) => ['bonus', 'allowance', 'overtime', 'reimbursement'].includes(e.entry_type))
+      .forEach((e: any) => earnings.push([`${e.entry_type}: ${e.description}`, Number(e.amount)]));
     earnings.forEach(([k, v]: any) => { doc.text(String(k), 22, y); doc.text(formatCurrency(v), 188, y, { align: 'right' }); y += 6; });
 
-    // Deductions
     y += 4;
     doc.setFillColor(196, 57, 43); doc.rect(18, y, 174, 8, 'F');
     doc.setTextColor(255); doc.text('DEDUCTIONS', 22, y + 5.5);
     y += 12; doc.setTextColor(0);
-    const deds = [
+    const deds: any[] = [
       ['Sick Deduction', p.sick_deduction || 0],
       ['Unpaid Deduction', p.unpaid_deduction || 0],
       ['Absence Deduction', p.absence_deduction || 0],
       ['Late Deduction', p.late_deduction || 0],
-      ['Total Deductions', p.total_deductions || 0],
     ];
+    (entries || []).filter((e: any) => ['deduction', 'advance', 'fine'].includes(e.entry_type))
+      .forEach((e: any) => deds.push([`${e.entry_type}: ${e.description}`, Number(e.amount)]));
+    const totalDedAll = deds.reduce((s, [, v]) => s + Number(v || 0), 0);
+    deds.push(['Total Deductions', totalDedAll]);
     deds.forEach(([k, v]: any, i: number) => {
       if (i === deds.length - 1) doc.setFont(undefined, 'bold');
       doc.text(String(k), 22, y); doc.text(formatCurrency(v), 188, y, { align: 'right' });
@@ -180,7 +254,6 @@ export default function PayrollManagement() {
       y += 6;
     });
 
-    // Final
     y += 6;
     doc.setFillColor(5, 47, 89); doc.rect(18, y, 174, 12, 'F');
     doc.setTextColor(255); doc.setFontSize(13);
@@ -202,6 +275,7 @@ export default function PayrollManagement() {
   const exportXlsx = () => {
     const rows = payroll.map(p => {
       const emp = employees.find(e => e.user_id === p.employee_id);
+      const adj = entriesByPayroll[p.id] || { credit: 0, debit: 0 };
       return {
         Employee: emp?.name || '—',
         Email: emp?.email || '',
@@ -215,12 +289,20 @@ export default function PayrollManagement() {
         Bonus: p.bonus || 0,
         Allowances: p.allowances || 0,
         Overtime: p.overtime || 0,
+        'Manual Credits': adj.credit,
+        'Manual Debits': adj.debit,
         'Final Salary': p.final_salary || 0,
         Status: p.status,
       };
     });
     exportToExcel(rows, `payroll_${yearMonth}`, 'Payroll');
   };
+
+  const numCell = (key: string, val: any, isEditing: boolean) => isEditing
+    ? <input type="number" min="0" step="0.01" value={editForm[key] ?? 0}
+        onChange={e => setEditForm({ ...editForm, [key]: e.target.value })}
+        className="input-nawi w-20 text-xs py-1" />
+    : <span>{val}</span>;
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -236,7 +318,7 @@ export default function PayrollManagement() {
               ? <button onClick={() => setPwdAction({ type: 'unlock', row: null })} className="btn-outline"><Unlock className="w-4 h-4" /> Unlock Month</button>
               : <button onClick={() => setPwdAction({ type: 'lock', row: null })} className="btn-outline"><Lock className="w-4 h-4" /> Lock Month</button>
           )}
-          <button onClick={calculatePayroll} disabled={monthLocked} className="btn-primary disabled:opacity-50"><Calculator className="w-4 h-4" /> Calculate Payroll</button>
+          <button onClick={calculatePayroll} disabled={monthLocked} className="btn-primary disabled:opacity-50"><Calculator className="w-4 h-4" /> Auto-Calculate</button>
         </div>
       </div>
 
@@ -245,7 +327,7 @@ export default function PayrollManagement() {
           <Lock className="w-5 h-5 text-warning" />
           <div className="text-sm">
             <strong className="text-warning">Payroll for {yearMonth} is locked.</strong>
-            <span className="text-muted-foreground ml-2">No further edits, confirmations, or recalculations are allowed. Unlock to make changes.</span>
+            <span className="text-muted-foreground ml-2">Unlock to make changes.</span>
           </div>
         </div>
       )}
@@ -260,26 +342,59 @@ export default function PayrollManagement() {
 
       <div className="card-nawi p-0 overflow-x-auto">
         <table className="table-nawi w-full text-sm">
-          <thead><tr><th>Employee</th><th>Base</th><th>Days</th><th>Late</th><th>Absent</th><th>Leave</th><th>Deductions</th><th>Bonus</th><th>Allow.</th><th>OT</th><th>Final</th><th>Status</th><th></th></tr></thead>
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Base</th>
+              <th>Present</th>
+              <th>Late</th>
+              <th>Absent</th>
+              <th>Paid L.</th>
+              <th>Sick</th>
+              <th>Sick Ded.</th>
+              <th>Absent Ded.</th>
+              <th>Late Ded.</th>
+              <th>Bonus</th>
+              <th>Allow.</th>
+              <th>OT</th>
+              <th>Adjust.</th>
+              <th>Final</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
           <tbody>
             {payroll.length === 0 ? (
-              <tr><td colSpan={13} className="text-center text-muted-foreground py-8">Click "Calculate Payroll" to generate</td></tr>
+              <tr><td colSpan={17} className="text-center text-muted-foreground py-8">Click "Auto-Calculate" to generate, then edit any field manually.</td></tr>
             ) : payroll.map(p => {
               const emp = employees.find(e => e.user_id === p.employee_id);
               const isEditing = editingId === p.id;
+              const adj = entriesByPayroll[p.id] || { credit: 0, debit: 0 };
+              const adjNet = adj.credit - adj.debit;
               return (
                 <tr key={p.id}>
-                  <td className="font-medium">{emp?.name || '—'}</td>
-                  <td>{formatCurrency(p.base_salary)}</td>
-                  <td><span className="text-success">{p.present_days}</span>/22</td>
-                  <td>{p.late_days > 0 ? <span className="text-warning">{p.late_days}</span> : '0'}</td>
-                  <td>{p.absent_days > 0 ? <span className="text-destructive">{p.absent_days}</span> : '0'}</td>
-                  <td>{(p.paid_leave_days || 0) + (p.sick_leave || 0)}</td>
-                  <td className="text-destructive">{formatCurrency(p.total_deductions || 0)}</td>
-                  <td>{isEditing ? <input type="number" value={editForm.bonus} onChange={e => setEditForm({ ...editForm, bonus: e.target.value })} className="input-nawi w-20 text-xs py-1" /> : <span className="text-success">{formatCurrency(p.bonus || 0)}</span>}</td>
-                  <td>{isEditing ? <input type="number" value={editForm.allowances} onChange={e => setEditForm({ ...editForm, allowances: e.target.value })} className="input-nawi w-20 text-xs py-1" /> : formatCurrency(p.allowances || 0)}</td>
-                  <td>{isEditing ? <input type="number" value={editForm.overtime} onChange={e => setEditForm({ ...editForm, overtime: e.target.value })} className="input-nawi w-20 text-xs py-1" /> : formatCurrency(p.overtime || 0)}</td>
-                  <td className="font-bold">{formatCurrency(p.final_salary)}</td>
+                  <td className="font-medium whitespace-nowrap">{emp?.name || '—'}</td>
+                  <td>{numCell('base_salary', formatCurrency(p.base_salary), isEditing)}</td>
+                  <td>{numCell('present_days', <><span className="text-success">{p.present_days || 0}</span>/22</>, isEditing)}</td>
+                  <td>{numCell('late_days', p.late_days > 0 ? <span className="text-warning">{p.late_days}</span> : '0', isEditing)}</td>
+                  <td>{numCell('absent_days', p.absent_days > 0 ? <span className="text-destructive">{p.absent_days}</span> : '0', isEditing)}</td>
+                  <td>{numCell('paid_leave_days', p.paid_leave_days || 0, isEditing)}</td>
+                  <td>{numCell('sick_leave', p.sick_leave || 0, isEditing)}</td>
+                  <td className="text-destructive">{numCell('sick_deduction', formatCurrency(p.sick_deduction || 0), isEditing)}</td>
+                  <td className="text-destructive">{numCell('absence_deduction', formatCurrency(p.absence_deduction || 0), isEditing)}</td>
+                  <td className="text-destructive">{numCell('late_deduction', formatCurrency(p.late_deduction || 0), isEditing)}</td>
+                  <td className="text-success">{numCell('bonus', formatCurrency(p.bonus || 0), isEditing)}</td>
+                  <td>{numCell('allowances', formatCurrency(p.allowances || 0), isEditing)}</td>
+                  <td>{numCell('overtime', formatCurrency(p.overtime || 0), isEditing)}</td>
+                  <td>
+                    <button onClick={() => !p.locked && setEntriesModal(p)} disabled={p.locked}
+                      className={`text-xs px-2 py-1 rounded font-medium ${adjNet === 0 ? 'bg-muted text-muted-foreground' : adjNet > 0 ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'} ${p.locked ? 'opacity-60 cursor-not-allowed' : 'hover:opacity-80'}`}
+                      title="Manual line items">
+                      <ListPlus className="w-3 h-3 inline mr-1" />
+                      {adjNet === 0 ? 'Add' : (adjNet > 0 ? '+' : '') + formatCurrency(adjNet)}
+                    </button>
+                  </td>
+                  <td className="font-bold whitespace-nowrap">{formatCurrency(p.final_salary)}</td>
                   <td><StatusBadge status={p.status} /></td>
                   <td>
                     <div className="flex gap-1 items-center">
@@ -289,11 +404,9 @@ export default function PayrollManagement() {
                         <><Lock className="w-3 h-3 text-warning" /><button onClick={() => downloadPayslip(p)} className="text-primary p-1" title="Download payslip"><FileText className="w-3 h-3" /></button></>
                       ) : (
                         <>
+                          <button onClick={() => handleEdit(p)} className="text-secondary p-1" title="Edit all fields"><Edit className="w-3 h-3" /></button>
                           {p.status === 'Draft' && (
-                            <>
-                              <button onClick={() => handleEdit(p)} className="text-secondary p-1" title="Edit"><Edit className="w-3 h-3" /></button>
-                              <button onClick={() => setPwdAction({ type: 'confirm', row: p })} className="btn-success text-xs px-2 py-0.5">Confirm</button>
-                            </>
+                            <button onClick={() => setPwdAction({ type: 'confirm', row: p })} className="btn-success text-xs px-2 py-0.5">Confirm</button>
                           )}
                           <button onClick={() => downloadPayslip(p)} className="text-primary p-1" title="Download payslip"><FileText className="w-3 h-3" /></button>
                         </>
@@ -306,7 +419,6 @@ export default function PayrollManagement() {
           </tbody>
         </table>
       </div>
-
 
       <PasswordConfirmDialog
         open={!!pwdAction}
@@ -325,6 +437,16 @@ export default function PayrollManagement() {
           setPwdAction(null);
         }}
       />
+
+      {entriesModal && (
+        <PayrollEntriesModal
+          open={!!entriesModal}
+          onClose={() => setEntriesModal(null)}
+          payrollId={entriesModal.id}
+          employeeName={employees.find(e => e.user_id === entriesModal.employee_id)?.name || '—'}
+          onSaved={handleEntriesSaved}
+        />
+      )}
     </div>
   );
 }
