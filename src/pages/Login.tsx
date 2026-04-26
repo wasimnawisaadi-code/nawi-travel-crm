@@ -96,7 +96,7 @@ export default function Login() {
     await recordLoginAttendanceWithLocation(user.id, loginLat, loginLng, locationStatusText);
     await generateDailyNotifications(user.id, isAdminLike);
 
-    navigate(isAdminLike ? '/admin/dashboard' : '/employee/dashboard');
+    navigate(role === 'superadmin' ? '/admin/superadmin' : isAdminLike ? '/admin/dashboard' : '/employee/dashboard');
     setLoading(false);
   };
 

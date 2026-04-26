@@ -103,14 +103,7 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
       Employee: l.employee_name, Type: l.leave_type, Start: formatDate(l.start_date), End: formatDate(l.end_date),
       Days: l.days, Reason: l.reason, Status: l.status, ReviewedBy: l.reviewed_by || '',
     }));
-    if (rows.length === 0) return;
-    const headers = Object.keys(rows[0]);
-    const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${(r as any)[h] || ''}"`).join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `leave_${yearMonth}.csv`;
-    link.click();
+    exportToExcel(rows, `leave_${yearMonth}`, 'Leave');
   };
 
   return (

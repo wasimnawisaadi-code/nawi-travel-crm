@@ -112,14 +112,11 @@ export default function AdminAttendance() {
   };
 
   const exportCSV = () => {
-    const headers = ['Employee', 'Present Days', 'Late Days', 'Absent Days', 'Leave Days', 'Total Hours', 'Avg Hours/Day'];
-    const rows = empSummary.map(e => [e.name, e.present, e.late, e.absent, e.leaveCount, e.totalHours, e.avgHours]);
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `attendance_${yearMonth}.csv`;
-    link.click();
+    const rows = empSummary.map(e => ({
+      Employee: e.name, 'Present Days': e.present, 'Late Days': e.late, 'Absent Days': e.absent,
+      'Leave Days': e.leaveCount, 'Total Hours': e.totalHours, 'Avg Hours/Day': e.avgHours,
+    }));
+    exportToExcel(rows, `attendance_${yearMonth}`, 'Attendance');
   };
 
   return (

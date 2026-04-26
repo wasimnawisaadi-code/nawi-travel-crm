@@ -114,66 +114,112 @@ export default function PayrollManagement() {
     load();
   };
 
-  const downloadPayslip = (p: any) => {
+  const downloadPayslip = async (p: any) => {
     const emp = employees.find(e => e.user_id === p.employee_id);
-    const lines = [
-      `PAYSLIP — ${yearMonth}`,
-      `Payslip ID: ${p.display_id}`,
-      `Employee: ${emp?.name || '—'}`,
-      `Email: ${emp?.email || '—'}`,
-      `Status: ${p.status}${p.locked ? ' (Locked)' : ''}`,
-      ``,
-      `--- Attendance ---`,
-      `Present Days: ${p.present_days || 0} / 22`,
-      `Late Days: ${p.late_days || 0}`,
-      `Absent Days: ${p.absent_days || 0}`,
-      `Paid Leave: ${p.paid_leave_days || 0}`,
-      `Sick Leave: ${p.sick_leave || 0}`,
-      `Unpaid Leave: ${p.unpaid_leave || 0}`,
-      `Total Hours: ${p.total_hours || 0}`,
-      ``,
-      `--- Earnings ---`,
-      `Base Salary:        ${formatCurrency(p.base_salary || 0)}`,
-      `Bonus:              ${formatCurrency(p.bonus || 0)}`,
-      `Allowances:         ${formatCurrency(p.allowances || 0)}`,
-      `Overtime:           ${formatCurrency(p.overtime || 0)}`,
-      ``,
-      `--- Deductions ---`,
-      `Sick Deduction:     ${formatCurrency(p.sick_deduction || 0)}`,
-      `Unpaid Deduction:   ${formatCurrency(p.unpaid_deduction || 0)}`,
-      `Absence Deduction:  ${formatCurrency(p.absence_deduction || 0)}`,
-      `Late Deduction:     ${formatCurrency(p.late_deduction || 0)}`,
-      `Total Deductions:   ${formatCurrency(p.total_deductions || 0)}`,
-      ``,
-      `=================================`,
-      `FINAL SALARY:       ${formatCurrency(p.final_salary || 0)}`,
-      `=================================`,
-      ``,
-      p.confirmed_by ? `Confirmed by: ${p.confirmed_by} at ${p.confirmed_at}` : '',
-      p.locked_by ? `Locked by: ${p.locked_by} at ${p.locked_at}` : '',
-    ].filter(Boolean);
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `payslip_${emp?.name?.replace(/\s+/g, '_') || p.employee_id}_${yearMonth}.txt`;
-    link.click();
+    const jsPDF = (await import('jspdf')).default;
+    const { drawBrandHeader, drawBrandFooter } = await import('@/lib/pdf-helpers');
+    const doc = new jsPDF();
+    const headerBottom = await drawBrandHeader(doc, `Payslip — ${yearMonth}`);
+    let y = headerBottom + 4;
+    doc.setFontSize(9); doc.setTextColor(120);
+    doc.text(`Payslip ID: ${p.display_id}`, 140, y);
+    y = headerBottom + 12;
+
+    doc.setFontSize(9); doc.setTextColor(120); doc.text('EMPLOYEE', 18, y);
+    doc.setTextColor(0); doc.setFontSize(10);
+    y += 5; doc.text(emp?.name || '—', 18, y);
+    y += 5; doc.text(emp?.email || '—', 18, y);
+    y += 5; doc.text(`Status: ${p.status}${p.locked ? ' (Locked)' : ''}`, 18, y);
+
+    // Attendance table
+    y += 10;
+    doc.setFillColor(5, 47, 89); doc.rect(18, y, 174, 8, 'F');
+    doc.setTextColor(255); doc.setFontSize(9);
+    doc.text('ATTENDANCE SUMMARY', 22, y + 5.5);
+    y += 12; doc.setTextColor(0); doc.setFontSize(9);
+    const attRows = [
+      ['Present Days', `${p.present_days || 0} / 22`],
+      ['Late Days', String(p.late_days || 0)],
+      ['Absent Days', String(p.absent_days || 0)],
+      ['Paid Leave', String(p.paid_leave_days || 0)],
+      ['Sick Leave', String(p.sick_leave || 0)],
+      ['Unpaid Leave', String(p.unpaid_leave || 0)],
+      ['Total Hours', String(p.total_hours || 0)],
+    ];
+    attRows.forEach(([k, v]) => { doc.text(k, 22, y); doc.text(v, 188, y, { align: 'right' }); y += 6; });
+
+    // Earnings
+    y += 4;
+    doc.setFillColor(10, 112, 64); doc.rect(18, y, 174, 8, 'F');
+    doc.setTextColor(255); doc.text('EARNINGS', 22, y + 5.5);
+    y += 12; doc.setTextColor(0);
+    const earnings = [
+      ['Base Salary', p.base_salary || 0],
+      ['Bonus', p.bonus || 0],
+      ['Allowances', p.allowances || 0],
+      ['Overtime', p.overtime || 0],
+    ];
+    earnings.forEach(([k, v]: any) => { doc.text(String(k), 22, y); doc.text(formatCurrency(v), 188, y, { align: 'right' }); y += 6; });
+
+    // Deductions
+    y += 4;
+    doc.setFillColor(196, 57, 43); doc.rect(18, y, 174, 8, 'F');
+    doc.setTextColor(255); doc.text('DEDUCTIONS', 22, y + 5.5);
+    y += 12; doc.setTextColor(0);
+    const deds = [
+      ['Sick Deduction', p.sick_deduction || 0],
+      ['Unpaid Deduction', p.unpaid_deduction || 0],
+      ['Absence Deduction', p.absence_deduction || 0],
+      ['Late Deduction', p.late_deduction || 0],
+      ['Total Deductions', p.total_deductions || 0],
+    ];
+    deds.forEach(([k, v]: any, i: number) => {
+      if (i === deds.length - 1) doc.setFont(undefined, 'bold');
+      doc.text(String(k), 22, y); doc.text(formatCurrency(v), 188, y, { align: 'right' });
+      doc.setFont(undefined, 'normal');
+      y += 6;
+    });
+
+    // Final
+    y += 6;
+    doc.setFillColor(5, 47, 89); doc.rect(18, y, 174, 12, 'F');
+    doc.setTextColor(255); doc.setFontSize(13);
+    doc.text('FINAL SALARY', 22, y + 8);
+    doc.text(formatCurrency(p.final_salary || 0), 188, y + 8, { align: 'right' });
+
+    if (p.confirmed_by) {
+      y += 18; doc.setFontSize(8); doc.setTextColor(120);
+      doc.text(`Confirmed by ${p.confirmed_by} on ${new Date(p.confirmed_at).toLocaleString('en-GB')}`, 18, y);
+    }
+
+    await drawBrandFooter(doc, user?.email || '');
+    doc.save(`Payslip_${(emp?.name || p.employee_id).replace(/\s+/g, '_')}_${yearMonth}.pdf`);
   };
 
   const totalPayroll = payroll.reduce((s, p) => s + (p.final_salary || 0), 0);
   const totalDeductions = payroll.reduce((s, p) => s + (p.total_deductions || 0), 0);
 
-  const exportCSV = () => {
-    const headers = ['Employee', 'Base Salary', 'Present', 'Late', 'Absent', 'Leave', 'Sick', 'Deductions', 'Bonus', 'Allowances', 'OT', 'Final Salary', 'Status'];
+  const exportXlsx = () => {
     const rows = payroll.map(p => {
       const emp = employees.find(e => e.user_id === p.employee_id);
-      return [emp?.name, p.base_salary, p.present_days, p.late_days, p.absent_days, p.paid_leave_days, p.sick_leave, p.total_deductions, p.bonus, p.allowances, p.overtime, p.final_salary, p.status];
+      return {
+        Employee: emp?.name || '—',
+        Email: emp?.email || '',
+        'Base Salary': p.base_salary || 0,
+        Present: p.present_days || 0,
+        Late: p.late_days || 0,
+        Absent: p.absent_days || 0,
+        'Paid Leave': p.paid_leave_days || 0,
+        Sick: p.sick_leave || 0,
+        Deductions: p.total_deductions || 0,
+        Bonus: p.bonus || 0,
+        Allowances: p.allowances || 0,
+        Overtime: p.overtime || 0,
+        'Final Salary': p.final_salary || 0,
+        Status: p.status,
+      };
     });
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `payroll_${yearMonth}.csv`;
-    link.click();
+    exportToExcel(rows, `payroll_${yearMonth}`, 'Payroll');
   };
 
   return (
@@ -184,7 +230,7 @@ export default function PayrollManagement() {
           <input type="month" value={yearMonth} onChange={(e) => setYearMonth(e.target.value)} className="input-nawi w-auto" />
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button onClick={exportCSV} className="btn-outline"><Download className="w-4 h-4" /> Export</button>
+          <button onClick={exportXlsx} className="btn-outline"><Download className="w-4 h-4" /> Export Excel</button>
           {payroll.length > 0 && (
             monthLocked
               ? <button onClick={() => setPwdAction({ type: 'unlock', row: null })} className="btn-outline"><Unlock className="w-4 h-4" /> Unlock Month</button>
