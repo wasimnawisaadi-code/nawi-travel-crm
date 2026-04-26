@@ -271,6 +271,24 @@ export default function PayrollManagement() {
           <p>• Hajj & Emergency leaves are unpaid</p>
         </div>
       </div>
+
+      <PasswordConfirmDialog
+        open={!!pwdAction}
+        onClose={() => setPwdAction(null)}
+        title={pwdAction?.type === 'lock' ? 'Lock Payroll Month' : pwdAction?.type === 'unlock' ? 'Unlock Payroll Month' : 'Confirm Payroll'}
+        description={
+          pwdAction?.type === 'lock' ? `Lock all payroll records for ${yearMonth}? Re-enter your password to confirm.` :
+          pwdAction?.type === 'unlock' ? `Unlock payroll for ${yearMonth} so it can be edited again? Re-enter your password.` :
+          `Confirm payroll for ${pwdAction?.row ? employees.find(e => e.user_id === pwdAction.row.employee_id)?.name : ''}? Re-enter your password.`
+        }
+        onConfirm={async () => {
+          if (!pwdAction) return;
+          if (pwdAction.type === 'lock') await lockMonth();
+          else if (pwdAction.type === 'unlock') await unlockMonth();
+          else if (pwdAction.type === 'confirm' && pwdAction.row) await confirmPayroll(pwdAction.row.id);
+          setPwdAction(null);
+        }}
+      />
     </div>
   );
 }
