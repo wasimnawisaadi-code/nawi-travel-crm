@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Edit, FileText, Trash2, Plus, Save, X, Upload, Download, Clock, Users, MessageCircle } from 'lucide-react';
+import { ArrowLeft, Edit, FileText, Trash2, Plus, Save, X, Upload, Download, MessageCircle, Camera } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/integrations/supabase/client';
 import { formatCurrency, formatDate, daysUntil, getDateStatus, generateDisplayId, auditLog } from '@/lib/supabase-service';
@@ -168,10 +169,58 @@ export default function ClientProfile() {
     overdue: 'text-destructive border-destructive/30 bg-destructive/10',
   };
 
-  const tabList = ['overview', 'services', 'documents', 'dates', 'quotations', 'tasks', 'revenue', 'notes', 'history'];
+  const tabList = ['overview', 'documents', 'dates', 'quotations', 'tasks', 'revenue', 'notes', 'history'];
   const importantDates = (client.important_dates || {}) as Record<string, string>;
   const documents = (client.documents || []) as any[];
   const serviceDetails = (client.service_details || {}) as Record<string, string>;
+
+  // ---- Documents handlers (add / delete) ----
+  const uid = () => Math.random().toString(36).slice(2, 10);
+  const handleAddDocument = (file: File, customName: string) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const entry = {
+        id: uid(),
+        name: customName || file.name,
+        fileName: file.name,
+        fileType: file.type,
+        base64: `NAWI_ENC::${reader.result as string}`,
+        uploadedAt: new Date().toISOString(),
+      };
+      const updated = [...documents, entry];
+      await supabase.from('clients').update({ documents: updated as any }).eq('id', client.id);
+      await auditLog('document_added', 'client', client.id, { name: entry.name });
+      toast.success('Document added');
+      load();
+    };
+    reader.readAsDataURL(file);
+  };
+  const handleDeleteDocument = async (idx: number) => {
+    if (!confirm('Delete this document?')) return;
+    const updated = documents.filter((_: any, i: number) => i !== idx);
+    await supabase.from('clients').update({ documents: updated as any }).eq('id', client.id);
+    await auditLog('document_deleted', 'client', client.id, {});
+    toast.success('Deleted');
+    load();
+  };
+
+  // ---- Dates handlers (add / delete) ----
+  const handleAddDate = async (name: string, date: string) => {
+    if (!name || !date) { toast.error('Enter name and date'); return; }
+    const updated = { ...importantDates, [name]: date };
+    await supabase.from('clients').update({ important_dates: updated as any }).eq('id', client.id);
+    await auditLog('date_added', 'client', client.id, { name, date });
+    toast.success('Date added');
+    load();
+  };
+  const handleDeleteDate = async (key: string) => {
+    if (!confirm(`Delete date "${key}"?`)) return;
+    const updated: Record<string, string> = { ...importantDates };
+    delete updated[key];
+    await supabase.from('clients').update({ important_dates: updated as any }).eq('id', client.id);
+    toast.success('Deleted');
+    load();
+  };
 
   const buildWelcomeMessage = () =>
     `Dear ${client.name},\n\nThank you for choosing Nawi Saadi Travel & Tourism! 🌟\n\nWe have received your enquiry${client.service ? ` for ${client.service}` : ''} and our team will be in touch shortly.\n\nFor any questions, feel free to reply to this message.\n\nWarm regards,\nNawi Saadi Travel & Tourism`;
@@ -201,7 +250,6 @@ export default function ClientProfile() {
             <button onClick={() => navigate(`${basePath}/clients/new?edit=${client.id}`)} className="btn-outline"><Edit className="w-4 h-4" /> Edit</button>
             <button onClick={() => setShowWhatsApp(true)} className="btn-outline" disabled={!client.mobile}><MessageCircle className="w-4 h-4" /> WhatsApp</button>
             <button onClick={() => setShowQuotation(true)} className="btn-secondary"><FileText className="w-4 h-4" /> Quotation</button>
-            <button onClick={() => navigate(`${basePath}/clients/new?existingClient=${client.id}`)} className="btn-outline"><Plus className="w-4 h-4" /> New Service</button>
             <button onClick={() => setShowDeleteConfirm(true)} className="btn-danger"><Trash2 className="w-4 h-4" /></button>
           </div>
         </div>
