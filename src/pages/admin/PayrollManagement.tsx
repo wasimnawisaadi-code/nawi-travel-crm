@@ -3,7 +3,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { formatCurrency, generateDisplayId, auditLog } from '@/lib/supabase-service';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { Download, Calculator, Edit, Save, X } from 'lucide-react';
+import PasswordConfirmDialog from '@/components/PasswordConfirmDialog';
+import { Download, Calculator, Edit, Save, X, Lock, Unlock, FileText } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function PayrollManagement() {
   const { user } = useAuth();
@@ -13,6 +15,9 @@ export default function PayrollManagement() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<any>({});
   const [employees, setEmployees] = useState<any[]>([]);
+  const [pwdAction, setPwdAction] = useState<{ type: 'lock' | 'unlock' | 'confirm'; row: any } | null>(null);
+
+  const monthLocked = payroll.length > 0 && payroll.every(p => p.locked);
 
   useEffect(() => {
     const fetchEmps = async () => {
@@ -78,6 +83,21 @@ export default function PayrollManagement() {
   const confirmPayroll = async (id: string) => {
     await supabase.from('payroll').update({ status: 'Confirmed', confirmed_by: user?.email || '', confirmed_at: new Date().toISOString() }).eq('id', id);
     await auditLog('payroll_confirmed', 'payroll', id, {});
+    toast.success('Payroll confirmed');
+    load();
+  };
+
+  const lockMonth = async () => {
+    await supabase.from('payroll').update({ locked: true, locked_at: new Date().toISOString(), locked_by: user?.email || '' } as any).eq('year_month', yearMonth);
+    await auditLog('payroll_locked', 'payroll', yearMonth, {});
+    toast.success(`Payroll for ${yearMonth} locked`);
+    load();
+  };
+
+  const unlockMonth = async () => {
+    await supabase.from('payroll').update({ locked: false, locked_at: null, locked_by: null } as any).eq('year_month', yearMonth);
+    await auditLog('payroll_unlocked', 'payroll', yearMonth, {});
+    toast.success(`Payroll for ${yearMonth} unlocked`);
     load();
   };
 
@@ -91,6 +111,51 @@ export default function PayrollManagement() {
     await supabase.from('payroll').update({ bonus, allowances, overtime, final_salary: Math.round(finalSalary) }).eq('id', p.id);
     setEditingId(null);
     load();
+  };
+
+  const downloadPayslip = (p: any) => {
+    const emp = employees.find(e => e.user_id === p.employee_id);
+    const lines = [
+      `PAYSLIP — ${yearMonth}`,
+      `Payslip ID: ${p.display_id}`,
+      `Employee: ${emp?.name || '—'}`,
+      `Email: ${emp?.email || '—'}`,
+      `Status: ${p.status}${p.locked ? ' (Locked)' : ''}`,
+      ``,
+      `--- Attendance ---`,
+      `Present Days: ${p.present_days || 0} / 22`,
+      `Late Days: ${p.late_days || 0}`,
+      `Absent Days: ${p.absent_days || 0}`,
+      `Paid Leave: ${p.paid_leave_days || 0}`,
+      `Sick Leave: ${p.sick_leave || 0}`,
+      `Unpaid Leave: ${p.unpaid_leave || 0}`,
+      `Total Hours: ${p.total_hours || 0}`,
+      ``,
+      `--- Earnings ---`,
+      `Base Salary:        ${formatCurrency(p.base_salary || 0)}`,
+      `Bonus:              ${formatCurrency(p.bonus || 0)}`,
+      `Allowances:         ${formatCurrency(p.allowances || 0)}`,
+      `Overtime:           ${formatCurrency(p.overtime || 0)}`,
+      ``,
+      `--- Deductions ---`,
+      `Sick Deduction:     ${formatCurrency(p.sick_deduction || 0)}`,
+      `Unpaid Deduction:   ${formatCurrency(p.unpaid_deduction || 0)}`,
+      `Absence Deduction:  ${formatCurrency(p.absence_deduction || 0)}`,
+      `Late Deduction:     ${formatCurrency(p.late_deduction || 0)}`,
+      `Total Deductions:   ${formatCurrency(p.total_deductions || 0)}`,
+      ``,
+      `=================================`,
+      `FINAL SALARY:       ${formatCurrency(p.final_salary || 0)}`,
+      `=================================`,
+      ``,
+      p.confirmed_by ? `Confirmed by: ${p.confirmed_by} at ${p.confirmed_at}` : '',
+      p.locked_by ? `Locked by: ${p.locked_by} at ${p.locked_at}` : '',
+    ].filter(Boolean);
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `payslip_${emp?.name?.replace(/\s+/g, '_') || p.employee_id}_${yearMonth}.txt`;
+    link.click();
   };
 
   const totalPayroll = payroll.reduce((s, p) => s + (p.final_salary || 0), 0);
@@ -117,11 +182,26 @@ export default function PayrollManagement() {
           <h2 className="text-lg font-bold font-display">Payroll Management</h2>
           <input type="month" value={yearMonth} onChange={(e) => setYearMonth(e.target.value)} className="input-nawi w-auto" />
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button onClick={exportCSV} className="btn-outline"><Download className="w-4 h-4" /> Export</button>
-          <button onClick={calculatePayroll} className="btn-primary"><Calculator className="w-4 h-4" /> Calculate Payroll</button>
+          {payroll.length > 0 && (
+            monthLocked
+              ? <button onClick={() => setPwdAction({ type: 'unlock', row: null })} className="btn-outline"><Unlock className="w-4 h-4" /> Unlock Month</button>
+              : <button onClick={() => setPwdAction({ type: 'lock', row: null })} className="btn-outline"><Lock className="w-4 h-4" /> Lock Month</button>
+          )}
+          <button onClick={calculatePayroll} disabled={monthLocked} className="btn-primary disabled:opacity-50"><Calculator className="w-4 h-4" /> Calculate Payroll</button>
         </div>
       </div>
+
+      {monthLocked && (
+        <div className="card-nawi bg-warning/5 border-warning/30 flex items-center gap-3 py-3">
+          <Lock className="w-5 h-5 text-warning" />
+          <div className="text-sm">
+            <strong className="text-warning">Payroll for {yearMonth} is locked.</strong>
+            <span className="text-muted-foreground ml-2">No further edits, confirmations, or recalculations are allowed. Unlock to make changes.</span>
+          </div>
+        </div>
+      )}
 
       {payroll.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -155,11 +235,21 @@ export default function PayrollManagement() {
                   <td className="font-bold">{formatCurrency(p.final_salary)}</td>
                   <td><StatusBadge status={p.status} /></td>
                   <td>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 items-center">
                       {isEditing ? (
-                        <><button onClick={() => handleSaveEdit(p)} className="text-success p-1"><Save className="w-3 h-3" /></button><button onClick={() => setEditingId(null)} className="text-muted-foreground p-1"><X className="w-3 h-3" /></button></>
+                        <><button onClick={() => handleSaveEdit(p)} className="text-success p-1" title="Save"><Save className="w-3 h-3" /></button><button onClick={() => setEditingId(null)} className="text-muted-foreground p-1" title="Cancel"><X className="w-3 h-3" /></button></>
+                      ) : p.locked ? (
+                        <><Lock className="w-3 h-3 text-warning" /><button onClick={() => downloadPayslip(p)} className="text-primary p-1" title="Download payslip"><FileText className="w-3 h-3" /></button></>
                       ) : (
-                        <>{p.status === 'Draft' && <><button onClick={() => handleEdit(p)} className="text-secondary p-1"><Edit className="w-3 h-3" /></button><button onClick={() => confirmPayroll(p.id)} className="btn-success text-xs px-2 py-0.5">Confirm</button></>}</>
+                        <>
+                          {p.status === 'Draft' && (
+                            <>
+                              <button onClick={() => handleEdit(p)} className="text-secondary p-1" title="Edit"><Edit className="w-3 h-3" /></button>
+                              <button onClick={() => setPwdAction({ type: 'confirm', row: p })} className="btn-success text-xs px-2 py-0.5">Confirm</button>
+                            </>
+                          )}
+                          <button onClick={() => downloadPayslip(p)} className="text-primary p-1" title="Download payslip"><FileText className="w-3 h-3" /></button>
+                        </>
                       )}
                     </div>
                   </td>
@@ -181,6 +271,24 @@ export default function PayrollManagement() {
           <p>• Hajj & Emergency leaves are unpaid</p>
         </div>
       </div>
+
+      <PasswordConfirmDialog
+        open={!!pwdAction}
+        onClose={() => setPwdAction(null)}
+        title={pwdAction?.type === 'lock' ? 'Lock Payroll Month' : pwdAction?.type === 'unlock' ? 'Unlock Payroll Month' : 'Confirm Payroll'}
+        description={
+          pwdAction?.type === 'lock' ? `Lock all payroll records for ${yearMonth}? Re-enter your password to confirm.` :
+          pwdAction?.type === 'unlock' ? `Unlock payroll for ${yearMonth} so it can be edited again? Re-enter your password.` :
+          `Confirm payroll for ${pwdAction?.row ? employees.find(e => e.user_id === pwdAction.row.employee_id)?.name : ''}? Re-enter your password.`
+        }
+        onConfirm={async () => {
+          if (!pwdAction) return;
+          if (pwdAction.type === 'lock') await lockMonth();
+          else if (pwdAction.type === 'unlock') await unlockMonth();
+          else if (pwdAction.type === 'confirm' && pwdAction.row) await confirmPayroll(pwdAction.row.id);
+          setPwdAction(null);
+        }}
+      />
     </div>
   );
 }
