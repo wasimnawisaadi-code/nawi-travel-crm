@@ -63,9 +63,34 @@ export default function GeofenceManagement() {
     loadEmployees();
     loadTodayAttendance();
     getAttendanceSettings().then(setAtt);
+    getAttendanceOverrides().then(setOverrides);
     const i = setInterval(loadTodayAttendance, 30000);
     return () => clearInterval(i);
   }, []);
+
+  const setEmpOverride = (userId: string, patch: EmployeeOverride) => {
+    setOverrides(prev => {
+      const cur = prev[userId] || {};
+      const next = { ...cur, ...patch };
+      // Remove keys with empty string values
+      Object.keys(next).forEach(k => { if ((next as any)[k] === '' || (next as any)[k] === undefined || (next as any)[k] === null) delete (next as any)[k]; });
+      const out = { ...prev };
+      if (Object.keys(next).length === 0) delete out[userId]; else out[userId] = next;
+      return out;
+    });
+  };
+
+  const clearEmpOverride = (userId: string) => {
+    setOverrides(prev => { const out = { ...prev }; delete out[userId]; return out; });
+  };
+
+  const handleSaveOverrides = async () => {
+    setSavingOv(true);
+    const { error } = await saveAttendanceOverrides(overrides, user?.id);
+    setSavingOv(false);
+    if (error) { toast.error('Save failed'); return; }
+    toast.success('Per-employee schedules saved');
+  };
 
   const handleGetCurrentLocation = () => {
     if (!navigator.geolocation) { toast.error('Geolocation not supported'); return; }
