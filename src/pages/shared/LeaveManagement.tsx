@@ -269,6 +269,20 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
           </div>
         </div>
       )}
+
+      <PasswordConfirmDialog
+        open={!!pwdAction}
+        onClose={() => setPwdAction(null)}
+        title={pwdAction?.type === 'approve' ? 'Approve Leave Request' : 'Reject Leave Request'}
+        description={pwdAction?.row ? `${pwdAction.type === 'approve' ? 'Approve' : 'Reject'} ${pwdAction.row.days}-day ${pwdAction.row.leave_type} leave for ${pwdAction.row.employee_name}? Re-enter your password.` : ''}
+        destructive={pwdAction?.type === 'reject'}
+        onConfirm={async () => {
+          if (!pwdAction?.row) return;
+          if (pwdAction.type === 'approve') await handleApprove(pwdAction.row);
+          else await handleReject(pwdAction.row);
+          setPwdAction(null);
+        }}
+      />
     </div>
   );
 }
