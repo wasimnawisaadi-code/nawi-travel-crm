@@ -114,30 +114,17 @@ export default function EmployeeList() {
 
   const runPwdAction = async () => {
     if (!pwdAction) return;
-    const { type, emp } = pwdAction;
-    if (type === 'activate') {
-      await supabase.from('profiles').update({ status: 'active' }).eq('user_id', emp.user_id);
-      await auditLog('employee_activated', 'employee', emp.user_id, { name: emp.name });
-      toast.success(`${emp.name} activated`);
-    } else if (type === 'deactivate') {
-      await supabase.from('profiles').update({ status: 'inactive' }).eq('user_id', emp.user_id);
-      await auditLog('employee_deactivated', 'employee', emp.user_id, { name: emp.name });
-      toast.success(`${emp.name} deactivated — login disabled`);
-    } else if (type === 'delete') {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-delete-employee`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session?.access_token}`,
-        },
-        body: JSON.stringify({ user_id: emp.user_id }),
-      });
-      const json = await res.json();
-      if (!res.ok) { toast.error(json.error || 'Delete failed'); return; }
-      await auditLog('employee_deleted', 'employee', emp.user_id, { name: emp.name });
-      toast.success(`${emp.name} permanently deleted`);
-    }
+    const { emp } = pwdAction;
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-delete-employee`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ user_id: emp.user_id }),
+    });
+    const json = await res.json();
+    if (!res.ok) { toast.error(json.error || 'Delete failed'); return; }
+    await auditLog('employee_deleted', 'employee', emp.user_id, { name: emp.name });
+    toast.success(`${emp.name} permanently deleted`);
     load();
   };
 
