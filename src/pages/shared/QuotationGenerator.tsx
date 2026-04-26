@@ -31,36 +31,32 @@ export default function QuotationGenerator() {
     setLineItems(updated);
   };
 
-  const generatePDF = () => {
+  const generatePDF = async () => {
     const doc = new jsPDF();
-    doc.setFontSize(18); doc.setTextColor(5, 47, 89);
-    doc.text('NAWI SAADI TRAVEL & TOURISM', 20, 25);
-    doc.setFontSize(10); doc.setTextColor(100);
-    doc.text('Travel & Tourism Services', 20, 32);
-    doc.line(20, 36, 190, 36);
-    doc.setFontSize(14); doc.setTextColor(5, 47, 89);
-    doc.text('QUOTATION', 20, 46);
-    doc.setFontSize(10); doc.setTextColor(50);
-    doc.text(`Date: ${new Date().toLocaleDateString('en-GB')}`, 140, 46);
-    if (validUntil) doc.text(`Valid Until: ${new Date(validUntil).toLocaleDateString('en-GB')}`, 140, 52);
+    const { drawBrandHeader, drawBrandFooter } = await import('@/lib/pdf-helpers');
+    const headerBottom = await drawBrandHeader(doc, 'Quotation');
+    let y = headerBottom + 4;
+    doc.setFontSize(9); doc.setTextColor(80);
+    doc.text(`Date: ${new Date().toLocaleDateString('en-GB')}`, 140, y);
+    if (validUntil) { y += 5; doc.text(`Valid Until: ${new Date(validUntil).toLocaleDateString('en-GB')}`, 140, y); }
+    y = headerBottom + 12;
     if (client) {
-      doc.setFontSize(10); doc.text('PREPARED FOR:', 20, 60); doc.setTextColor(0);
-      doc.text(client.name, 20, 66); doc.text(client.mobile || '', 20, 72); doc.text(client.email || '', 20, 78);
-      if (client.service) doc.text(`Service: ${client.service}`, 20, 84);
+      doc.setFontSize(9); doc.setTextColor(120); doc.text('PREPARED FOR', 18, y); doc.setTextColor(0); doc.setFontSize(10);
+      y += 5; doc.text(client.name, 18, y);
+      y += 5; doc.text(`${client.mobile || ''}${client.email ? ' • ' + client.email : ''}`, 18, y);
+      if (client.service) { y += 5; doc.text(`Service: ${client.service}`, 18, y); }
     }
-    let y = 96;
-    doc.setFillColor(5, 47, 89); doc.rect(20, y, 170, 8, 'F');
+    y += 10;
+    doc.setFillColor(5, 47, 89); doc.rect(18, y, 174, 8, 'F');
     doc.setTextColor(255); doc.setFontSize(9);
-    doc.text('DESCRIPTION', 25, y + 5.5); doc.text('AMOUNT (AED)', 155, y + 5.5);
+    doc.text('DESCRIPTION', 22, y + 5.5); doc.text('AMOUNT (AED)', 188, y + 5.5, { align: 'right' });
     y += 12; doc.setTextColor(0);
-    lineItems.forEach((li) => { if (!li.description) return; doc.text(li.description, 25, y); doc.text(li.amount.toLocaleString(), 160, y, { align: 'right' }); y += 7; });
-    doc.line(20, y, 190, y); y += 8;
+    lineItems.forEach((li) => { if (!li.description) return; doc.text(li.description, 22, y); doc.text(li.amount.toLocaleString(), 188, y, { align: 'right' }); y += 7; });
+    doc.setDrawColor(220); doc.line(18, y, 192, y); y += 8;
     doc.setFontSize(11); doc.setTextColor(5, 47, 89);
-    doc.text(`TOTAL QUOTED PRICE: AED ${quotedPrice.toLocaleString()}`, 20, y);
-    if (notes) { y += 12; doc.setFontSize(9); doc.setTextColor(100); doc.text(`Notes: ${notes}`, 20, y); }
-    y += 16; doc.setFontSize(9);
-    doc.text(`Authorized by: ${profile?.name || ''}`, 20, y);
-    doc.text('Nawi Saadi Travel & Tourism', 20, y + 6);
+    doc.text(`TOTAL QUOTED PRICE: AED ${quotedPrice.toLocaleString()}`, 18, y);
+    if (notes) { y += 12; doc.setFontSize(9); doc.setTextColor(100); doc.text(`Notes: ${notes}`, 18, y); }
+    await drawBrandFooter(doc, profile?.name);
     doc.save(`Quotation_${client?.name || 'draft'}.pdf`);
   };
 

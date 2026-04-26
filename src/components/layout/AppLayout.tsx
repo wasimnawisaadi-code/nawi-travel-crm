@@ -92,7 +92,11 @@ export default function AppLayout() {
 
   const baseLinks = isAdmin ? adminLinks : employeeLinks;
   const links = isSuperAdmin
-    ? [...baseLinks, { to: '/admin/admins', label: 'Admin Management', icon: Crown }]
+    ? [
+        { to: '/admin/superadmin', label: 'Super Admin', icon: Crown },
+        ...baseLinks,
+        { to: '/admin/admins', label: 'Admin Management', icon: Shield },
+      ]
     : baseLinks;
 
   const handleSearch = async (q: string) => {
