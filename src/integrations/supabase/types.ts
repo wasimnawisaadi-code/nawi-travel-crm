@@ -333,6 +333,133 @@ export type Database = {
         }
         Relationships: []
       }
+      dsr_assignments: {
+        Row: {
+          assigned_at: string
+          assigned_by: string | null
+          employee_id: string
+          id: string
+          template_id: string
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_by?: string | null
+          employee_id: string
+          id?: string
+          template_id: string
+        }
+        Update: {
+          assigned_at?: string
+          assigned_by?: string | null
+          employee_id?: string
+          id?: string
+          template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dsr_assignments_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "dsr_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dsr_entries: {
+        Row: {
+          cost_amount: number | null
+          created_at: string
+          data: Json
+          display_id: string
+          employee_id: string
+          employee_name: string | null
+          entry_date: string
+          id: string
+          profit_amount: number | null
+          sale_amount: number | null
+          source: string
+          template_id: string
+          template_key: string
+          updated_at: string
+        }
+        Insert: {
+          cost_amount?: number | null
+          created_at?: string
+          data?: Json
+          display_id: string
+          employee_id: string
+          employee_name?: string | null
+          entry_date?: string
+          id?: string
+          profit_amount?: number | null
+          sale_amount?: number | null
+          source?: string
+          template_id: string
+          template_key: string
+          updated_at?: string
+        }
+        Update: {
+          cost_amount?: number | null
+          created_at?: string
+          data?: Json
+          display_id?: string
+          employee_id?: string
+          employee_name?: string | null
+          entry_date?: string
+          id?: string
+          profit_amount?: number | null
+          sale_amount?: number | null
+          source?: string
+          template_id?: string
+          template_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dsr_entries_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "dsr_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dsr_templates: {
+        Row: {
+          columns: Json
+          created_at: string
+          description: string | null
+          icon: string | null
+          id: string
+          is_active: boolean
+          name: string
+          template_key: string
+          updated_at: string
+        }
+        Insert: {
+          columns?: Json
+          created_at?: string
+          description?: string | null
+          icon?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          template_key: string
+          updated_at?: string
+        }
+        Update: {
+          columns?: Json
+          created_at?: string
+          description?: string | null
+          icon?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          template_key?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       geofence_zones: {
         Row: {
           created_at: string
