@@ -28,6 +28,7 @@ import NotificationsPage from "./pages/shared/NotificationsPage";
 import DailyStatusReport from "./pages/shared/DailyStatusReport";
 import DSRTemplateAssignment from "./pages/admin/DSRTemplateAssignment";
 import AdminManagement from "./pages/admin/AdminManagement";
+import SuperAdminDashboard from "./pages/admin/SuperAdminDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -65,6 +66,7 @@ const App = () => (
               <Route path="/admin/dsr" element={<DailyStatusReport />} />
               <Route path="/admin/dsr-assignments" element={<DSRTemplateAssignment />} />
               <Route path="/admin/admins" element={<AdminManagement />} />
+              <Route path="/admin/superadmin" element={<SuperAdminDashboard />} />
 
               {/* Employee */}
               <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
