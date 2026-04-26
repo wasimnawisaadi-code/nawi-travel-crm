@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Edit, FileText, Trash2, Plus, Save, X, Upload, Download, Clock, Users, MessageCircle } from 'lucide-react';
+import { ArrowLeft, Edit, FileText, Trash2, Plus, Save, X, Upload, Download, MessageCircle, Camera } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/integrations/supabase/client';
 import { formatCurrency, formatDate, daysUntil, getDateStatus, generateDisplayId, auditLog } from '@/lib/supabase-service';
@@ -168,10 +169,58 @@ export default function ClientProfile() {
     overdue: 'text-destructive border-destructive/30 bg-destructive/10',
   };
 
-  const tabList = ['overview', 'services', 'documents', 'dates', 'quotations', 'tasks', 'revenue', 'notes', 'history'];
+  const tabList = ['overview', 'documents', 'dates', 'quotations', 'tasks', 'revenue', 'notes', 'history'];
   const importantDates = (client.important_dates || {}) as Record<string, string>;
   const documents = (client.documents || []) as any[];
   const serviceDetails = (client.service_details || {}) as Record<string, string>;
+
+  // ---- Documents handlers (add / delete) ----
+  const uid = () => Math.random().toString(36).slice(2, 10);
+  const handleAddDocument = (file: File, customName: string) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const entry = {
+        id: uid(),
+        name: customName || file.name,
+        fileName: file.name,
+        fileType: file.type,
+        base64: `NAWI_ENC::${reader.result as string}`,
+        uploadedAt: new Date().toISOString(),
+      };
+      const updated = [...documents, entry];
+      await supabase.from('clients').update({ documents: updated as any }).eq('id', client.id);
+      await auditLog('document_added', 'client', client.id, { name: entry.name });
+      toast.success('Document added');
+      load();
+    };
+    reader.readAsDataURL(file);
+  };
+  const handleDeleteDocument = async (idx: number) => {
+    if (!confirm('Delete this document?')) return;
+    const updated = documents.filter((_: any, i: number) => i !== idx);
+    await supabase.from('clients').update({ documents: updated as any }).eq('id', client.id);
+    await auditLog('document_deleted', 'client', client.id, {});
+    toast.success('Deleted');
+    load();
+  };
+
+  // ---- Dates handlers (add / delete) ----
+  const handleAddDate = async (name: string, date: string) => {
+    if (!name || !date) { toast.error('Enter name and date'); return; }
+    const updated = { ...importantDates, [name]: date };
+    await supabase.from('clients').update({ important_dates: updated as any }).eq('id', client.id);
+    await auditLog('date_added', 'client', client.id, { name, date });
+    toast.success('Date added');
+    load();
+  };
+  const handleDeleteDate = async (key: string) => {
+    if (!confirm(`Delete date "${key}"?`)) return;
+    const updated: Record<string, string> = { ...importantDates };
+    delete updated[key];
+    await supabase.from('clients').update({ important_dates: updated as any }).eq('id', client.id);
+    toast.success('Deleted');
+    load();
+  };
 
   const buildWelcomeMessage = () =>
     `Dear ${client.name},\n\nThank you for choosing Nawi Saadi Travel & Tourism! 🌟\n\nWe have received your enquiry${client.service ? ` for ${client.service}` : ''} and our team will be in touch shortly.\n\nFor any questions, feel free to reply to this message.\n\nWarm regards,\nNawi Saadi Travel & Tourism`;
@@ -201,7 +250,6 @@ export default function ClientProfile() {
             <button onClick={() => navigate(`${basePath}/clients/new?edit=${client.id}`)} className="btn-outline"><Edit className="w-4 h-4" /> Edit</button>
             <button onClick={() => setShowWhatsApp(true)} className="btn-outline" disabled={!client.mobile}><MessageCircle className="w-4 h-4" /> WhatsApp</button>
             <button onClick={() => setShowQuotation(true)} className="btn-secondary"><FileText className="w-4 h-4" /> Quotation</button>
-            <button onClick={() => navigate(`${basePath}/clients/new?existingClient=${client.id}`)} className="btn-outline"><Plus className="w-4 h-4" /> New Service</button>
             <button onClick={() => setShowDeleteConfirm(true)} className="btn-danger"><Trash2 className="w-4 h-4" /></button>
           </div>
         </div>
@@ -247,100 +295,21 @@ export default function ClientProfile() {
         </div>
       )}
 
-      {tab === 'services' && (
-        <div className="card-nawi">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold font-display">Service History</h3>
-            <button onClick={() => navigate(`${basePath}/clients/new?existingClient=${client.id}`)} className="btn-primary"><Plus className="w-4 h-4" /> Add New Service</button>
-          </div>
-          {services.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">No service history</p>
-          ) : (
-            <div className="space-y-3">
-              {services.map((svc: any) => (
-                <div key={svc.id} className="p-4 border border-border rounded-xl">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="badge-new">{svc.service}</span>
-                      {svc.service_subcategory && <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full">{svc.service_subcategory}</span>}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <StatusBadge status={svc.status || 'New'} />
-                      <span className="text-xs text-muted-foreground">{formatDate(svc.created_at)}</span>
-                    </div>
-                  </div>
-                  {svc.service_details && Object.keys(svc.service_details).length > 0 && (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
-                      {Object.entries(svc.service_details as Record<string, string>).filter(([_, v]) => v).slice(0, 8).map(([k, v]) => (
-                        <div key={k} className="text-xs"><span className="text-muted-foreground capitalize">{k.replace(/([A-Z])/g, ' $1')}: </span><span className="font-medium">{v as string}</span></div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       {tab === 'documents' && (
-        <div className="card-nawi">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold font-display">Documents</h3>
-          </div>
-          {documents.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">No documents uploaded</p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {documents.map((d: any, i: number) => {
-                const isImage = d.type?.startsWith('image/') || d.name?.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/i);
-                const base64Src = d.base64?.startsWith('NAWI_ENC::') ? d.base64.replace('NAWI_ENC::', '') : d.base64;
-                return (
-                  <div key={i} className="border border-border rounded-lg overflow-hidden">
-                    {isImage && base64Src ? (
-                      <a href={base64Src} target="_blank" rel="noopener" className="block">
-                        <img src={base64Src} alt={d.docType || d.name} className="w-full h-40 object-cover hover:opacity-90 transition-opacity" />
-                      </a>
-                    ) : (
-                      <div className="w-full h-40 bg-muted flex items-center justify-center">
-                        <FileText className="w-12 h-12 text-muted-foreground" />
-                      </div>
-                    )}
-                    <div className="p-3">
-                      <p className="text-sm font-medium truncate">{d.docType || d.name}</p>
-                      <p className="text-xs text-muted-foreground">{d.name} • {formatDate(d.uploadedAt)}</p>
-                      {base64Src && (
-                        <a href={base64Src} download={d.name} className="text-xs text-primary underline mt-1 inline-block">
-                          <Download className="w-3 h-3 inline mr-1" />Download
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        <ProfileDocumentsTab
+          documents={documents}
+          onAdd={handleAddDocument}
+          onDelete={handleDeleteDocument}
+        />
       )}
 
       {tab === 'dates' && (
-        <div className="card-nawi">
-          <h3 className="font-semibold font-display mb-4">Important Dates</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {Object.entries(importantDates).map(([type, val]) => {
-              if (!val || type === 'passportNo') return null;
-              const days = daysUntil(val as string);
-              const status = getDateStatus(val as string);
-              return (
-                <div key={type} className={`p-4 rounded-xl border ${dateStatusColors[status]}`}>
-                  <p className="text-xs font-medium uppercase tracking-wider mb-1">{type.replace(/([A-Z])/g, ' $1').trim()}</p>
-                  <p className="text-lg font-bold font-display">{formatDate(val as string)}</p>
-                  <p className="text-sm font-medium mt-1">{days < 0 ? `${Math.abs(days)} days overdue` : days === 0 ? 'Today' : `${days} days left`}</p>
-                </div>
-              );
-            }).filter(Boolean)}
-          </div>
-        </div>
+        <ProfileDatesTab
+          dates={importantDates}
+          dateStatusColors={dateStatusColors}
+          onAdd={handleAddDate}
+          onDelete={handleDeleteDate}
+        />
       )}
 
       {/* Family tab removed — simplified to one client = one record */}
@@ -488,6 +457,101 @@ export default function ClientProfile() {
         defaultMessage={buildWelcomeMessage()}
         title={`Message ${client.name}`}
       />
+    </div>
+  );
+}
+
+// =============== Documents Tab ===============
+function ProfileDocumentsTab({ documents, onAdd, onDelete }: { documents: any[]; onAdd: (file: File, name: string) => void; onDelete: (idx: number) => void; }) {
+  const [pendingName, setPendingName] = useState('');
+  const triggerUpload = (camera: boolean) => {
+    if (!pendingName.trim()) { toast.error('Enter a document name first'); return; }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*,.pdf';
+    input.multiple = true;
+    if (camera) input.setAttribute('capture', 'environment');
+    input.onchange = (e: any) => {
+      const files = Array.from((e.target as HTMLInputElement).files || []) as File[];
+      files.forEach((file, i) => onAdd(file, files.length > 1 ? `${pendingName} (${i + 1})` : pendingName));
+      setPendingName('');
+    };
+    input.click();
+  };
+  return (
+    <div className="card-nawi">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold font-display">Documents ({documents.length})</h3>
+      </div>
+      <div className="card-nawi bg-muted/30 mb-4 space-y-3">
+        <input value={pendingName} onChange={e => setPendingName(e.target.value)} placeholder="Document name (e.g. Passport Copy)" className="input-nawi" />
+        <div className="flex gap-2">
+          <button onClick={() => triggerUpload(false)} className="btn-outline flex-1"><Upload className="w-4 h-4" /> Upload</button>
+          <button onClick={() => triggerUpload(true)} className="btn-outline flex-1"><Camera className="w-4 h-4" /> Take Photo</button>
+        </div>
+      </div>
+      {documents.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-8">No documents uploaded yet</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {documents.map((d: any, i: number) => {
+            const isImage = d.fileType?.startsWith('image/') || d.type?.startsWith('image/') || d.fileName?.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/i);
+            const src = d.base64?.startsWith('NAWI_ENC::') ? d.base64.replace('NAWI_ENC::', '') : d.base64;
+            return (
+              <div key={i} className="border border-border rounded-lg overflow-hidden relative group">
+                {isImage && src ? (
+                  <a href={src} target="_blank" rel="noopener"><img src={src} alt={d.name} className="w-full h-40 object-cover" /></a>
+                ) : (
+                  <div className="w-full h-40 bg-muted flex items-center justify-center"><FileText className="w-12 h-12 text-muted-foreground" /></div>
+                )}
+                <div className="p-3">
+                  <p className="text-sm font-medium truncate">{d.name || d.docType || d.fileName}</p>
+                  <p className="text-xs text-muted-foreground truncate">{d.fileName}</p>
+                  <div className="flex justify-between items-center mt-2">
+                    {src && <a href={src} download={d.fileName || d.name} className="text-xs text-primary hover:underline"><Download className="w-3 h-3 inline" /> Download</a>}
+                    <button onClick={() => onDelete(i)} className="text-xs text-destructive hover:underline"><Trash2 className="w-3 h-3 inline" /> Delete</button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============== Dates Tab ===============
+function ProfileDatesTab({ dates, dateStatusColors, onAdd, onDelete }: { dates: Record<string, string>; dateStatusColors: Record<string, string>; onAdd: (name: string, date: string) => void; onDelete: (key: string) => void; }) {
+  const [name, setName] = useState('');
+  const [date, setDate] = useState('');
+  return (
+    <div className="card-nawi">
+      <h3 className="font-semibold font-display mb-4">Important Dates</h3>
+      <div className="card-nawi bg-muted/30 mb-4 grid grid-cols-1 md:grid-cols-3 gap-2">
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Date name (Travel Date, Passport Expiry…)" className="input-nawi md:col-span-1" />
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="input-nawi" />
+        <button onClick={() => { onAdd(name, date); setName(''); setDate(''); }} className="btn-primary"><Plus className="w-4 h-4" /> Add Date</button>
+      </div>
+      {Object.keys(dates).filter(k => dates[k] && k !== 'passportNo').length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-8">No dates added yet</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {Object.entries(dates).map(([type, val]) => {
+            if (!val || type === 'passportNo') return null;
+            const days = daysUntil(val as string);
+            const status = getDateStatus(val as string);
+            return (
+              <div key={type} className={`p-4 rounded-xl border ${dateStatusColors[status]} relative group`}>
+                <button onClick={() => onDelete(type)} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-destructive hover:bg-destructive/10 p-1 rounded transition"><Trash2 className="w-3 h-3" /></button>
+                <p className="text-xs font-medium uppercase tracking-wider mb-1">{type.replace(/([A-Z])/g, ' $1').trim()}</p>
+                <p className="text-lg font-bold font-display">{formatDate(val as string)}</p>
+                <p className="text-sm font-medium mt-1">{days < 0 ? `${Math.abs(days)} days overdue` : days === 0 ? 'Today' : `${days} days left`}</p>
+              </div>
+            );
+          }).filter(Boolean)}
+        </div>
+      )}
     </div>
   );
 }

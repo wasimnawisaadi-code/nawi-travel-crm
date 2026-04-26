@@ -148,6 +148,10 @@ export type Database = {
       }
       chat_messages: {
         Row: {
+          attachment_duration: number | null
+          attachment_name: string | null
+          attachment_type: string | null
+          attachment_url: string | null
           created_at: string
           group_id: string | null
           id: string
@@ -157,9 +161,13 @@ export type Database = {
           sender_id: string
           sender_name: string
           sender_photo: string | null
-          text: string
+          text: string | null
         }
         Insert: {
+          attachment_duration?: number | null
+          attachment_name?: string | null
+          attachment_type?: string | null
+          attachment_url?: string | null
           created_at?: string
           group_id?: string | null
           id?: string
@@ -169,9 +177,13 @@ export type Database = {
           sender_id: string
           sender_name: string
           sender_photo?: string | null
-          text: string
+          text?: string | null
         }
         Update: {
+          attachment_duration?: number | null
+          attachment_name?: string | null
+          attachment_type?: string | null
+          attachment_url?: string | null
           created_at?: string
           group_id?: string | null
           id?: string
@@ -181,7 +193,7 @@ export type Database = {
           sender_id?: string
           sender_name?: string
           sender_photo?: string | null
-          text?: string
+          text?: string | null
         }
         Relationships: [
           {
