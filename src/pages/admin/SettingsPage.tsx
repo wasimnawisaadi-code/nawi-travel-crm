@@ -26,7 +26,7 @@ export default function SettingsPage() {
     const { error } = await saveAttendanceSettings(att, user?.id);
     setSaving(false);
     if (error) { toast.error('Failed to save settings'); return; }
-    await auditLog('settings_updated', 'app_settings', 'attendance', att);
+    await auditLog('settings_updated', 'app_settings', 'attendance', att as unknown as Record<string, unknown>);
     toast.success('Attendance settings saved');
   };
 
