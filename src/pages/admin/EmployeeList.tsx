@@ -183,11 +183,6 @@ export default function EmployeeList() {
                       <span className="text-xs text-muted-foreground">{clientCount} clients</span>
                       <div className="flex items-center gap-1">
                         <button title="View" onClick={(ev) => { ev.stopPropagation(); navigate(`/admin/employees/${e.user_id}`); }} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground"><Eye className="w-4 h-4" /></button>
-                        {e.status === 'active' ? (
-                          <button title="Deactivate (disable login)" onClick={(ev) => { ev.stopPropagation(); setPwdAction({ type: 'deactivate', emp: e }); }} className="p-1.5 hover:bg-warning/10 rounded-lg text-muted-foreground hover:text-warning"><PowerOff className="w-4 h-4" /></button>
-                        ) : (
-                          <button title="Activate" onClick={(ev) => { ev.stopPropagation(); setPwdAction({ type: 'activate', emp: e }); }} className="p-1.5 hover:bg-success/10 rounded-lg text-muted-foreground hover:text-success"><Power className="w-4 h-4" /></button>
-                        )}
                         <button title="Delete permanently" onClick={(ev) => { ev.stopPropagation(); setPwdAction({ type: 'delete', emp: e }); }} className="p-1.5 hover:bg-destructive/10 rounded-lg text-muted-foreground hover:text-destructive"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </div>
@@ -232,7 +227,7 @@ export default function EmployeeList() {
                   <button type="button" onClick={() => setForm({ ...form, profileType: 'sales' })}
                     className={`p-3 rounded-xl border-2 text-center transition-all ${form.profileType === 'sales' ? 'border-primary bg-primary/5' : 'border-border'}`}>
                     <MapPin className="w-5 h-5 mx-auto mb-1" /><span className="text-sm font-medium">Sales</span>
-                    <p className="text-xs text-muted-foreground mt-0.5">Flexible location</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Zone-based login</p>
                   </button>
                 </div>
               </div>
