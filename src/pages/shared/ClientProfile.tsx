@@ -471,6 +471,23 @@ export default function ClientProfile() {
           </div>
         </div>
       )}
+
+      <PasswordConfirmDialog
+        open={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDelete}
+        title="Delete Client"
+        description={`This will permanently delete ${client.name} and all related services, quotations, and tasks. This cannot be undone.`}
+        actionLabel="Delete Client"
+      />
+
+      <WhatsAppTemplateModal
+        open={showWhatsApp}
+        onClose={() => setShowWhatsApp(false)}
+        mobile={client.mobile}
+        defaultMessage={buildWelcomeMessage()}
+        title={`Message ${client.name}`}
+      />
     </div>
   );
 }
