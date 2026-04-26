@@ -1,11 +1,11 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Check, ChevronLeft, ChevronRight, Upload, AlertTriangle, FileUp, X, Users, Plus, Trash2, Search, Link2, History, Calendar, Loader2, Sparkles } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Upload, AlertTriangle, X, Plus, Trash2, Search, Link2, Calendar, Loader2, Sparkles, Camera, FileText } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/integrations/supabase/client';
 import { generateDisplayId, auditLog, formatDate } from '@/lib/supabase-service';
-import Papa from 'papaparse';
 import { toast } from 'sonner';
+import WhatsAppTemplateModal from '@/components/WhatsAppTemplateModal';
 
 const SERVICES = [
   { key: 'Air Ticket', emoji: '✈️' },
@@ -20,52 +20,57 @@ const SERVICES = [
 
 const LEAD_SOURCES = ['Walk-in', 'Call', 'WhatsApp', 'Social Media', 'Reference', 'Website', 'B2B Partner'];
 
-const DOC_REQUIREMENTS: Record<string, Record<string, string[]>> = {
-  'Air Ticket': { default: ['Passport Copy'] },
-  'UAE Visa': {
-    'Tourist Visa': ['Passport', 'Photo', 'Flight Ticket'],
-    'Visit Visa': ['Passport', 'Photo', 'Sponsor Passport', 'Sponsor Visa'],
-    'Family Visa': ['Passport', 'Photo', 'Sponsor Passport', 'Sponsor Visa', 'Sponsor Emirates ID', 'Marriage Certificate', 'Salary Certificate'],
-    'Abscond': ['Passport', 'Photo', 'Current Visa Copy', 'Emirates ID', 'Police Report'],
-    'Extension': ['Passport', 'Current Visa Copy', 'Emirates ID'],
-    'Status Change': ['Passport', 'Current Visa Copy', 'Emirates ID', 'New Offer Letter'],
-    'Visa Cancellation': ['Passport', 'Emirates ID', 'Current Visa Copy'],
-    default: ['Passport', 'Photo'],
-  },
-  'Global Visa': {
-    Employed: ['Passport', 'Photo', 'Emirates ID', 'Bank Statement (6 months)', 'NOC Letter', 'Salary Certificate', 'Travel Insurance'],
-    'Self-Employed': ['Passport', 'Photo', 'Emirates ID', 'Bank Statement (6 months)', 'Trade License', 'Company Profile'],
-    Unemployed: ['Passport', 'Photo', 'Sponsor Passport', 'Sponsor Bank Statement', 'Sponsor Letter', 'Relationship Proof'],
-    default: ['Passport', 'Photo'],
-  },
-  'Holiday Package': { default: ['Passport Copy'] },
-  'Travel Insurance': { default: ['Passport Copy'] },
-  'Pilgrimage': { default: ['Passport', 'Photo', 'Vaccination Certificate'] },
-  'Meet & Assist': { default: ['Passport Copy'] },
-  'Hotel Booking': { default: [] },
+// Suggested doc names per service — user can also add anything custom
+const SUGGESTED_DOCS: Record<string, string[]> = {
+  'Air Ticket': ['Passport Copy', 'Visa Copy', 'Emirates ID'],
+  'UAE Visa': ['Passport', 'Photo', 'Emirates ID', 'Sponsor Passport', 'Sponsor Visa', 'Salary Certificate', 'Marriage Certificate', 'Current Visa Copy'],
+  'Global Visa': ['Passport', 'Photo', 'Emirates ID', 'Bank Statement', 'NOC Letter', 'Salary Certificate', 'Travel Insurance', 'Trade License'],
+  'Holiday Package': ['Passport Copy', 'Visa Copy', 'Booking Voucher'],
+  'Travel Insurance': ['Passport Copy', 'Travel Itinerary'],
+  'Pilgrimage': ['Passport', 'Photo', 'Vaccination Certificate', 'Mahram Document'],
+  'Meet & Assist': ['Passport Copy', 'Flight Ticket'],
+  'Hotel Booking': ['Passport Copy', 'Booking Confirmation'],
 };
 
-interface FamilyMember {
-  name: string; relation: string; dob: string; passportNo: string; passportExpiry: string; nationality: string; documents: any[];
-}
+// Suggested important date names per service
+const SUGGESTED_DATES: Record<string, string[]> = {
+  'Air Ticket': ['Travel Date', 'Return Date', 'Booking Date', 'Passport Expiry', 'Date of Birth'],
+  'UAE Visa': ['Visa Issue Date', 'Visa Expiry', 'Application Date', 'Passport Expiry', 'Date of Birth', 'Emirates ID Expiry'],
+  'Global Visa': ['Travel Date', 'Return Date', 'Visa Submission Date', 'Visa Approval Date', 'Visa Expiry', 'Passport Expiry', 'Date of Birth'],
+  'Holiday Package': ['Travel Date', 'Return Date', 'Booking Date', 'Passport Expiry', 'Date of Birth', 'Wedding Anniversary'],
+  'Travel Insurance': ['Policy Start', 'Policy End', 'Travel Date', 'Date of Birth'],
+  'Pilgrimage': ['Departure Date', 'Return Date', 'Passport Expiry', 'Date of Birth', 'Vaccination Expiry'],
+  'Meet & Assist': ['Service Date', 'Flight Date', 'Passport Expiry'],
+  'Hotel Booking': ['Check-in Date', 'Check-out Date', 'Booking Date', 'Date of Birth'],
+};
+
+interface DocEntry { id: string; name: string; fileName: string; fileType: string; base64: string; uploadedAt: string; ocrExtracted?: boolean }
+interface DateEntry { id: string; name: string; date: string }
+
+const uid = () => Math.random().toString(36).slice(2, 10);
+
+const buildWelcomeMessage = (name: string, service: string) =>
+  `Dear ${name},\n\nThank you for choosing Nawi Saadi Travel & Tourism for your ${service || 'travel'} requirement. ✈️\n\nOur team has registered your enquiry and will be in touch shortly with the next steps.\n\nIf you have any questions, just reply to this message.\n\nWarm regards,\nNawi Saadi Travel & Tourism`;
 
 export default function AddClientWizard() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const existingClientId = searchParams.get('existingClient');
+  const existingClientId = searchParams.get('existingClient'); // adding new service
+  const editClientId = searchParams.get('edit');               // edit mode
   const { user, profile, isAdmin } = useAuth();
   const [step, setStep] = useState(0);
   const [ocrLoading, setOcrLoading] = useState<string | null>(null);
-  const [ocrResults, setOcrResults] = useState<Record<string, any>>({});
   const [duplicates, setDuplicates] = useState<any[]>([]);
-  const [showBulkUpload, setShowBulkUpload] = useState(false);
-  const [bulkData, setBulkData] = useState<any[]>([]);
-  const [bulkErrors, setBulkErrors] = useState<string[]>([]);
   const [existingClient, setExistingClient] = useState<any>(null);
+  const [editClient, setEditClient] = useState<any>(null);
   const [addingNewService, setAddingNewService] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
   const [showClientPicker, setShowClientPicker] = useState(false);
   const [searchedClients, setSearchedClients] = useState<any[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [showWelcome, setShowWelcome] = useState<{ mobile: string; name: string; service: string } | null>(null);
+  const [createdClientId, setCreatedClientId] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const n = new Date();
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
@@ -77,52 +82,84 @@ export default function AddClientWizard() {
     clientType: '', companyName: '', companyNumber: '', paymentType: '',
     service: '', serviceSubcategory: '', leadSource: '', nationality: '', dob: '',
     serviceDetails: {} as Record<string, string>,
-    documents: [] as any[],
-    importantDates: { dob: '', passportExpiry: '', visaExpiry: '', travelDate: '', weddingAnniversary: '', emiratesIdExpiry: '', medicalExpiry: '', contractEndDate: '' } as Record<string, string>,
-    familyMembers: [] as FamilyMember[],
+    documents: [] as DocEntry[],
+    importantDates: [] as DateEntry[],
   });
 
+  // ---- Load existing client (for adding new service OR edit mode) ----
   useEffect(() => {
-    if (existingClientId) {
-      supabase.from('clients').select('*').eq('id', existingClientId).single().then(({ data }) => {
-        if (data) {
-          setExistingClient(data);
-          setAddingNewService(true);
-          const dates = (data.important_dates || {}) as Record<string, string>;
-          setForm(prev => ({
-            ...prev, name: data.name, mobile: data.mobile, email: data.email || '',
-            passportNo: dates.passportNo || data.passport_no || '',
-            clientType: data.client_type || '', companyName: data.company_name || '', companyNumber: data.company_number || '',
-            nationality: data.nationality || '', dob: dates.dob || '',
-            leadSource: data.lead_source || '', importantDates: dates as any,
-            familyMembers: (data.family_members as unknown as FamilyMember[]) || [],
-          }));
-          setStep(0);
-        }
-      });
-    }
-  }, [existingClientId]);
+    const loadId = editClientId || existingClientId;
+    if (!loadId) return;
+    supabase.from('clients').select('*').eq('id', loadId).single().then(({ data }) => {
+      if (!data) return;
+      // Migrate legacy importantDates object → array
+      const legacyDates = (data.important_dates || {}) as Record<string, string>;
+      const dateEntries: DateEntry[] = Array.isArray(legacyDates)
+        ? legacyDates as any
+        : Object.entries(legacyDates)
+            .filter(([k, v]) => v && k !== 'passportNo')
+            .map(([k, v]) => ({ id: uid(), name: k.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase()).trim(), date: v }));
 
-  const updateForm = (changes: any) => setForm(prev => ({ ...prev, ...changes }));
+      // Migrate legacy docs (each one its own entry, name = docType or filename)
+      const legacyDocs = (data.documents || []) as any[];
+      const docEntries: DocEntry[] = legacyDocs.map((d: any) => ({
+        id: uid(),
+        name: d.name || d.docType || d.fileName || 'Document',
+        fileName: d.fileName || d.name || 'file',
+        fileType: d.fileType || d.type || 'application/octet-stream',
+        base64: d.base64 || '',
+        uploadedAt: d.uploadedAt || new Date().toISOString(),
+        ocrExtracted: d.ocrExtracted,
+      }));
+
+      if (editClientId) {
+        setEditClient(data);
+        setIsEditMode(true);
+      } else {
+        setExistingClient(data);
+        setAddingNewService(true);
+      }
+
+      setForm(prev => ({
+        ...prev,
+        name: data.name, mobile: data.mobile, email: data.email || '',
+        passportNo: data.passport_no || '',
+        clientType: data.client_type || '',
+        companyName: data.company_name || '',
+        companyNumber: data.company_number || '',
+        paymentType: data.payment_type || '',
+        nationality: data.nationality || '',
+        dob: legacyDates.dob || '',
+        leadSource: data.lead_source || '',
+        service: editClientId ? (data.service || '') : '',
+        serviceSubcategory: editClientId ? (data.service_subcategory || '') : '',
+        serviceDetails: editClientId ? ((data.service_details as any) || {}) : {},
+        importantDates: editClientId ? dateEntries : prev.importantDates,
+        documents: editClientId ? docEntries : prev.documents,
+      }));
+      setStep(0);
+    });
+  }, [existingClientId, editClientId]);
+
+  const updateForm = (changes: Partial<typeof form>) => setForm(prev => ({ ...prev, ...changes }));
   const updateSD = (key: string, val: string) => setForm(prev => ({ ...prev, serviceDetails: { ...prev.serviceDetails, [key]: val } }));
 
-  // Duplicate check
+  // ---- Duplicate check ----
   useEffect(() => {
-    if (addingNewService) return;
+    if (addingNewService || isEditMode) return;
     if (!form.name && !form.mobile && !form.passportNo) { setDuplicates([]); return; }
     const timer = setTimeout(async () => {
-      let query = supabase.from('clients').select('id, name, mobile, passport_no, display_id, service');
       const conditions: string[] = [];
       if (form.name.length >= 3) conditions.push(`name.ilike.%${form.name}%`);
       if (form.mobile.length >= 5) conditions.push(`mobile.eq.${form.mobile}`);
       if (conditions.length === 0) { setDuplicates([]); return; }
-      const { data } = await query.or(conditions.join(','));
+      const { data } = await supabase.from('clients').select('id, name, mobile, passport_no, display_id, service').or(conditions.join(','));
       setDuplicates(data || []);
     }, 500);
     return () => clearTimeout(timer);
-  }, [form.name, form.mobile, form.passportNo, addingNewService]);
+  }, [form.name, form.mobile, form.passportNo, addingNewService, isEditMode]);
 
-  // Client search
+  // ---- Returning client search ----
   useEffect(() => {
     if (!clientSearch || clientSearch.length < 2) { setSearchedClients([]); return; }
     const timer = setTimeout(async () => {
@@ -139,49 +176,54 @@ export default function AddClientWizard() {
     setClientSearch('');
   };
 
-  const getRequiredDocs = () => {
-    const reqs = DOC_REQUIREMENTS[form.service];
-    if (!reqs) return [];
-    if (form.serviceSubcategory && reqs[form.serviceSubcategory]) return reqs[form.serviceSubcategory];
-    const sd = form.serviceDetails;
-    if (form.service === 'UAE Visa') return reqs[sd.applicationType || 'default'] || reqs.default || [];
-    if (form.service === 'Global Visa') return reqs[sd.applicantType || 'Employed'] || reqs.default || [];
-    return reqs.default || [];
-  };
-
-  const handleDocUpload = async (docType: string, file: File) => {
+  // ---- Document handling (custom name + multiple) ----
+  const handleAddDoc = (file: File, customName: string) => {
     const reader = new FileReader();
     reader.onload = async () => {
       const base64Data = reader.result as string;
-      const docEntry = { name: file.name, type: file.type, docType, base64: `NAWI_ENC::${base64Data}`, uploadedAt: new Date().toISOString(), ocrExtracted: false };
-      updateForm({ documents: [...form.documents, docEntry] });
+      const entry: DocEntry = {
+        id: uid(),
+        name: customName || file.name,
+        fileName: file.name,
+        fileType: file.type,
+        base64: `NAWI_ENC::${base64Data}`,
+        uploadedAt: new Date().toISOString(),
+        ocrExtracted: false,
+      };
+      setForm(prev => ({ ...prev, documents: [...prev.documents, entry] }));
 
-      // Run OCR extraction for images
-      const isImage = file.type.startsWith('image/');
-      if (isImage) {
-        setOcrLoading(docType);
+      // Run OCR if image
+      if (file.type.startsWith('image/')) {
+        setOcrLoading(entry.id);
         try {
           const { data, error } = await supabase.functions.invoke('extract-document', {
-            body: { imageBase64: base64Data, docType, service: form.service, serviceSubcategory: form.serviceSubcategory },
+            body: { imageBase64: base64Data, docType: customName, service: form.service, serviceSubcategory: form.serviceSubcategory },
           });
           if (error) throw error;
           if (data?.success && data.data) {
             const extracted = data.data;
-            setOcrResults(prev => ({ ...prev, [docType]: extracted }));
-
-            // Auto-fill form fields from OCR
+            // Auto-fill blank fields
             const updates: any = {};
             if (extracted.fullName && !form.name) updates.name = extracted.fullName;
             if (extracted.passportNo && !form.passportNo) updates.passportNo = extracted.passportNo;
             if (extracted.nationality && !form.nationality) updates.nationality = extracted.nationality;
+            if (extracted.phoneNumber && !form.mobile) updates.mobile = extracted.phoneNumber;
+            if (extracted.email && !form.email) updates.email = extracted.email;
+            if (extracted.dateOfBirth && !form.dob) updates.dob = extracted.dateOfBirth;
 
-            const dateUpdates: any = { ...form.importantDates };
-            if (extracted.dateOfBirth && !form.dob) { updates.dob = extracted.dateOfBirth; dateUpdates.dob = extracted.dateOfBirth; }
-            if (extracted.passportExpiry) dateUpdates.passportExpiry = extracted.passportExpiry;
-            if (extracted.visaExpiry) dateUpdates.visaExpiry = extracted.visaExpiry;
-            updates.importantDates = dateUpdates;
+            // Add discovered dates as named entries (don't duplicate)
+            const newDates: DateEntry[] = [];
+            const pushDate = (name: string, val?: string) => {
+              if (!val) return;
+              const existing = form.importantDates.find(d => d.name.toLowerCase() === name.toLowerCase());
+              if (!existing) newDates.push({ id: uid(), name, date: val });
+            };
+            pushDate('Date of Birth', extracted.dateOfBirth);
+            pushDate('Passport Expiry', extracted.passportExpiry);
+            pushDate('Passport Issue Date', extracted.passportIssueDate);
+            pushDate('Visa Expiry', extracted.visaExpiry);
+            pushDate('Emirates ID Expiry', (extracted.otherDetails as any)?.emiratesIdExpiry);
 
-            // Auto-fill service details
             const sdUpdates: any = { ...form.serviceDetails };
             if (extracted.gender) sdUpdates.gender = extracted.gender;
             if (extracted.profession) sdUpdates.profession = extracted.profession;
@@ -190,20 +232,19 @@ export default function AddClientWizard() {
             if (extracted.sponsor) sdUpdates.sponsor = extracted.sponsor;
             if (extracted.visaType) sdUpdates.visaType = extracted.visaType;
             if (extracted.visaNumber) sdUpdates.visaNumber = extracted.visaNumber;
-            updates.serviceDetails = sdUpdates;
 
-            // Mark doc as OCR extracted
-            const updatedDocs = [...form.documents];
-            const lastIdx = updatedDocs.length - 1;
-            if (lastIdx >= 0) updatedDocs[lastIdx] = { ...updatedDocs[lastIdx], ocrExtracted: true };
-            updates.documents = updatedDocs;
-
-            updateForm(updates);
-            toast.success(`✨ AI extracted data from ${docType}. Review auto-filled fields.`);
+            setForm(prev => ({
+              ...prev,
+              ...updates,
+              serviceDetails: sdUpdates,
+              importantDates: [...prev.importantDates, ...newDates],
+              documents: prev.documents.map(d => d.id === entry.id ? { ...d, ocrExtracted: true } : d),
+            }));
+            toast.success(`✨ AI extracted data from ${entry.name}`);
           }
-        } catch (err: any) {
-          console.error('OCR extraction failed:', err);
-          toast.error('Could not extract data from document. Fill fields manually.');
+        } catch (err) {
+          console.error('OCR failed:', err);
+          toast.error('Could not extract data. You can fill fields manually.');
         }
         setOcrLoading(null);
       }
@@ -211,127 +252,103 @@ export default function AddClientWizard() {
     reader.readAsDataURL(file);
   };
 
-  const addFamilyMember = () => {
-    updateForm({ familyMembers: [...form.familyMembers, { name: '', relation: '', dob: '', passportNo: '', passportExpiry: '', nationality: form.nationality, documents: [] }] });
-  };
-  const updateFamilyMember = (index: number, changes: Partial<FamilyMember>) => {
-    const updated = [...form.familyMembers];
-    updated[index] = { ...updated[index], ...changes };
-    updateForm({ familyMembers: updated });
-  };
-  const removeFamilyMember = (index: number) => updateForm({ familyMembers: form.familyMembers.filter((_, i) => i !== index) });
+  const removeDoc = (id: string) => setForm(prev => ({ ...prev, documents: prev.documents.filter(d => d.id !== id) }));
+  const renameDoc = (id: string, newName: string) => setForm(prev => ({ ...prev, documents: prev.documents.map(d => d.id === id ? { ...d, name: newName } : d) }));
 
+  // ---- Important dates (custom name + date) ----
+  const addDate = (name = '', date = '') => setForm(prev => ({ ...prev, importantDates: [...prev.importantDates, { id: uid(), name, date }] }));
+  const removeDate = (id: string) => setForm(prev => ({ ...prev, importantDates: prev.importantDates.filter(d => d.id !== id) }));
+  const updateDate = (id: string, changes: Partial<DateEntry>) => setForm(prev => ({ ...prev, importantDates: prev.importantDates.map(d => d.id === id ? { ...d, ...changes } : d) }));
+
+  // ---- Submit ----
   const handleSubmit = async () => {
     if (!user) return;
+    setSubmitting(true);
 
-    if (addingNewService && existingClient) {
-      const svcDisplayId = await generateDisplayId('SVC');
-      await supabase.from('client_services').insert({
-        display_id: svcDisplayId, client_id: existingClient.id, service: form.service,
-        service_subcategory: form.serviceSubcategory || null, service_details: form.serviceDetails as any,
-        documents: form.documents as any, family_members: form.familyMembers as any,
-        status: 'New' as const, request_month: selectedMonth, created_by: user.id,
-      });
-      const updatedDates = { ...(existingClient.important_dates || {}), ...form.importantDates };
-      await supabase.from('clients').update({
-        service: form.service, service_subcategory: form.serviceSubcategory || null,
-        service_details: form.serviceDetails as any,
-        documents: [...((existingClient.documents || []) as any[]), ...form.documents] as any,
-        important_dates: updatedDates as any,
-        family_members: form.familyMembers.length > 0 ? form.familyMembers as any : existingClient.family_members,
-      }).eq('id', existingClient.id);
-      await auditLog('service_added', 'client', existingClient.id, { service: form.service, month: selectedMonth });
-      navigate(`${basePath}/clients/${existingClient.id}`);
-      return;
-    }
-
-    const displayId = await generateDisplayId('CLT');
-    const svcDisplayId = await generateDisplayId('SVC');
-    const { data: newClient } = await supabase.from('clients').insert({
-      display_id: displayId, name: form.name, mobile: form.mobile, email: form.email || null,
-      passport_no: form.passportNo || null, client_type: form.clientType || null,
-      company_name: form.companyName || null, company_number: form.companyNumber || null,
-      payment_type: form.paymentType || null, service: form.service,
-      service_subcategory: form.serviceSubcategory || null, lead_source: form.leadSource || null,
-      nationality: form.nationality || null, service_details: form.serviceDetails as any,
-      documents: form.documents as any,
-      important_dates: { ...form.importantDates, dob: form.dob || form.importantDates.dob, passportNo: form.passportNo } as any,
-      family_members: form.familyMembers as any, status: 'New' as const,
-      assigned_to: user.id, created_by: user.id,
-    }).select('id').single();
-
-    if (newClient) {
-      await supabase.from('client_services').insert({
-        display_id: svcDisplayId, client_id: newClient.id, service: form.service,
-        service_subcategory: form.serviceSubcategory || null, service_details: form.serviceDetails as any,
-        documents: form.documents as any, family_members: form.familyMembers as any,
-        status: 'New' as const, request_month: selectedMonth, created_by: user.id,
-      });
-      await auditLog('client_created', 'client', newClient.id, { name: form.name, service: form.service, month: selectedMonth });
-      navigate(`${basePath}/clients/${newClient.id}`);
-    }
-  };
-
-  const handleBulkFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    Papa.parse(file, {
-      header: true,
-      complete: (results) => {
-        const errors: string[] = [];
-        const valid = results.data.filter((row: any, i: number) => {
-          if (!row.name || !row.mobile) { errors.push(`Row ${i + 1}: Missing name or mobile`); return false; }
-          return true;
-        });
-        setBulkData(valid);
-        setBulkErrors(errors);
-      },
+    // Convert importantDates array → object for storage (keys are slug-like)
+    const datesObj: Record<string, string> = {};
+    form.importantDates.forEach(d => {
+      if (d.name && d.date) datesObj[d.name] = d.date;
     });
-  };
+    if (form.dob) datesObj['Date of Birth'] = datesObj['Date of Birth'] || form.dob;
 
-  const handleBulkImport = async () => {
-    if (!user) return;
-    let created = 0;
-    for (const row of bulkData) {
+    try {
+      // ----- EDIT MODE -----
+      if (isEditMode && editClient) {
+        await supabase.from('clients').update({
+          name: form.name, mobile: form.mobile, email: form.email || null,
+          passport_no: form.passportNo || null, client_type: form.clientType || null,
+          company_name: form.companyName || null, company_number: form.companyNumber || null,
+          payment_type: form.paymentType || null, service: form.service,
+          service_subcategory: form.serviceSubcategory || null, lead_source: form.leadSource || null,
+          nationality: form.nationality || null, service_details: form.serviceDetails as any,
+          documents: form.documents as any,
+          important_dates: datesObj as any,
+        }).eq('id', editClient.id);
+        await auditLog('client_updated_via_wizard', 'client', editClient.id, { name: form.name });
+        toast.success('Client updated');
+        navigate(`${basePath}/clients/${editClient.id}`);
+        return;
+      }
+
+      // ----- ADDING NEW SERVICE TO EXISTING CLIENT -----
+      if (addingNewService && existingClient) {
+        const svcDisplayId = await generateDisplayId('SVC');
+        await supabase.from('client_services').insert({
+          display_id: svcDisplayId, client_id: existingClient.id, service: form.service,
+          service_subcategory: form.serviceSubcategory || null, service_details: form.serviceDetails as any,
+          documents: form.documents as any,
+          status: 'New' as const, request_month: selectedMonth, created_by: user.id,
+        });
+        const mergedDates = { ...((existingClient.important_dates as any) || {}), ...datesObj };
+        const mergedDocs = [...(((existingClient.documents as any) || []) as any[]), ...form.documents];
+        await supabase.from('clients').update({
+          service: form.service, service_subcategory: form.serviceSubcategory || null,
+          service_details: form.serviceDetails as any,
+          documents: mergedDocs as any,
+          important_dates: mergedDates as any,
+        }).eq('id', existingClient.id);
+        await auditLog('service_added', 'client', existingClient.id, { service: form.service, month: selectedMonth });
+        toast.success('Service added');
+        navigate(`${basePath}/clients/${existingClient.id}`);
+        return;
+      }
+
+      // ----- CREATE NEW CLIENT -----
       const displayId = await generateDisplayId('CLT');
       const svcDisplayId = await generateDisplayId('SVC');
-      const { data: newClient } = await supabase.from('clients').insert({
-        display_id: displayId, name: row.name, mobile: row.mobile, email: row.email || null,
-        passport_no: row.passportNo || null, client_type: form.clientType || 'Individual',
-        service: form.service, service_subcategory: form.serviceSubcategory || null,
-        lead_source: form.leadSource || 'Bulk Upload', nationality: row.nationality || null,
-        service_details: row as any, documents: [] as any,
-        important_dates: { passportExpiry: row.passportExpiry || '', travelDate: row.travelDate || '', dob: row.dob || '', passportNo: row.passportNo || '' } as any,
-        family_members: [] as any, status: 'New' as const,
+      const { data: newClient, error } = await supabase.from('clients').insert({
+        display_id: displayId, name: form.name, mobile: form.mobile, email: form.email || null,
+        passport_no: form.passportNo || null, client_type: form.clientType || null,
+        company_name: form.companyName || null, company_number: form.companyNumber || null,
+        payment_type: form.paymentType || null, service: form.service,
+        service_subcategory: form.serviceSubcategory || null, lead_source: form.leadSource || null,
+        nationality: form.nationality || null, service_details: form.serviceDetails as any,
+        documents: form.documents as any,
+        important_dates: datesObj as any,
+        family_members: [] as any,
+        status: 'New' as const,
         assigned_to: user.id, created_by: user.id,
       }).select('id').single();
 
-      if (newClient) {
-        await supabase.from('client_services').insert({
-          display_id: svcDisplayId, client_id: newClient.id, service: form.service,
-          service_subcategory: form.serviceSubcategory || null, service_details: row as any,
-          status: 'New' as const, request_month: selectedMonth, created_by: user.id,
-        });
-        created++;
+      if (error || !newClient) {
+        toast.error(error?.message || 'Failed to create client');
+        return;
       }
-    }
-    alert(`${created} new clients created.`);
-    navigate(`${basePath}/clients`);
-  };
 
-  const downloadTemplate = () => {
-    const templateHeaders: Record<string, string> = {
-      'Air Ticket': 'name,mobile,email,passportNo,nationality,travelDate,departureCity,arrivalCity,flightNumber,returnDate,dob,passportExpiry',
-      'UAE Visa': 'name,mobile,email,passportNo,nationality,visaType,applicationType,entryType,dob,passportExpiry',
-      'Global Visa': 'name,mobile,email,passportNo,nationality,country,applicantType,dob,passportExpiry',
-      default: 'name,mobile,email,passportNo,nationality',
-    };
-    const headers = templateHeaders[form.service] || templateHeaders.default;
-    const blob = new Blob([headers], { type: 'text/csv' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `${form.service.replace(/\s/g, '_')}_template.csv`;
-    link.click();
+      await supabase.from('client_services').insert({
+        display_id: svcDisplayId, client_id: newClient.id, service: form.service,
+        service_subcategory: form.serviceSubcategory || null, service_details: form.serviceDetails as any,
+        documents: form.documents as any,
+        status: 'New' as const, request_month: selectedMonth, created_by: user.id,
+      });
+      await auditLog('client_created', 'client', newClient.id, { name: form.name, service: form.service, month: selectedMonth });
+      toast.success('Client created');
+      setCreatedClientId(newClient.id);
+      setShowWelcome({ mobile: form.mobile, name: form.name, service: form.service });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const Field = ({ label, k, type = 'text', required = false }: { label: string; k: string; type?: string; required?: boolean }) => (
@@ -352,20 +369,35 @@ export default function AddClientWizard() {
 
   const selectedServiceObj = SERVICES.find(s => s.key === form.service);
   const hasSubcategories = selectedServiceObj && 'subcategories' in selectedServiceObj;
-  const isFamilyService = form.serviceSubcategory === 'Family Visa' || form.service === 'Holiday Package';
 
-  const steps = addingNewService
+  // For edit mode, all 4 steps editable. For new service, skip client info.
+  const steps = (addingNewService && !isEditMode)
     ? ['Select Service', 'Service Details', 'Documents & Dates', 'Review']
     : ['Type & Service', 'Client Details', 'Documents & Dates', 'Review'];
 
-  const canProceedStep0 = addingNewService
+  const canProceedStep0 = (addingNewService && !isEditMode)
     ? (form.service && (!hasSubcategories || form.serviceSubcategory))
     : (form.clientType && form.leadSource && form.service && (!hasSubcategories || form.serviceSubcategory));
   const canProceedStep1 = form.name && form.mobile;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-      {!addingNewService && step === 0 && (
+      {/* Mode header */}
+      {isEditMode && editClient && (
+        <div className="card-nawi bg-secondary/5 border-secondary/20">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-secondary/10 flex items-center justify-center text-secondary font-bold">{editClient.name?.charAt(0)}</div>
+            <div className="flex-1">
+              <p className="font-semibold text-foreground">Editing: {editClient.name}</p>
+              <p className="text-xs text-muted-foreground">{editClient.display_id} • {editClient.mobile}</p>
+            </div>
+            <span className="text-xs bg-warning/10 text-warning px-2 py-1 rounded-full font-medium">EDIT MODE</span>
+          </div>
+        </div>
+      )}
+
+      {/* Returning Client search — only on create new */}
+      {!addingNewService && !isEditMode && step === 0 && (
         <div className="card-nawi bg-secondary/5 border-secondary/20">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold flex items-center gap-2"><Link2 className="w-4 h-4 text-secondary" /> Returning Client?</h3>
@@ -404,13 +436,12 @@ export default function AddClientWizard() {
       {addingNewService && existingClient && (
         <div className="card-nawi bg-secondary/5 border-secondary/20">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center text-secondary font-bold text-lg">
-              {existingClient.name?.charAt(0)}
-            </div>
+            <div className="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center text-secondary font-bold text-lg">{existingClient.name?.charAt(0)}</div>
             <div className="flex-1">
               <p className="font-semibold text-foreground">{existingClient.name}</p>
               <p className="text-xs text-muted-foreground">{existingClient.display_id} • {existingClient.mobile}</p>
             </div>
+            <span className="text-xs bg-secondary/10 text-secondary px-2 py-1 rounded-full font-medium">+ NEW SERVICE</span>
           </div>
         </div>
       )}
@@ -434,7 +465,7 @@ export default function AddClientWizard() {
         </div>
       </div>
 
-      {duplicates.length > 0 && step >= 1 && !addingNewService && (
+      {duplicates.length > 0 && step >= 1 && !addingNewService && !isEditMode && (
         <div className="bg-warning/10 border border-warning/20 p-4 rounded-xl">
           <div className="flex items-center gap-2 mb-2"><AlertTriangle className="w-5 h-5 text-warning" /><span className="font-medium text-warning">⚠️ Possible Duplicate</span></div>
           {duplicates.slice(0, 3).map((d: any) => (
@@ -450,6 +481,7 @@ export default function AddClientWizard() {
       )}
 
       <div className="card-nawi">
+        {/* ===== STEP 0: TYPE & SERVICE ===== */}
         {step === 0 && (
           <div className="space-y-6">
             {!addingNewService && (
@@ -521,41 +553,25 @@ export default function AddClientWizard() {
                 )}
               </div>
             )}
-
-            {form.service && (!hasSubcategories || form.serviceSubcategory) && (
-              <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                <FileUp className="w-5 h-5 text-secondary" />
-                <span className="text-sm flex-1">Have multiple clients for {form.service}?</span>
-                <button onClick={() => setShowBulkUpload(!showBulkUpload)} className="btn-outline text-xs">{showBulkUpload ? 'Manual Entry' : 'Bulk Upload'}</button>
-              </div>
-            )}
-
-            {showBulkUpload && form.service && (
-              <div className="space-y-4 border-t border-border pt-4">
-                <div className="flex items-center gap-3">
-                  <button onClick={downloadTemplate} className="btn-outline text-sm">Download {form.service} Template</button>
-                </div>
-                <div className="border-2 border-dashed border-border rounded-xl p-6 text-center">
-                  <Upload className="w-6 h-6 text-muted-foreground mx-auto mb-2" />
-                  <label className="btn-outline cursor-pointer text-sm">Upload CSV<input type="file" accept=".csv" className="hidden" onChange={handleBulkFile} /></label>
-                </div>
-                {bulkErrors.length > 0 && <div className="bg-destructive/10 p-3 rounded-lg">{bulkErrors.map((e, i) => <p key={i} className="text-xs text-destructive">{e}</p>)}</div>}
-                {bulkData.length > 0 && (
-                  <div>
-                    <p className="text-sm font-medium mb-2">{bulkData.length} valid records</p>
-                    <button onClick={handleBulkImport} className="btn-primary mt-3 w-full">Import {bulkData.length} Clients for {selectedMonth}</button>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         )}
 
+        {/* ===== STEP 1: CLIENT DETAILS + SERVICE FIELDS ===== */}
         {step === 1 && (
           <div className="space-y-6">
             <h2 className="text-lg font-bold font-display">
               Client Information — {form.service}{form.serviceSubcategory ? ` (${form.serviceSubcategory})` : ''}
             </h2>
+
+            {/* Quick OCR scan tip */}
+            <div className="flex items-start gap-3 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+              <Sparkles className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+              <div className="text-xs">
+                <p className="font-medium text-primary">Tip: Save time with AI scanning</p>
+                <p className="text-muted-foreground">Skip to the next step and upload a passport / Emirates ID / visa photo — AI will auto-fill these fields. You can still edit them.</p>
+              </div>
+            </div>
+
             {!addingNewService && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div><label className="block text-sm font-medium mb-1">Full Name <span className="text-destructive">*</span></label><input value={form.name} onChange={(e) => updateForm({ name: e.target.value })} className="input-nawi" required /></div>
@@ -586,105 +602,37 @@ export default function AddClientWizard() {
                 {form.service === 'Hotel Booking' && <><Field label="Check-in" k="checkinDate" type="date" /><Field label="Check-out" k="checkoutDate" type="date" /><Field label="City" k="city" /><Field label="Rooms" k="rooms" /><SelectField label="Room Type" k="roomType" options={['Standard', 'Deluxe', 'Suite', 'Villa']} /></>}
               </div>
             </div>
-            {isFamilyService && (
-              <div className="border-t border-border pt-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-base font-semibold font-display flex items-center gap-2"><Users className="w-4 h-4" /> Family Members</h3>
-                  <button onClick={addFamilyMember} className="btn-outline text-sm"><Plus className="w-4 h-4" /> Add Member</button>
-                </div>
-                {form.familyMembers.map((fm, i) => (
-                  <div key={i} className="p-4 border border-border rounded-xl mb-3">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm font-semibold">Member {i + 1}</span>
-                      <button onClick={() => removeFamilyMember(i)} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-4 h-4" /></button>
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      <div><label className="block text-xs font-medium mb-1">Full Name *</label><input value={fm.name} onChange={(e) => updateFamilyMember(i, { name: e.target.value })} className="input-nawi" /></div>
-                      <div><label className="block text-xs font-medium mb-1">Relation *</label>
-                        <select value={fm.relation} onChange={(e) => updateFamilyMember(i, { relation: e.target.value })} className="input-nawi">
-                          <option value="">Select</option>
-                          {['Spouse', 'Son', 'Daughter', 'Father', 'Mother', 'Brother', 'Sister'].map(r => <option key={r}>{r}</option>)}
-                        </select>
-                      </div>
-                      <div><label className="block text-xs font-medium mb-1">DOB</label><input type="date" value={fm.dob} onChange={(e) => updateFamilyMember(i, { dob: e.target.value })} className="input-nawi" /></div>
-                      <div><label className="block text-xs font-medium mb-1">Passport No.</label><input value={fm.passportNo} onChange={(e) => updateFamilyMember(i, { passportNo: e.target.value })} className="input-nawi" /></div>
-                      <div><label className="block text-xs font-medium mb-1">Passport Expiry</label><input type="date" value={fm.passportExpiry} onChange={(e) => updateFamilyMember(i, { passportExpiry: e.target.value })} className="input-nawi" /></div>
-                      <div><label className="block text-xs font-medium mb-1">Nationality</label><input value={fm.nationality} onChange={(e) => updateFamilyMember(i, { nationality: e.target.value })} className="input-nawi" /></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
 
+        {/* ===== STEP 2: DOCUMENTS & DATES (FULLY CUSTOM) ===== */}
         {step === 2 && (
-          <div className="space-y-6">
-            <h2 className="text-lg font-bold font-display">Documents & Important Dates</h2>
-            <div>
-              <h3 className="text-sm font-semibold mb-3">Required Documents for {form.service}{form.serviceSubcategory ? ` (${form.serviceSubcategory})` : ''}</h3>
-              <p className="text-xs text-muted-foreground mb-3">📸 Upload document images and AI will auto-extract details to fill the form.</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {getRequiredDocs().map((doc: string) => {
-                  const uploaded = form.documents.find(d => d.docType === doc);
-                  const isExtracting = ocrLoading === doc;
-                  const hasOcrData = ocrResults[doc];
-                  const base64Src = uploaded?.base64?.startsWith('NAWI_ENC::') ? uploaded.base64.replace('NAWI_ENC::', '') : uploaded?.base64;
-                  const isImage = uploaded?.type?.startsWith('image/');
-                  return (
-                    <div key={doc} className={`p-3 rounded-lg border ${uploaded ? 'border-success/30 bg-success/5' : 'border-border'}`}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">{doc} {uploaded && <Check className="w-4 h-4 text-success inline ml-1" />}</span>
-                        <label className={`btn-outline cursor-pointer text-xs py-1 ${isExtracting ? 'opacity-50 pointer-events-none' : ''}`}>
-                          <Upload className="w-3 h-3" /> {uploaded ? 'Replace' : 'Upload'}
-                          <input type="file" className="hidden" accept="image/*,.pdf" onChange={(e) => { if (e.target.files?.[0]) handleDocUpload(doc, e.target.files[0]); }} />
-                        </label>
-                      </div>
-                      {uploaded && isImage && base64Src && (
-                        <img src={base64Src} alt={doc} className="w-full h-24 object-cover rounded mt-2 border border-border" />
-                      )}
-                      {uploaded && <p className="text-xs text-muted-foreground mt-1">{uploaded.name}</p>}
-                      {isExtracting && (
-                        <div className="flex items-center gap-1.5 mt-1 text-xs text-primary">
-                          <Loader2 className="w-3 h-3 animate-spin" /> AI extracting data...
-                        </div>
-                      )}
-                      {hasOcrData && (
-                        <div className="flex items-center gap-1 mt-1 text-xs text-success">
-                          <Sparkles className="w-3 h-3" /> Data extracted & auto-filled
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="border-t border-border pt-4">
-              <h3 className="text-sm font-semibold mb-3">Important Dates</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {[
-                  { key: 'dob', label: '🎂 Date of Birth' },
-                  { key: 'passportExpiry', label: '📕 Passport Expiry' },
-                  { key: 'visaExpiry', label: '🪪 Visa Expiry' },
-                  { key: 'travelDate', label: '✈️ Travel Date' },
-                  { key: 'weddingAnniversary', label: '💍 Wedding Anniversary' },
-                  { key: 'emiratesIdExpiry', label: '🆔 Emirates ID Expiry' },
-                  { key: 'medicalExpiry', label: '🏥 Medical Report Expiry' },
-                  { key: 'contractEndDate', label: '📄 Contract End Date' },
-                ].map(({ key, label }) => (
-                  <div key={key}>
-                    <label className="block text-sm font-medium mb-1">{label}</label>
-                    <input type="date" value={form.importantDates[key] || ''} onChange={(e) => updateForm({ importantDates: { ...form.importantDates, [key]: e.target.value } })} className="input-nawi" />
-                  </div>
-                ))}
-              </div>
-            </div>
+          <div className="space-y-8">
+            {/* Documents */}
+            <DocumentsSection
+              docs={form.documents}
+              suggestions={SUGGESTED_DOCS[form.service] || ['Passport Copy']}
+              onAdd={handleAddDoc}
+              onRemove={removeDoc}
+              onRename={renameDoc}
+              ocrLoadingId={ocrLoading}
+            />
+
+            {/* Important Dates */}
+            <DatesSection
+              dates={form.importantDates}
+              suggestions={SUGGESTED_DATES[form.service] || ['Date of Birth', 'Passport Expiry']}
+              onAdd={addDate}
+              onRemove={removeDate}
+              onUpdate={updateDate}
+            />
           </div>
         )}
 
+        {/* ===== STEP 3: REVIEW ===== */}
         {step === 3 && (
           <div className="space-y-6">
-            <h2 className="text-lg font-bold font-display">Review & Submit</h2>
+            <h2 className="text-lg font-bold font-display">Review & {isEditMode ? 'Save' : 'Submit'}</h2>
             {addingNewService && existingClient && (
               <div className="p-3 bg-secondary/5 border border-secondary/20 rounded-lg">
                 <p className="text-sm font-medium text-secondary">Adding new "{form.service}" request to existing client: {existingClient.name}</p>
@@ -710,14 +658,12 @@ export default function AddClientWizard() {
                 </div>
               </div>
             </div>
-            {Object.entries(form.importantDates).filter(([_, v]) => v).length > 0 && (
+            {form.importantDates.filter(d => d.name && d.date).length > 0 && (
               <div className="border-t border-border pt-4">
-                <h3 className="text-sm font-semibold mb-2">📅 Important Dates</h3>
+                <h3 className="text-sm font-semibold mb-2">📅 Important Dates ({form.importantDates.filter(d => d.name && d.date).length})</h3>
                 <div className="flex flex-wrap gap-2">
-                  {Object.entries(form.importantDates).filter(([_, v]) => v).map(([k, v]) => (
-                    <span key={k} className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full capitalize">
-                      {k.replace(/([A-Z])/g, ' $1')}: {formatDate(v)}
-                    </span>
+                  {form.importantDates.filter(d => d.name && d.date).map((d) => (
+                    <span key={d.id} className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full">{d.name}: {formatDate(d.date)}</span>
                   ))}
                 </div>
               </div>
@@ -726,25 +672,17 @@ export default function AddClientWizard() {
               <div className="border-t border-border pt-4">
                 <h3 className="text-sm font-semibold mb-2">📎 Documents ({form.documents.length})</h3>
                 <div className="flex flex-wrap gap-2">
-                  {form.documents.map((d, i) => (
-                    <span key={i} className="text-xs bg-success/10 text-success px-2 py-1 rounded-full flex items-center gap-1"><Check className="w-3 h-3" />{d.docType || d.name}</span>
+                  {form.documents.map(d => (
+                    <span key={d.id} className="text-xs bg-success/10 text-success px-2 py-1 rounded-full flex items-center gap-1"><Check className="w-3 h-3" />{d.name}</span>
                   ))}
                 </div>
-              </div>
-            )}
-            {form.familyMembers.length > 0 && (
-              <div className="border-t border-border pt-4">
-                <h3 className="text-sm font-semibold mb-2">👨‍👩‍👧‍👦 Family Members ({form.familyMembers.length})</h3>
-                {form.familyMembers.map((fm, i) => (
-                  <p key={i} className="text-sm">{fm.name} ({fm.relation}) — {fm.passportNo || 'No passport'}</p>
-                ))}
               </div>
             )}
           </div>
         )}
 
         <div className="flex justify-between pt-6 border-t border-border">
-          <button onClick={() => step > 0 ? setStep(step - 1) : navigate(`${basePath}/clients`)} className="btn-outline">
+          <button onClick={() => step > 0 ? setStep(step - 1) : navigate(`${basePath}/clients`)} className="btn-outline" disabled={submitting}>
             <ChevronLeft className="w-4 h-4" /> {step === 0 ? 'Cancel' : 'Back'}
           </button>
           {step < steps.length - 1 ? (
@@ -753,12 +691,191 @@ export default function AddClientWizard() {
               Next <ChevronRight className="w-4 h-4" />
             </button>
           ) : (
-            <button onClick={handleSubmit} className="btn-primary">
-              <Check className="w-4 h-4" /> {addingNewService ? 'Add Service Request' : 'Create Client'}
+            <button onClick={handleSubmit} className="btn-primary" disabled={submitting}>
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              {isEditMode ? 'Save Changes' : addingNewService ? 'Add Service Request' : 'Create Client'}
             </button>
           )}
         </div>
       </div>
+
+      {/* Welcome WhatsApp template after creation */}
+      {showWelcome && createdClientId && (
+        <WhatsAppTemplateModal
+          open={true}
+          onClose={() => { setShowWelcome(null); navigate(`${basePath}/clients/${createdClientId}`); }}
+          mobile={showWelcome.mobile}
+          defaultMessage={buildWelcomeMessage(showWelcome.name, showWelcome.service)}
+          title="Send Welcome Message"
+        />
+      )}
+    </div>
+  );
+}
+
+// ============== Documents Section ==============
+function DocumentsSection({
+  docs, suggestions, onAdd, onRemove, onRename, ocrLoadingId,
+}: {
+  docs: DocEntry[]; suggestions: string[];
+  onAdd: (file: File, name: string) => void;
+  onRemove: (id: string) => void;
+  onRename: (id: string, name: string) => void;
+  ocrLoadingId: string | null;
+}) {
+  const [pendingName, setPendingName] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const triggerUpload = (camera: boolean) => {
+    if (!pendingName.trim()) {
+      toast.error('Enter a document name first');
+      return;
+    }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*,.pdf';
+    if (camera) input.setAttribute('capture', 'environment');
+    input.multiple = true;
+    input.onchange = (e: any) => {
+      const files = Array.from((e.target as HTMLInputElement).files || []) as File[];
+      files.forEach((file, i) => {
+        onAdd(file, files.length > 1 ? `${pendingName} (${i + 1})` : pendingName);
+      });
+      setPendingName('');
+    };
+    input.click();
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-base font-semibold font-display">📎 Documents</h3>
+        <span className="text-xs text-muted-foreground">{docs.length} uploaded</span>
+      </div>
+      <p className="text-xs text-muted-foreground mb-3">Add any number of documents. Give each one a clear name (e.g. "Passport — front page"). 📸 AI will auto-extract details from images.</p>
+
+      {/* Add new doc */}
+      <div className="card-nawi bg-muted/30 space-y-3">
+        <label className="block text-sm font-medium">Add Document</label>
+        <div className="relative">
+          <input
+            type="text"
+            value={pendingName}
+            onChange={(e) => setPendingName(e.target.value)}
+            onFocus={() => setShowSuggestions(true)}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+            placeholder="Document name (e.g. Passport, Emirates ID, Visa Copy...)"
+            className="input-nawi"
+          />
+          {showSuggestions && (
+            <div className="absolute z-10 left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-elevated max-h-48 overflow-y-auto">
+              {suggestions.filter(s => !pendingName || s.toLowerCase().includes(pendingName.toLowerCase())).map(s => (
+                <button key={s} type="button" onMouseDown={() => { setPendingName(s); setShowSuggestions(false); }}
+                  className="block w-full text-left px-3 py-2 text-sm hover:bg-muted">{s}</button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => triggerUpload(false)} className="btn-outline flex-1"><Upload className="w-4 h-4" /> Upload File(s)</button>
+          <button type="button" onClick={() => triggerUpload(true)} className="btn-outline flex-1"><Camera className="w-4 h-4" /> Take Photo</button>
+        </div>
+      </div>
+
+      {/* Uploaded list */}
+      {docs.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
+          {docs.map(d => {
+            const base64Src = d.base64?.startsWith('NAWI_ENC::') ? d.base64.replace('NAWI_ENC::', '') : d.base64;
+            const isImage = d.fileType?.startsWith('image/');
+            const loading = ocrLoadingId === d.id;
+            return (
+              <div key={d.id} className="border border-border rounded-lg overflow-hidden bg-card">
+                {isImage && base64Src ? (
+                  <a href={base64Src} target="_blank" rel="noopener noreferrer">
+                    <img src={base64Src} alt={d.name} className="w-full h-32 object-cover hover:opacity-90 transition-opacity" />
+                  </a>
+                ) : (
+                  <div className="w-full h-32 bg-muted flex items-center justify-center">
+                    <FileText className="w-12 h-12 text-muted-foreground" />
+                  </div>
+                )}
+                <div className="p-2 space-y-1">
+                  <input
+                    value={d.name}
+                    onChange={(e) => onRename(d.id, e.target.value)}
+                    className="input-nawi text-xs py-1 font-medium"
+                  />
+                  <p className="text-[10px] text-muted-foreground truncate">{d.fileName}</p>
+                  {loading && <p className="text-xs text-primary flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> AI scanning...</p>}
+                  {d.ocrExtracted && !loading && <p className="text-xs text-success flex items-center gap-1"><Sparkles className="w-3 h-3" /> Auto-filled</p>}
+                  <button onClick={() => onRemove(d.id)} className="text-xs text-destructive hover:underline flex items-center gap-1">
+                    <Trash2 className="w-3 h-3" /> Remove
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============== Dates Section ==============
+function DatesSection({
+  dates, suggestions, onAdd, onRemove, onUpdate,
+}: {
+  dates: DateEntry[]; suggestions: string[];
+  onAdd: (name?: string, date?: string) => void;
+  onRemove: (id: string) => void;
+  onUpdate: (id: string, changes: Partial<DateEntry>) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-base font-semibold font-display">📅 Important Dates</h3>
+        <span className="text-xs text-muted-foreground">{dates.length} added</span>
+      </div>
+      <p className="text-xs text-muted-foreground mb-3">Add any number of dates with custom names. The system will send reminders 3, 2, 1 day before.</p>
+
+      {/* Quick-add suggestion chips */}
+      <div className="flex flex-wrap gap-2 mb-3">
+        {suggestions.filter(s => !dates.some(d => d.name === s)).map(s => (
+          <button key={s} type="button" onClick={() => onAdd(s, '')} className="text-xs px-3 py-1.5 rounded-full border border-border hover:border-primary hover:bg-primary/5 transition-colors">
+            <Plus className="w-3 h-3 inline mr-1" />{s}
+          </button>
+        ))}
+        <button type="button" onClick={() => onAdd('', '')} className="text-xs px-3 py-1.5 rounded-full border border-secondary text-secondary hover:bg-secondary/5">
+          <Plus className="w-3 h-3 inline mr-1" />Custom date
+        </button>
+      </div>
+
+      {dates.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-6 border border-dashed border-border rounded-lg">No dates added yet — click a suggestion above</p>
+      ) : (
+        <div className="space-y-2">
+          {dates.map((d) => (
+            <div key={d.id} className="grid grid-cols-12 gap-2 items-center">
+              <input
+                value={d.name}
+                onChange={(e) => onUpdate(d.id, { name: e.target.value })}
+                placeholder="Date name (e.g. Travel Date)"
+                className="input-nawi col-span-6"
+              />
+              <input
+                type="date"
+                value={d.date}
+                onChange={(e) => onUpdate(d.id, { date: e.target.value })}
+                className="input-nawi col-span-5"
+              />
+              <button onClick={() => onRemove(d.id)} className="text-destructive p-2 hover:bg-destructive/10 rounded-lg col-span-1 flex justify-center">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
