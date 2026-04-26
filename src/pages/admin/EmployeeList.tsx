@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Trash2, Eye, Users, Camera, Shield, MapPin, Power, PowerOff } from 'lucide-react';
+import { Plus, Search, Trash2, Eye, Users, Camera, Shield, MapPin } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { auditLog } from '@/lib/supabase-service';
@@ -16,7 +16,7 @@ export default function EmployeeList() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [roleFilter, setRoleFilter] = useState('all');
-  const [pwdAction, setPwdAction] = useState<{ type: 'deactivate' | 'activate' | 'delete'; emp: any } | null>(null);
+  const [pwdAction, setPwdAction] = useState<{ type: 'delete'; emp: any } | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [form, setForm] = useState({
     name: '', mobile: '', email: '', password: '',
@@ -25,9 +25,11 @@ export default function EmployeeList() {
   });
 
   const load = async () => {
+    // Exclude admin users from the employee list
+    const { data: roles } = await supabase.from('user_roles').select('user_id, role');
+    const adminIds = new Set((roles || []).filter((r: any) => r.role === 'admin').map((r: any) => r.user_id));
     const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-    // Filter out admin's own profile if needed
-    setEmployees(data || []);
+    setEmployees((data || []).filter((p: any) => !adminIds.has(p.user_id)));
   };
   useEffect(() => { load(); }, []);
 
