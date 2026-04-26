@@ -295,100 +295,21 @@ export default function ClientProfile() {
         </div>
       )}
 
-      {tab === 'services' && (
-        <div className="card-nawi">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold font-display">Service History</h3>
-            <button onClick={() => navigate(`${basePath}/clients/new?existingClient=${client.id}`)} className="btn-primary"><Plus className="w-4 h-4" /> Add New Service</button>
-          </div>
-          {services.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">No service history</p>
-          ) : (
-            <div className="space-y-3">
-              {services.map((svc: any) => (
-                <div key={svc.id} className="p-4 border border-border rounded-xl">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="badge-new">{svc.service}</span>
-                      {svc.service_subcategory && <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full">{svc.service_subcategory}</span>}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <StatusBadge status={svc.status || 'New'} />
-                      <span className="text-xs text-muted-foreground">{formatDate(svc.created_at)}</span>
-                    </div>
-                  </div>
-                  {svc.service_details && Object.keys(svc.service_details).length > 0 && (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
-                      {Object.entries(svc.service_details as Record<string, string>).filter(([_, v]) => v).slice(0, 8).map(([k, v]) => (
-                        <div key={k} className="text-xs"><span className="text-muted-foreground capitalize">{k.replace(/([A-Z])/g, ' $1')}: </span><span className="font-medium">{v as string}</span></div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       {tab === 'documents' && (
-        <div className="card-nawi">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold font-display">Documents</h3>
-          </div>
-          {documents.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">No documents uploaded</p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {documents.map((d: any, i: number) => {
-                const isImage = d.type?.startsWith('image/') || d.name?.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/i);
-                const base64Src = d.base64?.startsWith('NAWI_ENC::') ? d.base64.replace('NAWI_ENC::', '') : d.base64;
-                return (
-                  <div key={i} className="border border-border rounded-lg overflow-hidden">
-                    {isImage && base64Src ? (
-                      <a href={base64Src} target="_blank" rel="noopener" className="block">
-                        <img src={base64Src} alt={d.docType || d.name} className="w-full h-40 object-cover hover:opacity-90 transition-opacity" />
-                      </a>
-                    ) : (
-                      <div className="w-full h-40 bg-muted flex items-center justify-center">
-                        <FileText className="w-12 h-12 text-muted-foreground" />
-                      </div>
-                    )}
-                    <div className="p-3">
-                      <p className="text-sm font-medium truncate">{d.docType || d.name}</p>
-                      <p className="text-xs text-muted-foreground">{d.name} • {formatDate(d.uploadedAt)}</p>
-                      {base64Src && (
-                        <a href={base64Src} download={d.name} className="text-xs text-primary underline mt-1 inline-block">
-                          <Download className="w-3 h-3 inline mr-1" />Download
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        <ProfileDocumentsTab
+          documents={documents}
+          onAdd={handleAddDocument}
+          onDelete={handleDeleteDocument}
+        />
       )}
 
       {tab === 'dates' && (
-        <div className="card-nawi">
-          <h3 className="font-semibold font-display mb-4">Important Dates</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {Object.entries(importantDates).map(([type, val]) => {
-              if (!val || type === 'passportNo') return null;
-              const days = daysUntil(val as string);
-              const status = getDateStatus(val as string);
-              return (
-                <div key={type} className={`p-4 rounded-xl border ${dateStatusColors[status]}`}>
-                  <p className="text-xs font-medium uppercase tracking-wider mb-1">{type.replace(/([A-Z])/g, ' $1').trim()}</p>
-                  <p className="text-lg font-bold font-display">{formatDate(val as string)}</p>
-                  <p className="text-sm font-medium mt-1">{days < 0 ? `${Math.abs(days)} days overdue` : days === 0 ? 'Today' : `${days} days left`}</p>
-                </div>
-              );
-            }).filter(Boolean)}
-          </div>
-        </div>
+        <ProfileDatesTab
+          dates={importantDates}
+          dateStatusColors={dateStatusColors}
+          onAdd={handleAddDate}
+          onDelete={handleDeleteDate}
+        />
       )}
 
       {/* Family tab removed — simplified to one client = one record */}
