@@ -158,8 +158,8 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
                   )}
                 </div>
                 <div className="flex gap-2 flex-shrink-0">
-                  <button onClick={() => handleApprove(l.id)} className="btn-success p-2"><Check className="w-4 h-4" /></button>
-                  <button onClick={() => handleReject(l.id)} className="btn-danger p-2"><X className="w-4 h-4" /></button>
+                  <button onClick={() => setPwdAction({ type: 'approve', row: l })} className="btn-success p-2" title="Approve"><Check className="w-4 h-4" /></button>
+                  <button onClick={() => setPwdAction({ type: 'reject', row: l })} className="btn-danger p-2" title="Reject"><X className="w-4 h-4" /></button>
                 </div>
               </div>
               );
