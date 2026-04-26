@@ -465,7 +465,7 @@ export default function AddClientWizard() {
 
             <DocumentsSection
               docs={form.documents}
-              suggestions={SUGGESTED_DOCS[form.service] || ['Passport Copy']}
+              suggestions={ALL_DOCS}
               onAdd={handleAddDoc}
               onRemove={removeDoc}
               onRename={renameDoc}
@@ -514,7 +514,7 @@ export default function AddClientWizard() {
             <div className="border-t border-border pt-4">
               <DatesSection
                 dates={form.importantDates}
-                suggestions={SUGGESTED_DATES[form.service] || ['Date of Birth', 'Passport Expiry']}
+                suggestions={ALL_DATES}
                 onAdd={addDate}
                 onRemove={removeDate}
                 onUpdate={updateDate}
