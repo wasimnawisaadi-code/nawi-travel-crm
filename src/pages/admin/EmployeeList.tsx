@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Trash2, Eye, Users, Camera, Shield, MapPin, Power, PowerOff } from 'lucide-react';
+import { Plus, Search, Trash2, Eye, Users, Camera, Shield, MapPin } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { auditLog } from '@/lib/supabase-service';
-import StatusBadge from '@/components/ui/StatusBadge';
+
 import EmptyState from '@/components/ui/EmptyState';
 import PasswordConfirmDialog from '@/components/PasswordConfirmDialog';
 import { toast } from 'sonner';
@@ -14,9 +14,8 @@ export default function EmployeeList() {
   const { user } = useAuth();
   const [employees, setEmployees] = useState<any[]>([]);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
   const [roleFilter, setRoleFilter] = useState('all');
-  const [pwdAction, setPwdAction] = useState<{ type: 'deactivate' | 'activate' | 'delete'; emp: any } | null>(null);
+  const [pwdAction, setPwdAction] = useState<{ type: 'delete'; emp: any } | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [form, setForm] = useState({
     name: '', mobile: '', email: '', password: '',
@@ -25,14 +24,15 @@ export default function EmployeeList() {
   });
 
   const load = async () => {
+    // Exclude admin users from the employee list
+    const { data: roles } = await supabase.from('user_roles').select('user_id, role');
+    const adminIds = new Set((roles || []).filter((r: any) => r.role === 'admin').map((r: any) => r.user_id));
     const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-    // Filter out admin's own profile if needed
-    setEmployees(data || []);
+    setEmployees((data || []).filter((p: any) => !adminIds.has(p.user_id)));
   };
   useEffect(() => { load(); }, []);
 
   const filtered = employees.filter((e: any) => {
-    if (statusFilter !== 'all' && e.status !== statusFilter) return false;
     if (roleFilter !== 'all' && (e.profile_type || 'office') !== roleFilter) return false;
     if (search && !e.name.toLowerCase().includes(search.toLowerCase()) && !e.email.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
@@ -112,30 +112,17 @@ export default function EmployeeList() {
 
   const runPwdAction = async () => {
     if (!pwdAction) return;
-    const { type, emp } = pwdAction;
-    if (type === 'activate') {
-      await supabase.from('profiles').update({ status: 'active' }).eq('user_id', emp.user_id);
-      await auditLog('employee_activated', 'employee', emp.user_id, { name: emp.name });
-      toast.success(`${emp.name} activated`);
-    } else if (type === 'deactivate') {
-      await supabase.from('profiles').update({ status: 'inactive' }).eq('user_id', emp.user_id);
-      await auditLog('employee_deactivated', 'employee', emp.user_id, { name: emp.name });
-      toast.success(`${emp.name} deactivated — login disabled`);
-    } else if (type === 'delete') {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-delete-employee`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session?.access_token}`,
-        },
-        body: JSON.stringify({ user_id: emp.user_id }),
-      });
-      const json = await res.json();
-      if (!res.ok) { toast.error(json.error || 'Delete failed'); return; }
-      await auditLog('employee_deleted', 'employee', emp.user_id, { name: emp.name });
-      toast.success(`${emp.name} permanently deleted`);
-    }
+    const { emp } = pwdAction;
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-delete-employee`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ user_id: emp.user_id }),
+    });
+    const json = await res.json();
+    if (!res.ok) { toast.error(json.error || 'Delete failed'); return; }
+    await auditLog('employee_deleted', 'employee', emp.user_id, { name: emp.name });
+    toast.success(`${emp.name} permanently deleted`);
     load();
   };
 
@@ -147,11 +134,6 @@ export default function EmployeeList() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input value={search} onChange={(e) => setSearch(e.target.value)} className="input-nawi pl-9" placeholder="Search employees..." />
           </div>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input-nawi w-auto">
-            <option value="all">All Status</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
           <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="input-nawi w-auto">
             <option value="all">All Types</option>
             <option value="office">Office</option>
@@ -179,10 +161,7 @@ export default function EmployeeList() {
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <p className="font-semibold text-foreground truncate">{e.name}</p>
-                      <StatusBadge status={e.status} />
-                    </div>
+                    <p className="font-semibold text-foreground truncate">{e.name}</p>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <p className="text-xs text-muted-foreground font-mono">{e.user_id?.slice(0, 8)}</p>
                       {isSales && <span className="text-xs bg-warning/10 text-warning px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><MapPin className="w-3 h-3" />Sales</span>}
@@ -194,11 +173,6 @@ export default function EmployeeList() {
                       <span className="text-xs text-muted-foreground">{clientCount} clients</span>
                       <div className="flex items-center gap-1">
                         <button title="View" onClick={(ev) => { ev.stopPropagation(); navigate(`/admin/employees/${e.user_id}`); }} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground"><Eye className="w-4 h-4" /></button>
-                        {e.status === 'active' ? (
-                          <button title="Deactivate (disable login)" onClick={(ev) => { ev.stopPropagation(); setPwdAction({ type: 'deactivate', emp: e }); }} className="p-1.5 hover:bg-warning/10 rounded-lg text-muted-foreground hover:text-warning"><PowerOff className="w-4 h-4" /></button>
-                        ) : (
-                          <button title="Activate" onClick={(ev) => { ev.stopPropagation(); setPwdAction({ type: 'activate', emp: e }); }} className="p-1.5 hover:bg-success/10 rounded-lg text-muted-foreground hover:text-success"><Power className="w-4 h-4" /></button>
-                        )}
                         <button title="Delete permanently" onClick={(ev) => { ev.stopPropagation(); setPwdAction({ type: 'delete', emp: e }); }} className="p-1.5 hover:bg-destructive/10 rounded-lg text-muted-foreground hover:text-destructive"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </div>
@@ -243,7 +217,7 @@ export default function EmployeeList() {
                   <button type="button" onClick={() => setForm({ ...form, profileType: 'sales' })}
                     className={`p-3 rounded-xl border-2 text-center transition-all ${form.profileType === 'sales' ? 'border-primary bg-primary/5' : 'border-border'}`}>
                     <MapPin className="w-5 h-5 mx-auto mb-1" /><span className="text-sm font-medium">Sales</span>
-                    <p className="text-xs text-muted-foreground mt-0.5">Flexible location</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Zone-based login</p>
                   </button>
                 </div>
               </div>
@@ -278,20 +252,10 @@ export default function EmployeeList() {
         open={!!pwdAction}
         onClose={() => setPwdAction(null)}
         onConfirm={runPwdAction}
-        title={
-          pwdAction?.type === 'delete' ? `Delete ${pwdAction.emp.name}` :
-          pwdAction?.type === 'activate' ? `Activate ${pwdAction?.emp.name}` :
-          `Deactivate ${pwdAction?.emp.name}`
-        }
-        description={
-          pwdAction?.type === 'delete'
-            ? `This will PERMANENTLY delete the employee, their login, and unassign ${clientCounts[pwdAction.emp.user_id] || 0} client(s). Cannot be undone.`
-            : pwdAction?.type === 'activate'
-              ? 'This employee will be able to log in again.'
-              : `Login will be disabled. ${clientCounts[pwdAction?.emp.user_id] || 0} client(s) remain assigned.`
-        }
-        actionLabel={pwdAction?.type === 'delete' ? 'Delete Permanently' : pwdAction?.type === 'activate' ? 'Activate' : 'Deactivate'}
-        destructive={pwdAction?.type !== 'activate'}
+        title={pwdAction ? `Delete ${pwdAction.emp.name}` : ''}
+        description={pwdAction ? `This will PERMANENTLY delete the employee, their login, and unassign ${clientCounts[pwdAction.emp.user_id] || 0} client(s). Cannot be undone.` : ''}
+        actionLabel="Delete Permanently"
+        destructive
       />
     </div>
   );

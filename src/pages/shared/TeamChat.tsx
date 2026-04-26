@@ -1,7 +1,37 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, Plus, Users, X, Hash, User } from 'lucide-react';
+import { Send, Users, X, Hash, User, Mic, Paperclip, Square, Play, Pause, FileText, Download, Trash2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
+import { toast } from 'sonner';
+
+type Msg = any;
+
+function AudioPlayer({ url, duration }: { url: string; duration?: number | null }) {
+  const ref = useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const toggle = () => {
+    const a = ref.current; if (!a) return;
+    if (a.paused) { a.play(); setPlaying(true); } else { a.pause(); setPlaying(false); }
+  };
+  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  return (
+    <div className="flex items-center gap-2 min-w-[200px]">
+      <button onClick={toggle} className="w-8 h-8 rounded-full bg-background/20 hover:bg-background/30 flex items-center justify-center flex-shrink-0">
+        {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+      </button>
+      <div className="flex-1 h-1 bg-background/30 rounded-full overflow-hidden">
+        <div className="h-full bg-current transition-all" style={{ width: `${progress}%` }} />
+      </div>
+      <span className="text-[10px] tabular-nums opacity-80">{fmt(duration || 0)}</span>
+      <audio
+        ref={ref} src={url} preload="metadata"
+        onTimeUpdate={(e) => { const a = e.currentTarget; setProgress((a.currentTime / (a.duration || 1)) * 100); }}
+        onEnded={() => { setPlaying(false); setProgress(0); }}
+      />
+    </div>
+  );
+}
 
 export default function TeamChat() {
   const { user, profile } = useAuth();
@@ -12,13 +42,20 @@ export default function TeamChat() {
   const [showNewDM, setShowNewDM] = useState(false);
   const [groupForm, setGroupForm] = useState({ name: '', members: [] as string[] });
   const [groups, setGroups] = useState<any[]>([]);
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState<Msg[]>([]);
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [dmConversations, setDmConversations] = useState<string[]>([]);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [recording, setRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [uploading, setUploading] = useState(false);
+  const recRef = useRef<MediaRecorder | null>(null);
+  const recChunksRef = useRef<Blob[]>([]);
+  const recStartRef = useRef<number>(0);
+  const recTimerRef = useRef<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Load unread counts per chat
   const loadUnread = async () => {
     if (!user) return;
     const { data } = await supabase
@@ -35,7 +72,6 @@ export default function TeamChat() {
   };
   useEffect(() => { loadUnread(); const i = setInterval(loadUnread, 15000); return () => clearInterval(i); }, [user]);
 
-  // Load users
   useEffect(() => {
     const fetchUsers = async () => {
       const { data } = await supabase.from('profiles').select('user_id, name, photo_url').eq('status', 'active');
@@ -44,14 +80,11 @@ export default function TeamChat() {
     fetchUsers();
   }, []);
 
-  // Load groups
   useEffect(() => {
     if (!user) return;
     const fetchGroups = async () => {
       const { data } = await supabase.from('chat_groups').select('*').contains('members', [user.id]);
       setGroups(data || []);
-
-      // Ensure general group exists
       if (data && !data.find(g => g.name === 'General')) {
         const allUserIds = allUsers.map(u => u.user_id);
         const { data: newGroup } = await supabase.from('chat_groups').insert([{
@@ -68,10 +101,8 @@ export default function TeamChat() {
     fetchGroups();
   }, [user, allUsers.length]);
 
-  // Load messages for active chat
   useEffect(() => {
     if (!activeChat || !user) return;
-
     const fetchMessages = async () => {
       let query = supabase.from('chat_messages').select('*').order('created_at', { ascending: true });
       if (activeChatType === 'group') {
@@ -82,8 +113,6 @@ export default function TeamChat() {
       }
       const { data } = await query;
       setMessages(data || []);
-
-      // Mark unread messages as read
       const toMark = (data || []).filter((m: any) => !m.is_read && m.sender_id !== user.id).map((m: any) => m.id);
       if (toMark.length > 0) {
         await supabase.from('chat_messages').update({ is_read: true }).in('id', toMark);
@@ -92,7 +121,6 @@ export default function TeamChat() {
     };
     fetchMessages();
 
-    // Realtime subscription
     const channel = supabase
       .channel(`chat-${activeChat}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
@@ -110,7 +138,6 @@ export default function TeamChat() {
     return () => { supabase.removeChannel(channel); };
   }, [activeChat, activeChatType, user]);
 
-  // Load DM conversations
   useEffect(() => {
     if (!user) return;
     const fetchDMs = async () => {
@@ -127,90 +154,142 @@ export default function TeamChat() {
     fetchDMs();
   }, [user]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages.length]);
 
-  const sendMessage = async () => {
-    if (!message.trim() || !user || !profile) return;
-    const msg: any = {
-      sender_id: user.id,
-      sender_name: profile.name,
-      sender_photo: profile.photo_url,
+  const buildBaseMsg = () => {
+    const base: any = {
+      sender_id: user!.id, sender_name: profile!.name, sender_photo: profile!.photo_url,
       message_type: activeChatType,
-      text: message.trim(),
     };
-    if (activeChatType === 'group') {
-      msg.group_id = activeChat;
-    } else {
-      msg.recipient_id = activeChat;
-    }
-    await supabase.from('chat_messages').insert([msg]);
+    if (activeChatType === 'group') base.group_id = activeChat; else base.recipient_id = activeChat;
+    return base;
+  };
 
-    // Push notifications
+  const pushNotif = async (preview: string) => {
     if (activeChatType === 'group') {
       const group = groups.find(g => g.id === activeChat);
-      const recipients = (group?.members || []).filter((m: string) => m !== user.id);
+      const recipients = (group?.members || []).filter((m: string) => m !== user!.id);
       const notifs = recipients.map((memberId: string) => ({
         user_id: memberId, title: `New message in ${group?.name}`,
-        message: `${profile.name}: ${message.trim().slice(0, 80)}`,
-        type: 'chat',
+        message: `${profile!.name}: ${preview.slice(0, 80)}`, type: 'chat',
       }));
       if (notifs.length > 0) await supabase.from('notifications').insert(notifs);
     } else {
       await supabase.from('notifications').insert([{
-        user_id: activeChat, title: `New message from ${profile.name}`,
-        message: message.trim().slice(0, 80), type: 'chat',
+        user_id: activeChat, title: `New message from ${profile!.name}`,
+        message: preview.slice(0, 80), type: 'chat',
       }]);
     }
+  };
 
+  const sendMessage = async () => {
+    if (!message.trim() || !user || !profile) return;
+    const msg = { ...buildBaseMsg(), text: message.trim() };
+    await supabase.from('chat_messages').insert([msg]);
+    await pushNotif(message.trim());
     setMessage('');
+  };
+
+  const uploadToBucket = async (blob: Blob, filename: string) => {
+    const ext = filename.includes('.') ? filename.split('.').pop() : 'bin';
+    const path = `${user!.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { error } = await supabase.storage.from('chat-media').upload(path, blob, { contentType: blob.type, upsert: false });
+    if (error) throw error;
+    const { data } = supabase.storage.from('chat-media').getPublicUrl(path);
+    return data.publicUrl;
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '' });
+      recChunksRef.current = [];
+      mr.ondataavailable = (e) => { if (e.data.size > 0) recChunksRef.current.push(e.data); };
+      mr.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        if (recTimerRef.current) clearInterval(recTimerRef.current);
+        const duration = Math.round((Date.now() - recStartRef.current) / 1000);
+        setRecording(false); setRecordSeconds(0);
+        const blob = new Blob(recChunksRef.current, { type: 'audio/webm' });
+        if (blob.size < 500) return;
+        try {
+          setUploading(true);
+          const url = await uploadToBucket(blob, 'voice.webm');
+          await supabase.from('chat_messages').insert([{
+            ...buildBaseMsg(), text: '',
+            attachment_url: url, attachment_type: 'audio', attachment_name: 'Voice message', attachment_duration: duration,
+          }]);
+          await pushNotif('🎤 Voice message');
+        } catch (e: any) {
+          toast.error('Upload failed: ' + e.message);
+        } finally { setUploading(false); }
+      };
+      recRef.current = mr;
+      recStartRef.current = Date.now();
+      mr.start();
+      setRecording(true);
+      setRecordSeconds(0);
+      recTimerRef.current = setInterval(() => setRecordSeconds(s => s + 1), 1000);
+    } catch (e: any) {
+      toast.error('Microphone permission denied');
+    }
+  };
+
+  const stopRecording = (cancel = false) => {
+    if (!recRef.current) return;
+    if (cancel) { recChunksRef.current = []; }
+    recRef.current.stop();
+    recRef.current = null;
+  };
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; e.target.value = '';
+    if (!file || !user || !profile) return;
+    if (file.size > 25 * 1024 * 1024) { toast.error('Max 25MB'); return; }
+    try {
+      setUploading(true);
+      const url = await uploadToBucket(file, file.name);
+      await supabase.from('chat_messages').insert([{
+        ...buildBaseMsg(), text: '',
+        attachment_url: url, attachment_type: 'file', attachment_name: file.name,
+      }]);
+      await pushNotif(`📎 ${file.name}`);
+    } catch (e: any) {
+      toast.error('Upload failed: ' + e.message);
+    } finally { setUploading(false); }
   };
 
   const createGroup = async () => {
     if (!groupForm.name.trim() || !user) return;
     const { data } = await supabase.from('chat_groups').insert([{
-      name: groupForm.name,
-      members: [...groupForm.members, user.id],
-      created_by: user.id,
+      name: groupForm.name, members: [...groupForm.members, user.id], created_by: user.id,
     }]).select().single();
     if (data) {
-      setGroups(prev => [...prev, data]);
-      setActiveChat(data.id);
-      setActiveChatType('group');
+      setGroups(prev => [...prev, data]); setActiveChat(data.id); setActiveChatType('group');
     }
-    setShowNewGroup(false);
-    setGroupForm({ name: '', members: [] });
+    setShowNewGroup(false); setGroupForm({ name: '', members: [] });
   };
 
   const startDM = (userId: string) => {
-    setActiveChat(userId);
-    setActiveChatType('direct');
-    setShowNewDM(false);
-    if (!dmConversations.includes(userId)) {
-      setDmConversations(prev => [...prev, userId]);
-    }
+    setActiveChat(userId); setActiveChatType('direct'); setShowNewDM(false);
+    if (!dmConversations.includes(userId)) setDmConversations(prev => [...prev, userId]);
   };
 
-  const getActiveName = () => {
-    if (activeChatType === 'group') return groups.find(g => g.id === activeChat)?.name || 'General';
-    return allUsers.find(u => u.user_id === activeChat)?.name || 'Chat';
-  };
+  const getActiveName = () => activeChatType === 'group'
+    ? (groups.find(g => g.id === activeChat)?.name || 'General')
+    : (allUsers.find(u => u.user_id === activeChat)?.name || 'Chat');
 
   const formatTime = (ts: string) => new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   const formatDay = (ts: string) => {
-    const d = new Date(ts);
-    const today = new Date();
+    const d = new Date(ts); const today = new Date();
     if (d.toDateString() === today.toDateString()) return 'Today';
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    const y = new Date(today); y.setDate(y.getDate() - 1);
+    if (d.toDateString() === y.toDateString()) return 'Yesterday';
     return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   };
 
   return (
     <div className="flex h-[calc(100vh-120px)] bg-background rounded-xl border border-border overflow-hidden animate-fade-in">
-      {/* Sidebar */}
       <div className="w-64 border-r border-border flex flex-col flex-shrink-0">
         <div className="p-3 border-b border-border flex items-center justify-between">
           <h3 className="font-semibold font-display text-sm">Messages</h3>
@@ -219,7 +298,6 @@ export default function TeamChat() {
             <button onClick={() => setShowNewDM(true)} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground" title="New DM"><User className="w-4 h-4" /></button>
           </div>
         </div>
-
         <div className="flex-1 overflow-y-auto">
           <div className="px-3 py-2">
             <p className="text-xs font-medium text-muted-foreground mb-1">Groups</p>
@@ -262,7 +340,6 @@ export default function TeamChat() {
         </div>
       </div>
 
-      {/* Chat Area */}
       <div className="flex-1 flex flex-col">
         <div className="p-3 border-b border-border flex items-center gap-2">
           {activeChatType === 'group' ? <Hash className="w-5 h-5 text-muted-foreground" /> : <User className="w-5 h-5 text-muted-foreground" />}
@@ -294,7 +371,17 @@ export default function TeamChat() {
                   <div className={`max-w-[70%] ${isMe ? 'order-first' : ''}`}>
                     {!isMe && <p className="text-xs text-muted-foreground mb-1 ml-1">{msg.sender_name}</p>}
                     <div className={`px-3 py-2 rounded-2xl text-sm ${isMe ? 'bg-primary text-primary-foreground rounded-br-md' : 'bg-muted text-foreground rounded-bl-md'}`}>
-                      {msg.text}
+                      {msg.attachment_type === 'audio' && msg.attachment_url ? (
+                        <AudioPlayer url={msg.attachment_url} duration={msg.attachment_duration} />
+                      ) : msg.attachment_type === 'file' && msg.attachment_url ? (
+                        <a href={msg.attachment_url} target="_blank" rel="noopener" download className="flex items-center gap-2 min-w-[180px] hover:opacity-80">
+                          <FileText className="w-5 h-5 flex-shrink-0" />
+                          <span className="truncate text-sm flex-1">{msg.attachment_name || 'File'}</span>
+                          <Download className="w-4 h-4 opacity-70" />
+                        </a>
+                      ) : (
+                        msg.text
+                      )}
                     </div>
                     <p className={`text-[10px] text-muted-foreground mt-0.5 ${isMe ? 'text-right mr-1' : 'ml-1'}`}>{formatTime(msg.created_at)}</p>
                   </div>
@@ -306,15 +393,31 @@ export default function TeamChat() {
         </div>
 
         <div className="p-3 border-t border-border">
-          <div className="flex gap-2">
-            <input value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-              className="input-nawi flex-1" placeholder={`Message ${getActiveName()}...`} />
-            <button onClick={sendMessage} className="btn-primary px-3"><Send className="w-4 h-4" /></button>
-          </div>
+          {recording ? (
+            <div className="flex items-center gap-2 bg-destructive/10 border border-destructive/30 rounded-xl px-3 py-2">
+              <span className="w-2 h-2 bg-destructive rounded-full animate-pulse" />
+              <span className="text-sm font-mono text-destructive">Recording {Math.floor(recordSeconds / 60)}:{String(recordSeconds % 60).padStart(2, '0')}</span>
+              <span className="flex-1" />
+              <button onClick={() => stopRecording(true)} className="p-1.5 hover:bg-destructive/20 rounded-lg text-destructive" title="Cancel"><Trash2 className="w-4 h-4" /></button>
+              <button onClick={() => stopRecording(false)} className="btn-primary text-sm px-3 py-1.5"><Square className="w-3.5 h-3.5" /> Send</button>
+            </div>
+          ) : (
+            <div className="flex gap-2 items-center">
+              <input ref={fileInputRef} type="file" className="hidden" onChange={handleFile} />
+              <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-2 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground" title="Attach file">
+                <Paperclip className="w-4 h-4" />
+              </button>
+              <button onClick={startRecording} disabled={uploading} className="p-2 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground" title="Voice message">
+                <Mic className="w-4 h-4" />
+              </button>
+              <input value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+                className="input-nawi flex-1" placeholder={uploading ? 'Uploading…' : `Message ${getActiveName()}...`} disabled={uploading} />
+              <button onClick={sendMessage} disabled={uploading || !message.trim()} className="btn-primary px-3"><Send className="w-4 h-4" /></button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* New Group Modal */}
       {showNewGroup && (
         <div className="fixed inset-0 bg-foreground/50 z-50 flex items-center justify-center p-4" onClick={() => setShowNewGroup(false)}>
           <div className="bg-card rounded-xl shadow-elevated w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
@@ -343,7 +446,6 @@ export default function TeamChat() {
         </div>
       )}
 
-      {/* New DM Modal */}
       {showNewDM && (
         <div className="fixed inset-0 bg-foreground/50 z-50 flex items-center justify-center p-4" onClick={() => setShowNewDM(false)}>
           <div className="bg-card rounded-xl shadow-elevated w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
