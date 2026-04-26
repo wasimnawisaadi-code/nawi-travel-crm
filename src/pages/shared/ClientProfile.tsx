@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Edit, FileText, Trash2, Plus, Save, X, Upload, Download, Clock, Users } from 'lucide-react';
+import { ArrowLeft, Edit, FileText, Trash2, Plus, Save, X, Upload, Download, Clock, Users, MessageCircle } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/integrations/supabase/client';
 import { formatCurrency, formatDate, daysUntil, getDateStatus, generateDisplayId, auditLog } from '@/lib/supabase-service';
 import StatusBadge from '@/components/ui/StatusBadge';
+import PasswordConfirmDialog from '@/components/PasswordConfirmDialog';
+import WhatsAppTemplateModal from '@/components/WhatsAppTemplateModal';
 import jsPDF from 'jspdf';
 
 export default function ClientProfile() {
@@ -28,6 +30,8 @@ export default function ClientProfile() {
   const [payableAmount, setPayableAmount] = useState(0);
   const [quoNotes, setQuoNotes] = useState('');
   const [validUntil, setValidUntil] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showWhatsApp, setShowWhatsApp] = useState(false);
   const basePath = isAdmin ? '/admin' : '/employee';
 
   const load = async () => {
@@ -97,12 +101,16 @@ export default function ClientProfile() {
   };
 
   const handleDelete = async () => {
-    if (confirm('Are you sure you want to delete this client?')) {
-      await supabase.from('clients').delete().eq('id', client.id);
-      await auditLog('client_deleted', 'client', client.id, { name: client.name });
-      navigate(basePath + '/clients');
-    }
+    await supabase.from('client_services').delete().eq('client_id', client.id);
+    await supabase.from('quotations').delete().eq('client_id', client.id);
+    await supabase.from('tasks').delete().eq('client_id', client.id);
+    await supabase.from('clients').delete().eq('id', client.id);
+    await auditLog('client_deleted', 'client', client.id, { name: client.name });
+    navigate(basePath + '/clients');
   };
+
+  const buildFollowUpMessage = () =>
+    `Dear ${client.name},\n\nThis is a follow-up regarding your ${client.service || 'service'} enquiry with Nawi Saadi Travel & Tourism.\n\nPlease let us know if you need any updates or have additional questions.\n\nWarm regards,\nNawi Saadi Travel & Tourism`;
 
   const quotedPrice = lineItems.reduce((s, li) => s + (li.amount || 0), 0);
   const profit = quotedPrice - payableAmount;
@@ -188,10 +196,11 @@ export default function ClientProfile() {
             <select value={client.status} onChange={(e) => handleStatusUpdate(e.target.value)} className="input-nawi w-auto text-sm">
               <option value="New">New</option><option value="Processing">Processing</option><option value="Success">Success</option><option value="Failed">Failed</option>
             </select>
-            <button onClick={() => { setEditing(!editing); setForm(client); }} className="btn-outline"><Edit className="w-4 h-4" /> Edit</button>
+            <button onClick={() => navigate(`${basePath}/clients/new?edit=${client.id}`)} className="btn-outline"><Edit className="w-4 h-4" /> Edit</button>
+            <button onClick={() => setShowWhatsApp(true)} className="btn-outline" disabled={!client.mobile}><MessageCircle className="w-4 h-4" /> WhatsApp</button>
             <button onClick={() => setShowQuotation(true)} className="btn-secondary"><FileText className="w-4 h-4" /> Quotation</button>
             <button onClick={() => navigate(`${basePath}/clients/new?existingClient=${client.id}`)} className="btn-outline"><Plus className="w-4 h-4" /> New Service</button>
-            <button onClick={handleDelete} className="btn-danger"><Trash2 className="w-4 h-4" /></button>
+            <button onClick={() => setShowDeleteConfirm(true)} className="btn-danger"><Trash2 className="w-4 h-4" /></button>
           </div>
         </div>
       </div>
