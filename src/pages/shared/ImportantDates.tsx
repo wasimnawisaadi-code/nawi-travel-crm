@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { exportToExcel } from '@/lib/excel-export';
 import { Link } from 'react-router-dom';
 import { Calendar as CalendarIcon, AlertTriangle, Bell, Download, Search, MessageCircle, LayoutGrid, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatDate, daysUntil } from '@/lib/supabase-service';

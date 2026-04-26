@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { exportToExcel } from '@/lib/excel-export';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { formatCurrency, generateDisplayId, auditLog } from '@/lib/supabase-service';

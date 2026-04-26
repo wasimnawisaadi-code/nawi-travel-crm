@@ -4,13 +4,14 @@ import {
   LayoutDashboard, Users, Briefcase, Calendar, FileText,
   DollarSign, Shield, LogOut, Menu,
   Search, ChevronLeft, Clock, PlaneTakeoff, MessageCircle, CalendarDays, Bell, MapPin,
-  ClipboardList,
+  ClipboardList, Sparkles, Crown,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/integrations/supabase/client';
 import logo from '@/assets/logo.png';
 import AIChatbot from '@/components/AIChatbot';
 import CalculatorWidget from '@/components/CalculatorWidget';
+import { openAIChatbot } from '@/lib/ai-chatbot-bus';
 
 const adminLinks = [
   { to: '/admin/dashboard', label: 'Dashboard & Reports', icon: LayoutDashboard },
@@ -41,7 +42,7 @@ const employeeLinks = [
 export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, profile, isAdmin, loading, signOut } = useAuth();
+  const { user, profile, isAdmin, isSuperAdmin, loading, signOut } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -89,7 +90,10 @@ export default function AppLayout() {
   if (loading) return <div className="flex h-screen items-center justify-center"><div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
   if (!user || !profile) return null;
 
-  const links = isAdmin ? adminLinks : employeeLinks;
+  const baseLinks = isAdmin ? adminLinks : employeeLinks;
+  const links = isSuperAdmin
+    ? [...baseLinks, { to: '/admin/admins', label: 'Admin Management', icon: Crown }]
+    : baseLinks;
 
   const handleSearch = async (q: string) => {
     setSearchQuery(q);
@@ -162,7 +166,7 @@ export default function AppLayout() {
             {!collapsed && (
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-sidebar-foreground truncate">{profile.name}</p>
-                <p className="text-xs text-sidebar-muted capitalize">{isAdmin ? 'admin' : 'employee'}</p>
+                <p className="text-xs text-sidebar-muted capitalize">{isSuperAdmin ? 'super admin' : isAdmin ? 'admin' : 'employee'}</p>
               </div>
             )}
             {!collapsed && (
@@ -210,6 +214,12 @@ export default function AppLayout() {
               <span className="absolute -top-0.5 -right-0.5 bg-destructive text-destructive-foreground text-[10px] w-4 h-4 rounded-full flex items-center justify-center">{unreadNotifications > 9 ? '9+' : unreadNotifications}</span>
             )}
           </Link>
+          <Link to={`/${isAdmin ? 'admin' : 'employee'}/calendar`} className="p-2 hover:bg-muted rounded-lg transition-colors" title="Calendar">
+            <Calendar className="w-5 h-5 text-muted-foreground" />
+          </Link>
+          <button onClick={openAIChatbot} className="p-2 hover:bg-muted rounded-lg transition-colors" title="AI Assistant" aria-label="AI Assistant">
+            <Sparkles className="w-5 h-5 text-muted-foreground" />
+          </button>
           <span className="text-xs text-muted-foreground hidden md:block">{today}</span>
         </header>
 
@@ -219,7 +229,7 @@ export default function AppLayout() {
       </div>
 
       <CalculatorWidget />
-      <AIChatbot />
+      <AIChatbot hideFloatingButton />
     </div>
   );
 }

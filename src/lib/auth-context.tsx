@@ -21,15 +21,18 @@ interface Profile {
   assigned_zone_id: string | null;
 }
 
+export type AppRole = 'superadmin' | 'admin' | 'employee';
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
-  role: 'admin' | 'employee' | null;
+  role: AppRole | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
-  isAdmin: boolean;
+  isAdmin: boolean;       // true for admin OR superadmin
+  isSuperAdmin: boolean;  // true only for superadmin
   isInZone: boolean | null;
 }
 
@@ -39,7 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [role, setRole] = useState<'admin' | 'employee' | null>(null);
+  const [role, setRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [isInZone, setIsInZone] = useState<boolean | null>(null);
   const watchIdRef = useRef<number | null>(null);
@@ -53,17 +56,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     if (profileData) setProfile(profileData as unknown as Profile);
 
-    const { data: roleData } = await supabase
+    // A user may have multiple roles; pick the highest-privilege one.
+    const { data: rolesData } = await supabase
       .from('user_roles')
       .select('role')
-      .eq('user_id', userId)
-      .single();
-    
-    const userRole = (roleData?.role as 'admin' | 'employee') || 'employee';
+      .eq('user_id', userId);
+
+    const roleSet = new Set((rolesData || []).map((r: any) => r.role as string));
+    const userRole: AppRole = roleSet.has('superadmin')
+      ? 'superadmin'
+      : roleSet.has('admin')
+        ? 'admin'
+        : 'employee';
     setRole(userRole);
 
-    // Start geofence watching for non-admin employees with assigned zones
-    if (userRole !== 'admin' && profileData?.assigned_zone_id) {
+    // Start geofence watching only for plain employees with assigned zones
+    if (userRole === 'employee' && profileData?.assigned_zone_id) {
       startZoneWatching(profileData.assigned_zone_id as string, profileData.profile_type as string);
     } else {
       setIsInZone(true); // No restriction
@@ -202,7 +210,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider value={{
       user, session, profile, role, loading,
       signIn, signOut,
-      isAdmin: role === 'admin',
+      isAdmin: role === 'admin' || role === 'superadmin',
+      isSuperAdmin: role === 'superadmin',
       isInZone,
     }}>
       {children}

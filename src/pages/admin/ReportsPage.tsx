@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { exportToExcel } from '@/lib/excel-export';
 import { supabase } from '@/integrations/supabase/client';
 import { formatCurrency, formatDate } from '@/lib/supabase-service';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';

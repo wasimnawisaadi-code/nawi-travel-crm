@@ -30,6 +30,16 @@ export default function EmployeeProfile() {
         profile = res.data;
       }
       if (!profile) return;
+
+      // Block admins/superadmins from showing in the employee profile area
+      const { data: roleRows } = await supabase.from('user_roles').select('role').eq('user_id', profile.user_id);
+      const roles = new Set((roleRows || []).map((r: any) => r.role));
+      if (roles.has('admin') || roles.has('superadmin')) {
+        toast.error('Admin accounts are managed in Admin Management.');
+        navigate('/admin/employees');
+        return;
+      }
+
       setEmp(profile);
       setForm(profile);
 
@@ -181,14 +191,6 @@ export default function EmployeeProfile() {
                 )}
               </div>
             ))}
-          </div>
-          <div className="mt-4 pt-4 border-t border-border">
-            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><MapPin className="w-4 h-4" /> Location Zone</h3>
-            <p className="text-sm text-muted-foreground">
-              {emp.assigned_zone_id
-                ? 'Employee has a location zone assigned. Manage zones in Geofence Management.'
-                : 'No location restriction — employee can login from anywhere (WFH mode).'}
-            </p>
           </div>
         </div>
       )}

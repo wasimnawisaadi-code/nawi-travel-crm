@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { exportToExcel } from '@/lib/excel-export';
 import { Download, Clock, Users, AlertTriangle, Plus, Calendar, Eye } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { formatDate, generateDisplayId, auditLog } from '@/lib/supabase-service';

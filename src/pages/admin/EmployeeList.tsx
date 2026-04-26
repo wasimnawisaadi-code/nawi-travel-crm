@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Trash2, Eye, Users, Camera, Shield, MapPin } from 'lucide-react';
+import { Plus, Search, Trash2, Eye, Users, Camera, Shield } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { auditLog } from '@/lib/supabase-service';
@@ -14,26 +14,23 @@ export default function EmployeeList() {
   const { user } = useAuth();
   const [employees, setEmployees] = useState<any[]>([]);
   const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState('all');
   const [pwdAction, setPwdAction] = useState<{ type: 'delete'; emp: any } | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [form, setForm] = useState({
     name: '', mobile: '', email: '', password: '',
     passportNo: '', emiratesId: '', photo: '',
-    profileType: 'office' as 'office' | 'sales',
   });
 
   const load = async () => {
-    // Exclude admin users from the employee list
+    // Exclude admin AND superadmin users from the employee list
     const { data: roles } = await supabase.from('user_roles').select('user_id, role');
-    const adminIds = new Set((roles || []).filter((r: any) => r.role === 'admin').map((r: any) => r.user_id));
+    const adminIds = new Set((roles || []).filter((r: any) => r.role === 'admin' || r.role === 'superadmin').map((r: any) => r.user_id));
     const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
     setEmployees((data || []).filter((p: any) => !adminIds.has(p.user_id)));
   };
   useEffect(() => { load(); }, []);
 
   const filtered = employees.filter((e: any) => {
-    if (roleFilter !== 'all' && (e.profile_type || 'office') !== roleFilter) return false;
     if (search && !e.name.toLowerCase().includes(search.toLowerCase()) && !e.email.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
@@ -98,15 +95,14 @@ export default function EmployeeList() {
       passport_no: form.passportNo || null,
       emirates_id: form.emiratesId || null,
       photo_url: form.photo || null,
-      profile_type: form.profileType as any,
     }).eq('user_id', authData.user.id);
 
     // Assign employee role
     await supabase.from('user_roles').insert([{ user_id: authData.user.id, role: 'employee' as any }]);
 
-    await auditLog('employee_created', 'employee', authData.user.id, { name: form.name, profileType: form.profileType });
+    await auditLog('employee_created', 'employee', authData.user.id, { name: form.name });
     setShowCreateForm(false);
-    setForm({ name: '', mobile: '', email: '', password: '', passportNo: '', emiratesId: '', photo: '', profileType: 'office' });
+    setForm({ name: '', mobile: '', email: '', password: '', passportNo: '', emiratesId: '', photo: '' });
     load();
   };
 
@@ -134,11 +130,6 @@ export default function EmployeeList() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input value={search} onChange={(e) => setSearch(e.target.value)} className="input-nawi pl-9" placeholder="Search employees..." />
           </div>
-          <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="input-nawi w-auto">
-            <option value="all">All Types</option>
-            <option value="office">Office</option>
-            <option value="sales">Sales</option>
-          </select>
         </div>
         <button onClick={() => setShowCreateForm(true)} className="btn-primary"><Plus className="w-4 h-4" /> Add Employee</button>
       </div>
@@ -149,7 +140,6 @@ export default function EmployeeList() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((e: any) => {
             const clientCount = clientCounts[e.user_id] || 0;
-            const isSales = e.profile_type === 'sales';
             return (
               <div key={e.id} className="card-nawi-hover cursor-pointer" onClick={() => navigate(`/admin/employees/${e.user_id}`)}>
                 <div className="flex items-start gap-3">
@@ -162,11 +152,7 @@ export default function EmployeeList() {
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-foreground truncate">{e.name}</p>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <p className="text-xs text-muted-foreground font-mono">{e.user_id?.slice(0, 8)}</p>
-                      {isSales && <span className="text-xs bg-warning/10 text-warning px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><MapPin className="w-3 h-3" />Sales</span>}
-                      {!isSales && <span className="text-xs bg-secondary/10 text-secondary px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><MapPin className="w-3 h-3" />Office</span>}
-                    </div>
+                    <p className="text-xs text-muted-foreground font-mono mt-0.5">{e.user_id?.slice(0, 8)}</p>
                     <p className="text-xs text-muted-foreground mt-1">{e.email}</p>
                     <p className="text-xs text-muted-foreground">{e.mobile}</p>
                     <div className="flex items-center justify-between mt-2">
@@ -204,22 +190,6 @@ export default function EmployeeList() {
                   </div>
                   <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
                 </label>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">Employee Type</label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button type="button" onClick={() => setForm({ ...form, profileType: 'office' })}
-                    className={`p-3 rounded-xl border-2 text-center transition-all ${form.profileType === 'office' ? 'border-primary bg-primary/5' : 'border-border'}`}>
-                    <MapPin className="w-5 h-5 mx-auto mb-1" /><span className="text-sm font-medium">Office</span>
-                    <p className="text-xs text-muted-foreground mt-0.5">Location-based login</p>
-                  </button>
-                  <button type="button" onClick={() => setForm({ ...form, profileType: 'sales' })}
-                    className={`p-3 rounded-xl border-2 text-center transition-all ${form.profileType === 'sales' ? 'border-primary bg-primary/5' : 'border-border'}`}>
-                    <MapPin className="w-5 h-5 mx-auto mb-1" /><span className="text-sm font-medium">Sales</span>
-                    <p className="text-xs text-muted-foreground mt-0.5">Zone-based login</p>
-                  </button>
-                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { exportToExcel } from '@/lib/excel-export';
 import { Link } from 'react-router-dom';
 import { Users, TrendingUp, CheckSquare, UserCheck, AlertTriangle, ArrowUpRight, ArrowDownRight, DollarSign, Briefcase, Download, Calendar, Clock, Target } from 'lucide-react';
 import { formatCurrency, formatDate, daysUntil } from '@/lib/supabase-service';
