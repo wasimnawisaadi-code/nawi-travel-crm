@@ -4,7 +4,7 @@ import { Plus, Search, Trash2, Eye, Users, Camera, Shield, MapPin } from 'lucide
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { auditLog } from '@/lib/supabase-service';
-import StatusBadge from '@/components/ui/StatusBadge';
+
 import EmptyState from '@/components/ui/EmptyState';
 import PasswordConfirmDialog from '@/components/PasswordConfirmDialog';
 import { toast } from 'sonner';
@@ -161,10 +161,7 @@ export default function EmployeeList() {
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <p className="font-semibold text-foreground truncate">{e.name}</p>
-                      <StatusBadge status={e.status} />
-                    </div>
+                    <p className="font-semibold text-foreground truncate">{e.name}</p>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <p className="text-xs text-muted-foreground font-mono">{e.user_id?.slice(0, 8)}</p>
                       {isSales && <span className="text-xs bg-warning/10 text-warning px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><MapPin className="w-3 h-3" />Sales</span>}
