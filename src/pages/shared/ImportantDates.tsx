@@ -276,6 +276,13 @@ export default function ImportantDates() {
         </div>
       </div>
 
+      <div className="card-nawi bg-primary/5 border-primary/20 py-2.5 px-3 flex items-start gap-2 text-xs">
+        <Bell className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+        <p className="text-muted-foreground">
+          <strong className="text-primary">Auto reminders:</strong> Each date has a 🔔 Auto / 🔕 Off toggle. When ON, the system auto-sends a WhatsApp reminder 3 days and 1 day before. Tap to silence individual dates.
+        </p>
+      </div>
+
       <div className="flex flex-wrap gap-2">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
