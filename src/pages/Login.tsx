@@ -34,22 +34,24 @@ export default function Login() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setError('Login failed'); setLoading(false); return; }
 
-    // Get role & profile
-    const [{ data: roleData }, { data: profileData }] = await Promise.all([
-      supabase.from('user_roles').select('role').eq('user_id', user.id).single(),
+    // Get role(s) & profile — pick highest privilege
+    const [{ data: rolesData }, { data: profileData }] = await Promise.all([
+      supabase.from('user_roles').select('role').eq('user_id', user.id),
       supabase.from('profiles').select('profile_type, assigned_zone_id').eq('user_id', user.id).single(),
     ]);
 
-    const role = roleData?.role || 'employee';
+    const roleSet = new Set((rolesData || []).map((r: any) => r.role as string));
+    const role = roleSet.has('superadmin') ? 'superadmin' : roleSet.has('admin') ? 'admin' : 'employee';
+    const isAdminLike = role === 'admin' || role === 'superadmin';
     const profileType = profileData?.profile_type || 'office';
     const assignedZoneId = profileData?.assigned_zone_id;
 
-    // Geofence check — only for employees with assigned zones
+    // Geofence check — only for plain employees with assigned zones
     let loginLat: number | null = null;
     let loginLng: number | null = null;
     let locationStatusText = 'no_zone';
 
-    if (role !== 'admin' && assignedZoneId) {
+    if (!isAdminLike && assignedZoneId) {
       setLocationStatus('Checking your location...');
       try {
         const pos = await getCurrentPosition();
@@ -92,9 +94,9 @@ export default function Login() {
     setLocationStatus('Recording attendance...');
     // Record attendance with location
     await recordLoginAttendanceWithLocation(user.id, loginLat, loginLng, locationStatusText);
-    await generateDailyNotifications(user.id, role === 'admin');
+    await generateDailyNotifications(user.id, isAdminLike);
 
-    navigate(role === 'admin' ? '/admin/dashboard' : '/employee/dashboard');
+    navigate(isAdminLike ? '/admin/dashboard' : '/employee/dashboard');
     setLoading(false);
   };
 
