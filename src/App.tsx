@@ -27,6 +27,7 @@ import TeamChat from "./pages/shared/TeamChat";
 import ImportantDates from "./pages/shared/ImportantDates";
 import NotificationsPage from "./pages/shared/NotificationsPage";
 import DailyStatusReport from "./pages/shared/DailyStatusReport";
+import DSRTemplateAssignment from "./pages/admin/DSRTemplateAssignment";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -63,6 +64,7 @@ const App = () => (
               <Route path="/admin/notifications" element={<NotificationsPage />} />
               <Route path="/admin/settings" element={<SettingsPage />} />
               <Route path="/admin/dsr" element={<DailyStatusReport />} />
+              <Route path="/admin/dsr-assignments" element={<DSRTemplateAssignment />} />
 
               {/* Employee Routes */}
               <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
