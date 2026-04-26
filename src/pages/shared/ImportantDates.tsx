@@ -155,13 +155,7 @@ export default function ImportantDates() {
       DateName: d.label, Category: d.category, Date: formatDate(d.date),
       DaysLeft: d.days, Status: d.status, Service: d.service || '', Nationality: d.nationality || '',
     }));
-    const headers = Object.keys(rows[0]);
-    const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${(r as any)[h] || ''}"`).join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `important_dates_${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
+    exportToExcel(rows, `important_dates_${new Date().toISOString().slice(0, 10)}`, 'ImportantDates');
   };
 
   const openReminder = (row: DateRow) => {

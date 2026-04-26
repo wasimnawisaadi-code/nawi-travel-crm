@@ -34,14 +34,7 @@ export default function ReportsPage() {
   }, []);
 
   const exportCSV = (data: any[], filename: string) => {
-    if (data.length === 0) return;
-    const headers = Object.keys(data[0]);
-    const csv = [headers.join(','), ...data.map(r => headers.map(h => `"${r[h] || ''}"`).join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    link.click();
+    exportToExcel(data, filename.replace(/\.csv$/, ''), 'Sheet1');
   };
 
   const serviceCounts: Record<string, number> = {};

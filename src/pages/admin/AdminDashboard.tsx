@@ -146,14 +146,7 @@ export default function AdminDashboard() {
   const clientChange = data.clientsLastMonth > 0 ? Math.round(((data.clientsThisMonth - data.clientsLastMonth) / data.clientsLastMonth) * 100) : 0;
 
   const exportCSV = (rows: any[], filename: string) => {
-    if (rows.length === 0) return;
-    const headers = Object.keys(rows[0]);
-    const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${r[h] || ''}"`).join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    link.click();
+    exportToExcel(rows, filename.replace(/\.csv$/, ''), 'Sheet1');
   };
 
   const tabs = ['dashboard', 'reports', 'clients', 'employees', 'services', 'revenue'];

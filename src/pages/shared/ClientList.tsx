@@ -56,14 +56,7 @@ export default function ClientList({ adminView = false }: { adminView?: boolean 
 
   const exportCSV = () => {
     const rows = filtered.map(c => ({ ID: c.display_id, Name: c.name, Mobile: c.mobile, Service: c.service, Status: c.status, LeadSource: c.lead_source, Revenue: c.revenue || 0, Profit: c.profit || 0, Created: formatDate(c.created_at) }));
-    if (rows.length === 0) return;
-    const headers = Object.keys(rows[0]);
-    const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${(r as any)[h] || ''}"`).join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'clients_export.csv';
-    link.click();
+    exportToExcel(rows, 'clients_export', 'Clients');
   };
 
   return (

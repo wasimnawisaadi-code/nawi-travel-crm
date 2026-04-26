@@ -54,22 +54,18 @@ export default function DailyStatusReport() {
   });
 
   const exportCSV = () => {
-    const headers = ['Employee', 'Status', 'Login', 'Logout', 'Hours', 'Clients Added', 'Tasks Done', 'In Progress', 'Work Summary'];
-    const data = rows.map(r => [
-      r.emp.name || '—',
-      r.leave ? `Leave (${r.leave.leave_type})` : (r.att?.status || 'No record'),
-      r.att?.login_time ? new Date(r.att.login_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—',
-      r.att?.logout_time ? new Date(r.att.logout_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—',
-      r.att?.hours_worked || 0,
-      r.newClients, r.completed, r.inProgress,
-      `"${(r.summary || '').replace(/"/g, '""')}"`,
-    ]);
-    const csv = [headers.join(','), ...data.map(r => r.join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `dsr_${date}.csv`;
-    link.click();
+    const data = rows.map(r => ({
+      Employee: r.emp.name || '—',
+      Status: r.leave ? `Leave (${r.leave.leave_type})` : (r.att?.status || 'No record'),
+      Login: r.att?.login_time ? new Date(r.att.login_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—',
+      Logout: r.att?.logout_time ? new Date(r.att.logout_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—',
+      Hours: r.att?.hours_worked || 0,
+      'Clients Added': r.newClients,
+      'Tasks Done': r.completed,
+      'In Progress': r.inProgress,
+      'Work Summary': r.summary || '',
+    }));
+    exportToExcel(data, `dsr_${date}`, 'DSR');
   };
 
   const totals = {
@@ -88,7 +84,7 @@ export default function DailyStatusReport() {
           <h2 className="text-lg font-bold font-display">Daily Status Report</h2>
           <input type="date" value={date} onChange={e => setDate(e.target.value)} className="input-nawi w-auto text-sm" />
         </div>
-        <button onClick={exportCSV} className="btn-outline text-sm"><Download className="w-4 h-4" /> Export CSV</button>
+        <button onClick={exportCSV} className="btn-outline text-sm"><Download className="w-4 h-4" /> Export Excel</button>
       </div>
 
       {isAdmin && (
