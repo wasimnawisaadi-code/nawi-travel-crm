@@ -91,15 +91,29 @@ export default function ReportsPage() {
 
   const tabs = ['overview', 'clients', 'services', 'employees', 'revenue'];
 
+  // Date-range filter for clients
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const filteredClients = clients.filter((c: any) => {
+    if (!c.created_at) return true;
+    const d = c.created_at.slice(0, 10);
+    if (dateFrom && d < dateFrom) return false;
+    if (dateTo && d > dateTo) return false;
+    return true;
+  });
+
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-xl font-bold font-display">Reports & Analytics</h2>
-        <div className="flex items-center gap-3">
-          <select value={viewType} onChange={(e) => setViewType(e.target.value as any)} className="input-nawi w-auto">
+        <div className="flex items-center gap-2 flex-wrap">
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="input-nawi w-auto text-sm" placeholder="From" />
+          <span className="text-xs text-muted-foreground">→</span>
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="input-nawi w-auto text-sm" placeholder="To" />
+          <select value={viewType} onChange={(e) => setViewType(e.target.value as any)} className="input-nawi w-auto text-sm">
             <option value="monthly">Monthly</option><option value="weekly">Weekly</option><option value="annual">Annual</option>
           </select>
-          <input type="month" value={yearMonth} onChange={(e) => setYearMonth(e.target.value)} className="input-nawi w-auto" />
+          <input type="month" value={yearMonth} onChange={(e) => setYearMonth(e.target.value)} className="input-nawi w-auto text-sm" />
         </div>
       </div>
 
@@ -135,10 +149,13 @@ export default function ReportsPage() {
 
       {tab === 'clients' && (
         <div className="card-nawi">
-          <div className="flex justify-end mb-3"><button onClick={() => exportCSV(clients.map((c: any) => ({ ID: c.display_id, Name: c.name, Service: c.service, Status: c.status, Revenue: c.revenue, Profit: c.profit, LeadSource: c.lead_source, Created: formatDate(c.created_at) })), 'clients_report.csv')} className="btn-outline text-sm"><Download className="w-4 h-4" /> Export</button></div>
+          <div className="flex justify-between items-center mb-3">
+            <p className="text-xs text-muted-foreground">{filteredClients.length} of {clients.length} clients{(dateFrom || dateTo) && ' (filtered)'}</p>
+            <button onClick={() => exportCSV(filteredClients.map((c: any) => ({ ID: c.display_id, Name: c.name, Service: c.service, Status: c.status, Revenue: c.revenue, Profit: c.profit, LeadSource: c.lead_source, Created: formatDate(c.created_at) })), 'clients_report.csv')} className="btn-outline text-sm"><Download className="w-4 h-4" /> Export</button>
+          </div>
           <div className="overflow-x-auto">
             <table className="table-nawi w-full"><thead><tr><th>ID</th><th>Name</th><th>Service</th><th>Status</th><th>Lead Source</th><th>Revenue</th><th>Profit</th><th>Created</th></tr></thead>
-              <tbody>{clients.map((c: any) => <tr key={c.id}><td className="font-mono text-xs">{c.display_id}</td><td>{c.name}</td><td>{c.service}</td><td>{c.status}</td><td>{c.lead_source}</td><td>{formatCurrency(c.revenue || 0)}</td><td className="text-success">{formatCurrency(c.profit || 0)}</td><td>{formatDate(c.created_at)}</td></tr>)}</tbody>
+              <tbody>{filteredClients.map((c: any) => <tr key={c.id}><td className="font-mono text-xs">{c.display_id}</td><td>{c.name}</td><td>{c.service}</td><td>{c.status}</td><td>{c.lead_source}</td><td>{formatCurrency(c.revenue || 0)}</td><td className="text-success">{formatCurrency(c.profit || 0)}</td><td>{formatDate(c.created_at)}</td></tr>)}</tbody>
             </table>
           </div>
         </div>
