@@ -146,6 +146,8 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
           </div>
         </div>
       )}
+
+      {!isEmployee && pending.length > 0 && (
         <div className="card-nawi border-warning/30">
           <h3 className="font-semibold font-display mb-3 text-warning">Pending Requests ({pending.length})</h3>
           <div className="space-y-3">
