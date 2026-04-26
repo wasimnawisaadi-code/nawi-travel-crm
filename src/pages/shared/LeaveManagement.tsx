@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react';
-import { Check, X, Upload, FileText, Calendar, Download } from 'lucide-react';
+import { Check, X, Upload, FileText, Calendar, Download, Wallet } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { formatDate, auditLog, calculateWorkingDays, generateDisplayId } from '@/lib/supabase-service';
 import StatusBadge from '@/components/ui/StatusBadge';
+import PasswordConfirmDialog from '@/components/PasswordConfirmDialog';
+import { toast } from 'sonner';
 
 const LEAVE_TYPES = ['Annual', 'Sick', 'Maternity', 'Paternity', 'Hajj', 'Bereavement', 'Emergency', 'Unpaid', 'Other'];
+// Leave types that deduct from the annual leave balance
+const BALANCE_DEDUCTING = ['Annual'];
 
 export default function LeaveManagement({ isEmployee = false }: { isEmployee?: boolean }) {
   const { user, profile } = useAuth();
@@ -16,6 +20,7 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
   const [employeeFilter, setEmployeeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [employees, setEmployees] = useState<any[]>([]);
+  const [pwdAction, setPwdAction] = useState<{ type: 'approve' | 'reject'; row: any } | null>(null);
 
   const load = async () => {
     if (!user) return;
@@ -42,14 +47,23 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
   const pending = displayed.filter((l: any) => l.status === 'Pending');
   const history = monthFiltered.filter((l: any) => l.status !== 'Pending');
 
-  const handleApprove = async (id: string) => {
-    await supabase.from('leave_requests').update({ status: 'Approved' as any, reviewed_by: profile?.name || '', reviewed_at: new Date().toISOString() }).eq('id', id);
-    await auditLog('leave_approved', 'leave', id, {});
+  const handleApprove = async (row: any) => {
+    await supabase.from('leave_requests').update({ status: 'Approved' as any, reviewed_by: profile?.name || '', reviewed_at: new Date().toISOString() }).eq('id', row.id);
+    // Deduct from leave_balance for balance-deducting types
+    if (BALANCE_DEDUCTING.includes(row.leave_type)) {
+      const { data: emp } = await supabase.from('profiles').select('leave_balance').eq('user_id', row.employee_id).maybeSingle();
+      const current = emp?.leave_balance ?? 30;
+      const next = Math.max(0, current - (row.days || 0));
+      await supabase.from('profiles').update({ leave_balance: next }).eq('user_id', row.employee_id);
+    }
+    await auditLog('leave_approved', 'leave', row.id, { type: row.leave_type, days: row.days });
+    toast.success(`Leave approved for ${row.employee_name}`);
     load();
   };
-  const handleReject = async (id: string) => {
-    await supabase.from('leave_requests').update({ status: 'Rejected' as any, reviewed_by: profile?.name || '', reviewed_at: new Date().toISOString() }).eq('id', id);
-    await auditLog('leave_rejected', 'leave', id, {});
+  const handleReject = async (row: any) => {
+    await supabase.from('leave_requests').update({ status: 'Rejected' as any, reviewed_by: profile?.name || '', reviewed_at: new Date().toISOString() }).eq('id', row.id);
+    await auditLog('leave_rejected', 'leave', row.id, {});
+    toast.success(`Leave rejected for ${row.employee_name}`);
     load();
   };
 
@@ -119,6 +133,20 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
         </div>
       </div>
 
+      {isEmployee && (
+        <div className="card-nawi flex items-center gap-4">
+          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center"><Wallet className="w-6 h-6 text-primary" /></div>
+          <div className="flex-1">
+            <p className="text-xs text-muted-foreground">Annual Leave Balance</p>
+            <p className="text-2xl font-bold font-display">{profile?.leave_balance ?? 30} <span className="text-sm font-normal text-muted-foreground">days remaining</span></p>
+          </div>
+          <div className="text-right text-xs text-muted-foreground">
+            <p>Used: {leave.filter(l => l.status === 'Approved' && l.leave_type === 'Annual').reduce((s, l) => s + (l.days || 0), 0)}</p>
+            <p>Pending: {leave.filter(l => l.status === 'Pending' && l.leave_type === 'Annual').reduce((s, l) => s + (l.days || 0), 0)}</p>
+          </div>
+        </div>
+      )}
+
       {!isEmployee && pending.length > 0 && (
         <div className="card-nawi border-warning/30">
           <h3 className="font-semibold font-display mb-3 text-warning">Pending Requests ({pending.length})</h3>
@@ -144,8 +172,8 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
                   )}
                 </div>
                 <div className="flex gap-2 flex-shrink-0">
-                  <button onClick={() => handleApprove(l.id)} className="btn-success p-2"><Check className="w-4 h-4" /></button>
-                  <button onClick={() => handleReject(l.id)} className="btn-danger p-2"><X className="w-4 h-4" /></button>
+                  <button onClick={() => setPwdAction({ type: 'approve', row: l })} className="btn-success p-2" title="Approve"><Check className="w-4 h-4" /></button>
+                  <button onClick={() => setPwdAction({ type: 'reject', row: l })} className="btn-danger p-2" title="Reject"><X className="w-4 h-4" /></button>
                 </div>
               </div>
               );
@@ -241,6 +269,20 @@ export default function LeaveManagement({ isEmployee = false }: { isEmployee?: b
           </div>
         </div>
       )}
+
+      <PasswordConfirmDialog
+        open={!!pwdAction}
+        onClose={() => setPwdAction(null)}
+        title={pwdAction?.type === 'approve' ? 'Approve Leave Request' : 'Reject Leave Request'}
+        description={pwdAction?.row ? `${pwdAction.type === 'approve' ? 'Approve' : 'Reject'} ${pwdAction.row.days}-day ${pwdAction.row.leave_type} leave for ${pwdAction.row.employee_name}? Re-enter your password.` : ''}
+        destructive={pwdAction?.type === 'reject'}
+        onConfirm={async () => {
+          if (!pwdAction?.row) return;
+          if (pwdAction.type === 'approve') await handleApprove(pwdAction.row);
+          else await handleReject(pwdAction.row);
+          setPwdAction(null);
+        }}
+      />
     </div>
   );
 }

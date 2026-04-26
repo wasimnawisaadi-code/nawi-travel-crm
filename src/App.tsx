@@ -15,6 +15,7 @@ import PayrollManagement from "./pages/admin/PayrollManagement";
 import AuditLog from "./pages/admin/AuditLog";
 import GeofenceManagement from "./pages/admin/GeofenceManagement";
 import ReportsPage from "./pages/admin/ReportsPage";
+import SettingsPage from "./pages/admin/SettingsPage";
 import EmployeeDashboard from "./pages/employee/EmployeeDashboard";
 import AttendancePage from "./pages/employee/AttendancePage";
 import ClientList from "./pages/shared/ClientList";
@@ -24,6 +25,8 @@ import OperationsCalendar from "./pages/shared/OperationsCalendar";
 import LeaveManagement from "./pages/shared/LeaveManagement";
 import TeamChat from "./pages/shared/TeamChat";
 import ImportantDates from "./pages/shared/ImportantDates";
+import NotificationsPage from "./pages/shared/NotificationsPage";
+import DailyStatusReport from "./pages/shared/DailyStatusReport";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -57,6 +60,9 @@ const App = () => (
               <Route path="/admin/geofence" element={<GeofenceManagement />} />
               <Route path="/admin/important-dates" element={<ImportantDates />} />
               <Route path="/admin/chat" element={<TeamChat />} />
+              <Route path="/admin/notifications" element={<NotificationsPage />} />
+              <Route path="/admin/settings" element={<SettingsPage />} />
+              <Route path="/admin/dsr" element={<DailyStatusReport />} />
 
               {/* Employee Routes */}
               <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
@@ -68,6 +74,8 @@ const App = () => (
               <Route path="/employee/leave" element={<LeaveManagement isEmployee />} />
               <Route path="/employee/important-dates" element={<ImportantDates />} />
               <Route path="/employee/chat" element={<TeamChat />} />
+              <Route path="/employee/notifications" element={<NotificationsPage />} />
+              <Route path="/employee/dsr" element={<DailyStatusReport />} />
             </Route>
 
             <Route path="*" element={<NotFound />} />
