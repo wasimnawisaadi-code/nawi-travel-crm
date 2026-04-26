@@ -31,11 +31,10 @@ export default function EmployeeProfile() {
       }
       if (!profile) return;
 
-      // Block admins/superadmins from showing in the employee profile area
+      // Skip admin/superadmin accounts silently — they don't appear in employee list
       const { data: roleRows } = await supabase.from('user_roles').select('role').eq('user_id', profile.user_id);
       const roles = new Set((roleRows || []).map((r: any) => r.role));
       if (roles.has('admin') || roles.has('superadmin')) {
-        toast.error('Admin accounts are managed in Admin Management.');
         navigate('/admin/employees');
         return;
       }
@@ -61,8 +60,6 @@ export default function EmployeeProfile() {
   }, [id]);
 
   if (!emp) return <div className="skeleton-nawi h-64 w-full" />;
-
-  const isSales = emp.profile_type === 'sales';
 
   const handleSave = async () => {
     const updates: any = { name: form.name, email: form.email, mobile: form.mobile, passport_no: form.passport_no, emirates_id: form.emirates_id, base_salary: Number(form.base_salary) || 0 };
@@ -119,8 +116,6 @@ export default function EmployeeProfile() {
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-xl font-bold text-foreground font-display">{emp.name}</h1>
-            {isSales && <span className="text-xs bg-warning/10 text-warning px-2 py-0.5 rounded-full flex items-center gap-1"><MapPin className="w-3 h-3" />Sales</span>}
-            {!isSales && <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full flex items-center gap-1"><MapPin className="w-3 h-3" />Office</span>}
           </div>
           <div className="flex items-center gap-2 mt-1">
             <StatusBadge status={emp.status} />
