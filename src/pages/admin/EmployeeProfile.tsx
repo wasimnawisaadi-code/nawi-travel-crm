@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Edit, Save, X, Camera, MapPin } from 'lucide-react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Edit, Save, X, Camera, MapPin, Power, PowerOff, Trash2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { formatCurrency, formatDate } from '@/lib/supabase-service';
+import { formatCurrency, formatDate, auditLog } from '@/lib/supabase-service';
 import StatusBadge from '@/components/ui/StatusBadge';
+import PasswordConfirmDialog from '@/components/PasswordConfirmDialog';
+import { toast } from 'sonner';
 
 export default function EmployeeProfile() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [emp, setEmp] = useState<any>(null);
   const [tab, setTab] = useState('overview');
   const [editing, setEditing] = useState(false);
@@ -16,6 +19,7 @@ export default function EmployeeProfile() {
   const [attendance, setAttendance] = useState<any[]>([]);
   const [leave, setLeave] = useState<any[]>([]);
   const [goals, setGoals] = useState<any[]>([]);
+  const [pwdAction, setPwdAction] = useState<'save' | 'activate' | 'deactivate' | 'delete' | null>(null);
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -53,8 +57,38 @@ export default function EmployeeProfile() {
   const handleSave = async () => {
     const updates: any = { name: form.name, email: form.email, mobile: form.mobile, passport_no: form.passport_no, emirates_id: form.emirates_id, base_salary: Number(form.base_salary) || 0 };
     await supabase.from('profiles').update(updates).eq('id', emp.id);
+    await auditLog('employee_updated', 'employee', emp.user_id, updates);
     setEmp({ ...emp, ...updates });
     setEditing(false);
+    toast.success('Employee updated');
+  };
+
+  const runPwdAction = async () => {
+    if (!pwdAction || !emp) return;
+    if (pwdAction === 'save') return handleSave();
+    if (pwdAction === 'activate') {
+      await supabase.from('profiles').update({ status: 'active' }).eq('user_id', emp.user_id);
+      await auditLog('employee_activated', 'employee', emp.user_id, { name: emp.name });
+      setEmp({ ...emp, status: 'active' });
+      toast.success('Activated');
+    } else if (pwdAction === 'deactivate') {
+      await supabase.from('profiles').update({ status: 'inactive' }).eq('user_id', emp.user_id);
+      await auditLog('employee_deactivated', 'employee', emp.user_id, { name: emp.name });
+      setEmp({ ...emp, status: 'inactive' });
+      toast.success('Deactivated — login disabled');
+    } else if (pwdAction === 'delete') {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-delete-employee`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ user_id: emp.user_id }),
+      });
+      const json = await res.json();
+      if (!res.ok) { toast.error(json.error || 'Delete failed'); return; }
+      await auditLog('employee_deleted', 'employee', emp.user_id, { name: emp.name });
+      toast.success('Employee deleted permanently');
+      navigate('/admin/employees');
+    }
   };
 
   const tabs = ['overview', 'clients', 'tasks', 'attendance', 'leave', 'goals'];
@@ -73,7 +107,7 @@ export default function EmployeeProfile() {
           )}
         </div>
         <div className="flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-xl font-bold text-foreground font-display">{emp.name}</h1>
             {isSales && <span className="text-xs bg-warning/10 text-warning px-2 py-0.5 rounded-full flex items-center gap-1"><MapPin className="w-3 h-3" />Sales</span>}
             {!isSales && <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full flex items-center gap-1"><MapPin className="w-3 h-3" />Office</span>}
@@ -83,7 +117,39 @@ export default function EmployeeProfile() {
             <span className="text-xs text-muted-foreground">Joined {formatDate(emp.created_at)}</span>
           </div>
         </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {emp.status === 'active' ? (
+            <button onClick={() => setPwdAction('deactivate')} className="btn-outline text-warning border-warning/30 hover:bg-warning/10"><PowerOff className="w-4 h-4" /> Deactivate</button>
+          ) : (
+            <button onClick={() => setPwdAction('activate')} className="btn-outline text-success border-success/30 hover:bg-success/10"><Power className="w-4 h-4" /> Activate</button>
+          )}
+          <button onClick={() => setPwdAction('delete')} className="btn-danger"><Trash2 className="w-4 h-4" /> Delete</button>
+        </div>
       </div>
+
+      <PasswordConfirmDialog
+        open={!!pwdAction}
+        onClose={() => setPwdAction(null)}
+        onConfirm={runPwdAction}
+        title={
+          pwdAction === 'delete' ? `Delete ${emp.name}` :
+          pwdAction === 'activate' ? `Activate ${emp.name}` :
+          pwdAction === 'deactivate' ? `Deactivate ${emp.name}` :
+          'Confirm changes'
+        }
+        description={
+          pwdAction === 'delete' ? 'Permanently deletes this employee, their login, and unassigns all clients/tasks. Cannot be undone.' :
+          pwdAction === 'activate' ? 'Re-enable login for this employee.' :
+          pwdAction === 'deactivate' ? 'Disable login. The profile is kept for records.' :
+          'Save profile changes.'
+        }
+        actionLabel={
+          pwdAction === 'delete' ? 'Delete Permanently' :
+          pwdAction === 'activate' ? 'Activate' :
+          pwdAction === 'deactivate' ? 'Deactivate' : 'Save'
+        }
+        destructive={pwdAction !== 'activate' && pwdAction !== 'save'}
+      />
 
       <div className="flex gap-1 border-b border-border overflow-x-auto">
         {tabs.map(t => (

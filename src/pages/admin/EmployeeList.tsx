@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Trash2, Eye, Users, Camera, Shield, MapPin } from 'lucide-react';
+import { Plus, Search, Trash2, Eye, Users, Camera, Shield, MapPin, Power, PowerOff } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { auditLog } from '@/lib/supabase-service';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
+import PasswordConfirmDialog from '@/components/PasswordConfirmDialog';
+import { toast } from 'sonner';
 
 export default function EmployeeList() {
   const navigate = useNavigate();
@@ -14,8 +16,7 @@ export default function EmployeeList() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [roleFilter, setRoleFilter] = useState('all');
-  const [showDeleteModal, setShowDeleteModal] = useState<any>(null);
-  const [deleteConfirmName, setDeleteConfirmName] = useState('');
+  const [pwdAction, setPwdAction] = useState<{ type: 'deactivate' | 'activate' | 'delete'; emp: any } | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [form, setForm] = useState({
     name: '', mobile: '', email: '', password: '',
@@ -109,14 +110,32 @@ export default function EmployeeList() {
     load();
   };
 
-  const handleDelete = async () => {
-    if (!showDeleteModal || deleteConfirmName !== showDeleteModal.name) return;
-    await supabase.from('profiles').update({ status: 'inactive' }).eq('user_id', showDeleteModal.user_id);
-    // Unassign clients
-    await supabase.from('clients').update({ assigned_to: null }).eq('assigned_to', showDeleteModal.user_id);
-    await auditLog('employee_deleted', 'employee', showDeleteModal.user_id, { name: showDeleteModal.name });
-    setShowDeleteModal(null);
-    setDeleteConfirmName('');
+  const runPwdAction = async () => {
+    if (!pwdAction) return;
+    const { type, emp } = pwdAction;
+    if (type === 'activate') {
+      await supabase.from('profiles').update({ status: 'active' }).eq('user_id', emp.user_id);
+      await auditLog('employee_activated', 'employee', emp.user_id, { name: emp.name });
+      toast.success(`${emp.name} activated`);
+    } else if (type === 'deactivate') {
+      await supabase.from('profiles').update({ status: 'inactive' }).eq('user_id', emp.user_id);
+      await auditLog('employee_deactivated', 'employee', emp.user_id, { name: emp.name });
+      toast.success(`${emp.name} deactivated — login disabled`);
+    } else if (type === 'delete') {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-delete-employee`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ user_id: emp.user_id }),
+      });
+      const json = await res.json();
+      if (!res.ok) { toast.error(json.error || 'Delete failed'); return; }
+      await auditLog('employee_deleted', 'employee', emp.user_id, { name: emp.name });
+      toast.success(`${emp.name} permanently deleted`);
+    }
     load();
   };
 
@@ -174,8 +193,13 @@ export default function EmployeeList() {
                     <div className="flex items-center justify-between mt-2">
                       <span className="text-xs text-muted-foreground">{clientCount} clients</span>
                       <div className="flex items-center gap-1">
-                        <button onClick={(ev) => { ev.stopPropagation(); navigate(`/admin/employees/${e.user_id}`); }} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground"><Eye className="w-4 h-4" /></button>
-                        <button onClick={(ev) => { ev.stopPropagation(); setShowDeleteModal(e); setDeleteConfirmName(''); }} className="p-1.5 hover:bg-destructive/10 rounded-lg text-muted-foreground hover:text-destructive"><Trash2 className="w-4 h-4" /></button>
+                        <button title="View" onClick={(ev) => { ev.stopPropagation(); navigate(`/admin/employees/${e.user_id}`); }} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground"><Eye className="w-4 h-4" /></button>
+                        {e.status === 'active' ? (
+                          <button title="Deactivate (disable login)" onClick={(ev) => { ev.stopPropagation(); setPwdAction({ type: 'deactivate', emp: e }); }} className="p-1.5 hover:bg-warning/10 rounded-lg text-muted-foreground hover:text-warning"><PowerOff className="w-4 h-4" /></button>
+                        ) : (
+                          <button title="Activate" onClick={(ev) => { ev.stopPropagation(); setPwdAction({ type: 'activate', emp: e }); }} className="p-1.5 hover:bg-success/10 rounded-lg text-muted-foreground hover:text-success"><Power className="w-4 h-4" /></button>
+                        )}
+                        <button title="Delete permanently" onClick={(ev) => { ev.stopPropagation(); setPwdAction({ type: 'delete', emp: e }); }} className="p-1.5 hover:bg-destructive/10 rounded-lg text-muted-foreground hover:text-destructive"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </div>
                   </div>
@@ -250,26 +274,25 @@ export default function EmployeeList() {
         </div>
       )}
 
-      {/* Delete Modal */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 bg-foreground/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-card rounded-xl shadow-elevated w-full max-w-md p-6">
-            <h2 className="text-lg font-bold text-foreground font-display mb-2">Deactivate Employee</h2>
-            <p className="text-sm text-muted-foreground mb-3">This will permanently deactivate <strong>{showDeleteModal.name}</strong>'s account and unassign all their clients.</p>
-            <div className="bg-destructive/10 text-destructive text-sm px-4 py-2.5 rounded-lg mb-4">
-              <p>⚠️ This action cannot be undone.</p>
-              <p className="text-xs mt-1">{clientCounts[showDeleteModal.user_id] || 0} clients will be unassigned.</p>
-            </div>
-            <p className="text-sm text-foreground mb-2">Type the employee's full name to confirm:</p>
-            <div className="inline-block bg-primary text-primary-foreground text-sm px-3 py-1 rounded-full mb-3">{showDeleteModal.name}</div>
-            <input value={deleteConfirmName} onChange={(e) => setDeleteConfirmName(e.target.value)} className="input-nawi mb-4" placeholder="Type employee name..." />
-            <div className="flex justify-end gap-3">
-              <button onClick={() => { setShowDeleteModal(null); setDeleteConfirmName(''); }} className="btn-outline">Cancel</button>
-              <button onClick={handleDelete} disabled={deleteConfirmName !== showDeleteModal.name} className="btn-danger disabled:opacity-40">Confirm Deactivate</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <PasswordConfirmDialog
+        open={!!pwdAction}
+        onClose={() => setPwdAction(null)}
+        onConfirm={runPwdAction}
+        title={
+          pwdAction?.type === 'delete' ? `Delete ${pwdAction.emp.name}` :
+          pwdAction?.type === 'activate' ? `Activate ${pwdAction?.emp.name}` :
+          `Deactivate ${pwdAction?.emp.name}`
+        }
+        description={
+          pwdAction?.type === 'delete'
+            ? `This will PERMANENTLY delete the employee, their login, and unassign ${clientCounts[pwdAction.emp.user_id] || 0} client(s). Cannot be undone.`
+            : pwdAction?.type === 'activate'
+              ? 'This employee will be able to log in again.'
+              : `Login will be disabled. ${clientCounts[pwdAction?.emp.user_id] || 0} client(s) remain assigned.`
+        }
+        actionLabel={pwdAction?.type === 'delete' ? 'Delete Permanently' : pwdAction?.type === 'activate' ? 'Activate' : 'Deactivate'}
+        destructive={pwdAction?.type !== 'activate'}
+      />
     </div>
   );
 }
