@@ -168,11 +168,13 @@ export default function ClientProfile() {
     overdue: 'text-destructive border-destructive/30 bg-destructive/10',
   };
 
-  const tabList = ['overview', 'services', 'documents', 'dates', 'family', 'quotations', 'tasks', 'revenue', 'notes', 'history'];
+  const tabList = ['overview', 'services', 'documents', 'dates', 'quotations', 'tasks', 'revenue', 'notes', 'history'];
   const importantDates = (client.important_dates || {}) as Record<string, string>;
-  const familyMembers = (client.family_members || []) as any[];
   const documents = (client.documents || []) as any[];
   const serviceDetails = (client.service_details || {}) as Record<string, string>;
+
+  const buildWelcomeMessage = () =>
+    `Dear ${client.name},\n\nThank you for choosing Nawi Saadi Travel & Tourism! 🌟\n\nWe have received your enquiry${client.service ? ` for ${client.service}` : ''} and our team will be in touch shortly.\n\nFor any questions, feel free to reply to this message.\n\nWarm regards,\nNawi Saadi Travel & Tourism`;
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -341,29 +343,7 @@ export default function ClientProfile() {
         </div>
       )}
 
-      {tab === 'family' && (
-        <div className="card-nawi">
-          <h3 className="font-semibold font-display flex items-center gap-2 mb-4"><Users className="w-4 h-4" /> Family Members</h3>
-          {familyMembers.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">No family members recorded</p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {familyMembers.map((fm: any, i: number) => (
-                <div key={i} className="p-4 border border-border rounded-xl">
-                  <p className="font-semibold text-foreground">{fm.name}</p>
-                  <p className="text-sm text-muted-foreground">{fm.relation}</p>
-                  <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
-                    <div><span className="text-muted-foreground">DOB:</span> {fm.dob ? formatDate(fm.dob) : '—'}</div>
-                    <div><span className="text-muted-foreground">Nationality:</span> {fm.nationality || '—'}</div>
-                    <div><span className="text-muted-foreground">Passport:</span> {fm.passportNo || '—'}</div>
-                    <div><span className="text-muted-foreground">PP Expiry:</span> {fm.passportExpiry ? formatDate(fm.passportExpiry) : '—'}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {/* Family tab removed — simplified to one client = one record */}
 
       {tab === 'quotations' && (
         <div className="card-nawi">
@@ -491,6 +471,23 @@ export default function ClientProfile() {
           </div>
         </div>
       )}
+
+      <PasswordConfirmDialog
+        open={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDelete}
+        title="Delete Client"
+        description={`This will permanently delete ${client.name} and all related services, quotations, and tasks. This cannot be undone.`}
+        actionLabel="Delete Client"
+      />
+
+      <WhatsAppTemplateModal
+        open={showWhatsApp}
+        onClose={() => setShowWhatsApp(false)}
+        mobile={client.mobile}
+        defaultMessage={buildWelcomeMessage()}
+        title={`Message ${client.name}`}
+      />
     </div>
   );
 }
