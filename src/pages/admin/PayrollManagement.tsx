@@ -3,7 +3,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { formatCurrency, generateDisplayId, auditLog } from '@/lib/supabase-service';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { Download, Calculator, Edit, Save, X } from 'lucide-react';
+import PasswordConfirmDialog from '@/components/PasswordConfirmDialog';
+import { Download, Calculator, Edit, Save, X, Lock, Unlock, FileText } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function PayrollManagement() {
   const { user } = useAuth();
@@ -13,6 +15,9 @@ export default function PayrollManagement() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<any>({});
   const [employees, setEmployees] = useState<any[]>([]);
+  const [pwdAction, setPwdAction] = useState<{ type: 'lock' | 'unlock' | 'confirm'; row: any } | null>(null);
+
+  const monthLocked = payroll.length > 0 && payroll.every(p => p.locked);
 
   useEffect(() => {
     const fetchEmps = async () => {
