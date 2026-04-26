@@ -28,9 +28,13 @@ export default function GeofenceManagement() {
   const [assignModal, setAssignModal] = useState<string | null>(null);
   const [todayAtt, setTodayAtt] = useState<Record<string, any>>({});
 
-  // Attendance settings (work_start, grace, weekend)
+  // Attendance settings (work_start, grace, weekend) — global defaults
   const [att, setAtt] = useState<AttendanceSettings>({ work_start: '09:00', grace_minutes: 15, weekend_days: [5, 6] });
   const [savingAtt, setSavingAtt] = useState(false);
+
+  // Per-employee overrides keyed by user_id
+  const [overrides, setOverrides] = useState<Record<string, EmployeeOverride>>({});
+  const [savingOv, setSavingOv] = useState(false);
 
   const loadZones = async () => {
     const { data } = await supabase.from('geofence_zones').select('*').order('created_at', { ascending: false });
