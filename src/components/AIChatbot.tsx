@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Bot, X, Send, Sparkles, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { onOpenAIChatbot } from '@/lib/ai-chatbot-bus';
 
 interface Msg { role: 'user' | 'assistant'; content: string; }
 
@@ -11,7 +12,7 @@ const QUICK_PROMPTS = [
   'What does Late deduction mean?',
 ];
 
-export default function AIChatbot() {
+export default function AIChatbot({ hideFloatingButton = false }: { hideFloatingButton?: boolean }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -19,6 +20,7 @@ export default function AIChatbot() {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
+  useEffect(() => onOpenAIChatbot(() => setOpen(true)), []);
 
   const send = async (text?: string) => {
     const userText = (text ?? input).trim();
@@ -87,8 +89,8 @@ export default function AIChatbot() {
 
   return (
     <>
-      {/* Floating button */}
-      {!open && (
+      {/* Floating button (can be hidden when triggered from header) */}
+      {!open && !hideFloatingButton && (
         <button onClick={() => setOpen(true)}
           className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-elevated hover:scale-105 active:scale-95 transition-transform flex items-center justify-center"
           title="Ask AI Assistant" aria-label="Open AI Assistant">
