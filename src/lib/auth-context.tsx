@@ -21,15 +21,18 @@ interface Profile {
   assigned_zone_id: string | null;
 }
 
+export type AppRole = 'superadmin' | 'admin' | 'employee';
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
-  role: 'admin' | 'employee' | null;
+  role: AppRole | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
-  isAdmin: boolean;
+  isAdmin: boolean;       // true for admin OR superadmin
+  isSuperAdmin: boolean;  // true only for superadmin
   isInZone: boolean | null;
 }
 
