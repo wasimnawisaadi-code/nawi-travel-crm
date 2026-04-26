@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { exportToExcel } from '@/lib/excel-export';
 import { Link } from 'react-router-dom';
-import { Calendar as CalendarIcon, AlertTriangle, Bell, Download, Search, MessageCircle, LayoutGrid, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar as CalendarIcon, AlertTriangle, Bell, Download, Search, MessageCircle, LayoutGrid, CalendarDays, ChevronLeft, ChevronRight, BellOff } from 'lucide-react';
 import { formatDate, daysUntil } from '@/lib/supabase-service';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/integrations/supabase/client';
 import WhatsAppTemplateModal from '@/components/WhatsAppTemplateModal';
+import { toast } from 'sonner';
 
 /** Auto-detect category from a free-form date name to pick an icon, color and template. */
 function detectCategory(name: string): { key: string; emoji: string; color: string } {
@@ -86,6 +87,7 @@ interface DateRow {
 export default function ImportantDates() {
   const { user, isAdmin } = useAuth();
   const [clients, setClients] = useState<any[]>([]);
+  const [prefs, setPrefs] = useState<Record<string, boolean>>({}); // key: clientId::label -> silenced
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [timeFilter, setTimeFilter] = useState('all');
@@ -95,6 +97,13 @@ export default function ImportantDates() {
   const [waModal, setWaModal] = useState<{ row: DateRow; message: string } | null>(null);
   const basePath = isAdmin ? '/admin' : '/employee';
 
+  const loadPrefs = async () => {
+    const { data } = await supabase.from('date_reminder_prefs').select('client_id, date_label, silenced');
+    const map: Record<string, boolean> = {};
+    (data || []).forEach((p: any) => { map[`${p.client_id}::${p.date_label}`] = p.silenced; });
+    setPrefs(map);
+  };
+
   useEffect(() => {
     const load = async () => {
       let q = supabase.from('clients').select('*');
@@ -103,7 +112,23 @@ export default function ImportantDates() {
       setClients(data || []);
     };
     load();
+    loadPrefs();
   }, [isAdmin, user]);
+
+  const toggleSilence = async (row: DateRow) => {
+    const key = `${row.clientId}::${row.label}`;
+    const newSilenced = !prefs[key];
+    setPrefs(p => ({ ...p, [key]: newSilenced }));
+    const { error } = await supabase.from('date_reminder_prefs').upsert({
+      client_id: row.clientId, date_label: row.label, silenced: newSilenced, updated_by: user?.id,
+    }, { onConflict: 'client_id,date_label' });
+    if (error) {
+      setPrefs(p => ({ ...p, [key]: !newSilenced }));
+      toast.error(error.message);
+    } else {
+      toast.success(newSilenced ? '🔕 Reminders OFF for this date' : '🔔 Reminders ON — auto-WhatsApp at 1d & 3d');
+    }
+  };
 
   const allDates: DateRow[] = useMemo(() => {
     const rows: DateRow[] = [];
@@ -169,23 +194,35 @@ export default function ImportantDates() {
     overdue: 'border-destructive/30 bg-destructive/10',
   };
 
-  const DateCard = ({ d }: { d: DateRow }) => (
-    <div className={`p-3 rounded-xl border ${statusBorder[d.status]} hover:shadow-md transition-all`}>
-      <div className="flex items-center justify-between mb-1">
-        <span className={`text-xs px-2 py-0.5 rounded-full ${d.color}`}>{d.emoji} {d.label}</span>
-        <span className={`text-xs font-bold ${d.days < 0 ? 'text-destructive' : d.days <= 2 ? 'text-destructive' : d.days <= 7 ? 'text-warning' : d.days <= 30 ? 'text-warning' : 'text-success'}`}>
-          {d.days < 0 ? `${Math.abs(d.days)}d overdue` : d.days === 0 ? '🔴 TODAY' : d.days === 1 ? '🟠 TOMORROW' : `${d.days}d left`}
-        </span>
+  const DateCard = ({ d }: { d: DateRow }) => {
+    const silenced = !!prefs[`${d.clientId}::${d.label}`];
+    return (
+      <div className={`p-3 rounded-xl border ${statusBorder[d.status]} hover:shadow-md transition-all`}>
+        <div className="flex items-center justify-between mb-1">
+          <span className={`text-xs px-2 py-0.5 rounded-full ${d.color}`}>{d.emoji} {d.label}</span>
+          <span className={`text-xs font-bold ${d.days < 0 ? 'text-destructive' : d.days <= 2 ? 'text-destructive' : d.days <= 7 ? 'text-warning' : d.days <= 30 ? 'text-warning' : 'text-success'}`}>
+            {d.days < 0 ? `${Math.abs(d.days)}d overdue` : d.days === 0 ? '🔴 TODAY' : d.days === 1 ? '🟠 TOMORROW' : `${d.days}d left`}
+          </span>
+        </div>
+        <Link to={`${basePath}/clients/${d.clientId}`} className="hover:underline">
+          <p className="text-sm font-medium">{d.clientName}</p>
+        </Link>
+        <p className="text-xs text-muted-foreground">{formatDate(d.date)} • {d.mobile || '—'}{d.nationality ? ` • ${d.nationality}` : ''}</p>
+        <div className="flex items-center justify-between mt-2 gap-2">
+          <button onClick={() => openReminder(d)} className="text-xs text-success hover:underline flex items-center gap-1">
+            <MessageCircle className="w-3 h-3" /> Send Now
+          </button>
+          <button
+            onClick={() => toggleSilence(d)}
+            title={silenced ? 'Tap to TURN ON auto WhatsApp reminders (1d / 3d before)' : 'Tap to TURN OFF auto WhatsApp reminders'}
+            className={`flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full transition-colors ${silenced ? 'bg-muted text-muted-foreground' : 'bg-success/15 text-success'}`}
+          >
+            {silenced ? <><BellOff className="w-3 h-3" /> Off</> : <><Bell className="w-3 h-3" /> Auto</>}
+          </button>
+        </div>
       </div>
-      <Link to={`${basePath}/clients/${d.clientId}`} className="hover:underline">
-        <p className="text-sm font-medium">{d.clientName}</p>
-      </Link>
-      <p className="text-xs text-muted-foreground">{formatDate(d.date)} • {d.mobile || '—'}{d.nationality ? ` • ${d.nationality}` : ''}</p>
-      <button onClick={() => openReminder(d)} className="mt-2 text-xs text-success hover:underline flex items-center gap-1">
-        <MessageCircle className="w-3 h-3" /> Send Reminder
-      </button>
-    </div>
-  );
+    );
+  };
 
   const Section = ({ title, items, emoji }: { title: string; items: DateRow[]; emoji: string }) => items.length > 0 ? (
     <div>
@@ -229,7 +266,7 @@ export default function ImportantDates() {
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h2 className="text-xl font-bold font-display flex items-center gap-2"><CalendarIcon className="w-5 h-5 text-primary" /> Important Dates</h2>
+      <h2 className="text-xl font-bold font-display flex items-center gap-2"><CalendarIcon className="w-5 h-5 text-primary" /> Important Dates</h2>
         <div className="flex items-center gap-2">
           <div className="flex border border-border rounded-lg p-0.5">
             <button onClick={() => setView('cards')} className={`px-3 py-1 text-xs rounded ${view === 'cards' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}><LayoutGrid className="w-3 h-3 inline mr-1" /> Cards</button>
@@ -237,6 +274,13 @@ export default function ImportantDates() {
           </div>
           <button onClick={exportCSV} className="btn-outline"><Download className="w-4 h-4" /> Export</button>
         </div>
+      </div>
+
+      <div className="card-nawi bg-primary/5 border-primary/20 py-2.5 px-3 flex items-start gap-2 text-xs">
+        <Bell className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+        <p className="text-muted-foreground">
+          <strong className="text-primary">Auto reminders:</strong> Each date has a 🔔 Auto / 🔕 Off toggle. When ON, the system auto-sends a WhatsApp reminder 3 days and 1 day before. Tap to silence individual dates.
+        </p>
       </div>
 
       <div className="flex flex-wrap gap-2">
