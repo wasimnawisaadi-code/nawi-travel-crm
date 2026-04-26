@@ -20,27 +20,42 @@ const SERVICES = [
 
 const LEAD_SOURCES = ['Walk-in', 'Call', 'WhatsApp', 'Social Media', 'Reference', 'Website', 'B2B Partner'];
 
-const SUGGESTED_DOCS: Record<string, string[]> = {
-  'Air Ticket': ['Passport Copy', 'Visa Copy', 'Emirates ID'],
-  'UAE Visa': ['Passport', 'Photo', 'Emirates ID', 'Sponsor Passport', 'Sponsor Visa', 'Salary Certificate', 'Marriage Certificate', 'Current Visa Copy'],
-  'Global Visa': ['Passport', 'Photo', 'Emirates ID', 'Bank Statement', 'NOC Letter', 'Salary Certificate', 'Travel Insurance', 'Trade License'],
-  'Holiday Package': ['Passport Copy', 'Visa Copy', 'Booking Voucher'],
-  'Travel Insurance': ['Passport Copy', 'Travel Itinerary'],
-  'Pilgrimage': ['Passport', 'Photo', 'Vaccination Certificate', 'Mahram Document'],
-  'Meet & Assist': ['Passport Copy', 'Flight Ticket'],
-  'Hotel Booking': ['Passport Copy', 'Booking Confirmation'],
-};
+// Unified master list — same suggestions appear for every service.
+// Users can still add custom docs/dates with their own names.
+const ALL_DOCS: string[] = [
+  'Valid Passport (Bio Page)',
+  'Passport (Back Page)',
+  'UAE Residence Visa',
+  'Emirates ID (Front)',
+  'Emirates ID (Back)',
+  'Passport-Size Photograph',
+  '6-Month Bank Statement',
+  'NOC Letter from Employer',
+  'Salary Certificate',
+  'Previous Travel History (Visas)',
+  'Tenancy Contract / Property Proof',
+  'Family Documents (Marriage/Birth)',
+  'Trade License (for Corporate)',
+  'Flight Ticket',
+  'Hotel Confirmation',
+  'Travel Insurance Certificate',
+  'Vaccination Certificate',
+  'Invitation Letter / Other Docs',
+];
 
-const SUGGESTED_DATES: Record<string, string[]> = {
-  'Air Ticket': ['Travel Date', 'Return Date', 'Booking Date', 'Passport Expiry', 'Date of Birth'],
-  'UAE Visa': ['Visa Issue Date', 'Visa Expiry', 'Application Date', 'Passport Expiry', 'Date of Birth', 'Emirates ID Expiry'],
-  'Global Visa': ['Travel Date', 'Return Date', 'Visa Submission Date', 'Visa Approval Date', 'Visa Expiry', 'Passport Expiry', 'Date of Birth'],
-  'Holiday Package': ['Travel Date', 'Return Date', 'Booking Date', 'Passport Expiry', 'Date of Birth', 'Wedding Anniversary'],
-  'Travel Insurance': ['Policy Start', 'Policy End', 'Travel Date', 'Date of Birth'],
-  'Pilgrimage': ['Departure Date', 'Return Date', 'Passport Expiry', 'Date of Birth', 'Vaccination Expiry'],
-  'Meet & Assist': ['Service Date', 'Flight Date', 'Passport Expiry'],
-  'Hotel Booking': ['Check-in Date', 'Check-out Date', 'Booking Date', 'Date of Birth'],
-};
+const ALL_DATES: string[] = [
+  'Date of Birth',
+  'Passport Expiry',
+  'Visa Expiry',
+  'Travel Date',
+  'Wedding Anniversary',
+  'Emirates ID Expiry',
+  'Medical Report Expiry',
+  'Contract End Date',
+  'Insurance Expiry',
+  'Trade License Expiry',
+  'Visa Issue Date',
+];
 
 interface DocEntry { id: string; name: string; fileName: string; fileType: string; base64: string; uploadedAt: string; ocrExtracted?: boolean }
 interface DateEntry { id: string; name: string; date: string }
