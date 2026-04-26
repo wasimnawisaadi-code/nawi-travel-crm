@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Briefcase, Calendar, FileText,
   DollarSign, Shield, LogOut, Menu,
   Search, ChevronLeft, Clock, PlaneTakeoff, MessageCircle, CalendarDays, Bell, MapPin,
-  ClipboardList, Sparkles, Crown,
+  ClipboardList, Sparkles,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/integrations/supabase/client';
@@ -92,11 +92,7 @@ export default function AppLayout() {
 
   const baseLinks = isAdmin ? adminLinks : employeeLinks;
   const links = isSuperAdmin
-    ? [
-        { to: '/admin/superadmin', label: 'Super Admin', icon: Crown },
-        ...baseLinks,
-        { to: '/admin/admins', label: 'Admin Management', icon: Shield },
-      ]
+    ? [...baseLinks, { to: '/admin/admins', label: 'Admin Management', icon: Shield }]
     : baseLinks;
 
   const handleSearch = async (q: string) => {
