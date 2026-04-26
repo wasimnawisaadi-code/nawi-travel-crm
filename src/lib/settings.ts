@@ -6,26 +6,46 @@ export interface AttendanceSettings {
   weekend_days: number[];   // 0=Sun..6=Sat (UAE default Fri/Sat = [5,6])
 }
 
+export type EmployeeOverride = Partial<AttendanceSettings>;
+export type AttendanceOverrides = Record<string, EmployeeOverride>;
+
 const DEFAULT_ATTENDANCE: AttendanceSettings = {
   work_start: '09:00',
   grace_minutes: 15,
   weekend_days: [5, 6],
 };
 
-let cache: AttendanceSettings | null = null;
+let baseCache: AttendanceSettings | null = null;
+let overridesCache: AttendanceOverrides | null = null;
 let cacheTime = 0;
 const TTL = 60_000; // 1 minute
 
-export async function getAttendanceSettings(): Promise<AttendanceSettings> {
-  if (cache && Date.now() - cacheTime < TTL) return cache;
+async function loadAll() {
+  if (baseCache && overridesCache && Date.now() - cacheTime < TTL) return;
   const { data } = await supabase
     .from('app_settings' as any)
-    .select('value')
-    .eq('key', 'attendance')
-    .maybeSingle();
-  cache = { ...DEFAULT_ATTENDANCE, ...((data as any)?.value || {}) };
+    .select('key, value')
+    .in('key', ['attendance', 'attendance_overrides']);
+  const rows = (data as any[]) || [];
+  const baseRow = rows.find(r => r.key === 'attendance');
+  const ovRow = rows.find(r => r.key === 'attendance_overrides');
+  baseCache = { ...DEFAULT_ATTENDANCE, ...((baseRow?.value as any) || {}) };
+  overridesCache = (ovRow?.value as AttendanceOverrides) || {};
   cacheTime = Date.now();
-  return cache;
+}
+
+/** Returns global settings, or merged with per-employee override when userId given. */
+export async function getAttendanceSettings(userId?: string): Promise<AttendanceSettings> {
+  await loadAll();
+  const base = baseCache!;
+  if (!userId) return base;
+  const ov = overridesCache?.[userId] || {};
+  return { ...base, ...ov };
+}
+
+export async function getAttendanceOverrides(): Promise<AttendanceOverrides> {
+  await loadAll();
+  return overridesCache || {};
 }
 
 export async function saveAttendanceSettings(value: AttendanceSettings, userId?: string) {
@@ -33,7 +53,22 @@ export async function saveAttendanceSettings(value: AttendanceSettings, userId?:
     .from('app_settings' as any)
     .upsert({ key: 'attendance', value, updated_by: userId, updated_at: new Date().toISOString() } as any, { onConflict: 'key' });
   if (!error) {
-    cache = value;
+    baseCache = value;
+    cacheTime = Date.now();
+  }
+  return { error };
+}
+
+/** Save the full overrides map (object keyed by user_id). Pass {} to clear all. */
+export async function saveAttendanceOverrides(overrides: AttendanceOverrides, updatedBy?: string) {
+  const { error } = await supabase
+    .from('app_settings' as any)
+    .upsert(
+      { key: 'attendance_overrides', value: overrides as any, updated_by: updatedBy, updated_at: new Date().toISOString() } as any,
+      { onConflict: 'key' }
+    );
+  if (!error) {
+    overridesCache = overrides;
     cacheTime = Date.now();
   }
   return { error };

@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { MapPin, Plus, Trash2, Edit2, Check, X, Navigation, Clock, Save, Users, Activity } from 'lucide-react';
 import { toast } from 'sonner';
-import { getAttendanceSettings, saveAttendanceSettings, type AttendanceSettings } from '@/lib/settings';
+import { getAttendanceSettings, saveAttendanceSettings, getAttendanceOverrides, saveAttendanceOverrides, type AttendanceSettings, type EmployeeOverride } from '@/lib/settings';
 
 interface Zone {
   id: string;
@@ -28,9 +28,13 @@ export default function GeofenceManagement() {
   const [assignModal, setAssignModal] = useState<string | null>(null);
   const [todayAtt, setTodayAtt] = useState<Record<string, any>>({});
 
-  // Attendance settings (work_start, grace, weekend)
+  // Attendance settings (work_start, grace, weekend) — global defaults
   const [att, setAtt] = useState<AttendanceSettings>({ work_start: '09:00', grace_minutes: 15, weekend_days: [5, 6] });
   const [savingAtt, setSavingAtt] = useState(false);
+
+  // Per-employee overrides keyed by user_id
+  const [overrides, setOverrides] = useState<Record<string, EmployeeOverride>>({});
+  const [savingOv, setSavingOv] = useState(false);
 
   const loadZones = async () => {
     const { data } = await supabase.from('geofence_zones').select('*').order('created_at', { ascending: false });
@@ -59,9 +63,34 @@ export default function GeofenceManagement() {
     loadEmployees();
     loadTodayAttendance();
     getAttendanceSettings().then(setAtt);
+    getAttendanceOverrides().then(setOverrides);
     const i = setInterval(loadTodayAttendance, 30000);
     return () => clearInterval(i);
   }, []);
+
+  const setEmpOverride = (userId: string, patch: EmployeeOverride) => {
+    setOverrides(prev => {
+      const cur = prev[userId] || {};
+      const next = { ...cur, ...patch };
+      // Remove keys with empty string values
+      Object.keys(next).forEach(k => { if ((next as any)[k] === '' || (next as any)[k] === undefined || (next as any)[k] === null) delete (next as any)[k]; });
+      const out = { ...prev };
+      if (Object.keys(next).length === 0) delete out[userId]; else out[userId] = next;
+      return out;
+    });
+  };
+
+  const clearEmpOverride = (userId: string) => {
+    setOverrides(prev => { const out = { ...prev }; delete out[userId]; return out; });
+  };
+
+  const handleSaveOverrides = async () => {
+    setSavingOv(true);
+    const { error } = await saveAttendanceOverrides(overrides, user?.id);
+    setSavingOv(false);
+    if (error) { toast.error('Save failed'); return; }
+    toast.success('Per-employee schedules saved');
+  };
 
   const handleGetCurrentLocation = () => {
     if (!navigator.geolocation) { toast.error('Geolocation not supported'); return; }
@@ -187,7 +216,111 @@ export default function GeofenceManagement() {
         </button>
       </div>
 
-      {/* Live Employee Locations */}
+      {/* Per-Employee Schedule Overrides */}
+      <div className="card-nawi space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Users className="w-5 h-5 text-primary" />
+            <h3 className="font-semibold font-display">Per-Employee Schedules</h3>
+          </div>
+          <button onClick={handleSaveOverrides} disabled={savingOv} className="btn-primary text-sm">
+            <Save className="w-4 h-4" /> {savingOv ? 'Saving…' : 'Save Schedules'}
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Override the default work start, grace period, and weekend days for individual employees.
+          Leave a field blank to use the global default ({att.work_start} • {att.grace_minutes}m grace).
+        </p>
+
+        {employees.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4 text-center">No employees yet.</p>
+        ) : (
+          <div className="overflow-x-auto -mx-4 sm:mx-0">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left border-b border-border">
+                  <th className="py-2 px-2 font-medium">Employee</th>
+                  <th className="py-2 px-2 font-medium">Work Start</th>
+                  <th className="py-2 px-2 font-medium">Grace (min)</th>
+                  <th className="py-2 px-2 font-medium">Weekend Days</th>
+                  <th className="py-2 px-2 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {employees.map(emp => {
+                  const ov = overrides[emp.user_id] || {};
+                  const hasOverride = Object.keys(ov).length > 0;
+                  return (
+                    <tr key={emp.id} className="border-b border-border/50 hover:bg-muted/30">
+                      <td className="py-2 px-2">
+                        <div className="flex items-center gap-2 min-w-[160px]">
+                          {emp.photo_url ? <img src={emp.photo_url} className="w-7 h-7 rounded-full object-cover" alt="" /> :
+                            <div className="w-7 h-7 rounded-full bg-secondary text-secondary-foreground text-[10px] flex items-center justify-center font-bold">{emp.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}</div>}
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{emp.name}</p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {hasOverride ? <span className="text-primary">Custom</span> : <span>Default</span>}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-2 px-2">
+                        <input
+                          type="time"
+                          value={ov.work_start || ''}
+                          onChange={(e) => setEmpOverride(emp.user_id, { work_start: e.target.value || undefined })}
+                          placeholder={att.work_start}
+                          className="input-nawi text-sm py-1 w-28"
+                        />
+                      </td>
+                      <td className="py-2 px-2">
+                        <input
+                          type="number" min={0} max={120}
+                          value={ov.grace_minutes ?? ''}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setEmpOverride(emp.user_id, { grace_minutes: v === '' ? undefined : Math.max(0, Number(v) || 0) });
+                          }}
+                          placeholder={String(att.grace_minutes)}
+                          className="input-nawi text-sm py-1 w-20"
+                        />
+                      </td>
+                      <td className="py-2 px-2">
+                        <div className="flex flex-wrap gap-1">
+                          {DAYS.map((d, i) => {
+                            const wk = ov.weekend_days ?? null;
+                            const active = wk ? wk.includes(i) : att.weekend_days.includes(i);
+                            const isOverride = !!wk;
+                            return (
+                              <button key={d} type="button"
+                                onClick={() => {
+                                  const cur = ov.weekend_days ?? [...att.weekend_days];
+                                  const next = cur.includes(i) ? cur.filter(x => x !== i) : [...cur, i].sort();
+                                  setEmpOverride(emp.user_id, { weekend_days: next });
+                                }}
+                                className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${active ? (isOverride ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border') : 'bg-card text-muted-foreground border-border hover:border-primary/50'}`}
+                                title={isOverride ? 'Override' : 'From default'}
+                              >
+                                {d}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </td>
+                      <td className="py-2 px-2 text-right">
+                        {hasOverride && (
+                          <button onClick={() => clearEmpOverride(emp.user_id)} className="text-xs text-destructive hover:underline">Reset</button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       <div className="card-nawi">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">

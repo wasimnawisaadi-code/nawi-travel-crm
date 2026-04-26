@@ -88,7 +88,7 @@ export async function recordLoginAttendance(userId: string) {
 
   if (!existing) {
     const now = new Date();
-    const settings = await getAttendanceSettings();
+    const settings = await getAttendanceSettings(userId);
     const status = classifyLogin(now, settings);
     await supabase.from('attendance').insert({
       employee_id: userId,
