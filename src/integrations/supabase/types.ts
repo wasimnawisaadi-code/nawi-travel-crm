@@ -345,6 +345,44 @@ export type Database = {
         }
         Relationships: []
       }
+      date_reminder_prefs: {
+        Row: {
+          client_id: string
+          date_label: string
+          id: string
+          last_reminder_sent_at: string | null
+          silenced: boolean
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          client_id: string
+          date_label: string
+          id?: string
+          last_reminder_sent_at?: string | null
+          silenced?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          client_id?: string
+          date_label?: string
+          id?: string
+          last_reminder_sent_at?: string | null
+          silenced?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "date_reminder_prefs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dsr_assignments: {
         Row: {
           assigned_at: string
@@ -561,6 +599,41 @@ export type Database = {
           year_month?: string
         }
         Relationships: []
+      }
+      lead_notes: {
+        Row: {
+          author_id: string | null
+          author_name: string | null
+          body: string
+          created_at: string
+          id: string
+          lead_id: string
+        }
+        Insert: {
+          author_id?: string | null
+          author_name?: string | null
+          body: string
+          created_at?: string
+          id?: string
+          lead_id: string
+        }
+        Update: {
+          author_id?: string | null
+          author_name?: string | null
+          body?: string
+          created_at?: string
+          id?: string
+          lead_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_notes_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "social_leads"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       leave_requests: {
         Row: {
@@ -914,6 +987,96 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      social_leads: {
+        Row: {
+          assigned_at: string | null
+          assigned_to: string | null
+          client_need: string | null
+          created_at: string
+          display_id: string
+          first_name: string | null
+          follow_up_date: string | null
+          full_name: string | null
+          gender: string | null
+          id: string
+          language: string | null
+          last_interaction: string | null
+          last_name: string | null
+          last_seen: string | null
+          messaging_window: string | null
+          notes: string | null
+          opted_in: boolean | null
+          page_id: string | null
+          phone: string | null
+          raw: Json | null
+          source: string
+          status: string
+          subscribed: boolean | null
+          timezone: string | null
+          unique_key: string
+          updated_at: string
+          username: string | null
+        }
+        Insert: {
+          assigned_at?: string | null
+          assigned_to?: string | null
+          client_need?: string | null
+          created_at?: string
+          display_id: string
+          first_name?: string | null
+          follow_up_date?: string | null
+          full_name?: string | null
+          gender?: string | null
+          id?: string
+          language?: string | null
+          last_interaction?: string | null
+          last_name?: string | null
+          last_seen?: string | null
+          messaging_window?: string | null
+          notes?: string | null
+          opted_in?: boolean | null
+          page_id?: string | null
+          phone?: string | null
+          raw?: Json | null
+          source: string
+          status?: string
+          subscribed?: boolean | null
+          timezone?: string | null
+          unique_key: string
+          updated_at?: string
+          username?: string | null
+        }
+        Update: {
+          assigned_at?: string | null
+          assigned_to?: string | null
+          client_need?: string | null
+          created_at?: string
+          display_id?: string
+          first_name?: string | null
+          follow_up_date?: string | null
+          full_name?: string | null
+          gender?: string | null
+          id?: string
+          language?: string | null
+          last_interaction?: string | null
+          last_name?: string | null
+          last_seen?: string | null
+          messaging_window?: string | null
+          notes?: string | null
+          opted_in?: boolean | null
+          page_id?: string | null
+          phone?: string | null
+          raw?: Json | null
+          source?: string
+          status?: string
+          subscribed?: boolean | null
+          timezone?: string | null
+          unique_key?: string
+          updated_at?: string
+          username?: string | null
+        }
+        Relationships: []
       }
       tasks: {
         Row: {
