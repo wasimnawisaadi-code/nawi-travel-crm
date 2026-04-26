@@ -75,6 +75,8 @@ export function formatCurrency(amount: number): string {
 }
 
 // =================== ATTENDANCE ON LOGIN ===================
+import { getAttendanceSettings, classifyLogin } from './settings';
+
 export async function recordLoginAttendance(userId: string) {
   const today = new Date().toISOString().split('T')[0];
   const { data: existing } = await supabase
@@ -82,16 +84,17 @@ export async function recordLoginAttendance(userId: string) {
     .select('id')
     .eq('employee_id', userId)
     .eq('date', today)
-    .single();
+    .maybeSingle();
 
   if (!existing) {
     const now = new Date();
-    const isLate = now.getHours() > 9 || (now.getHours() === 9 && now.getMinutes() > 0);
+    const settings = await getAttendanceSettings();
+    const status = classifyLogin(now, settings);
     await supabase.from('attendance').insert({
       employee_id: userId,
       date: today,
       login_time: now.toISOString(),
-      status: isLate ? 'Late' : 'Present',
+      status,
     });
   }
 }

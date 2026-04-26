@@ -187,12 +187,14 @@ async function recordLoginAttendanceWithLocation(
 
   if (!existing) {
     const now = new Date();
-    const isLate = now.getHours() > 9 || (now.getHours() === 9 && now.getMinutes() > 0);
+    const { getAttendanceSettings, classifyLogin } = await import('@/lib/settings');
+    const settings = await getAttendanceSettings();
+    const status = classifyLogin(now, settings);
     await supabase.from('attendance').insert({
       employee_id: userId,
       date: today,
       login_time: now.toISOString(),
-      status: isLate ? 'Late' : 'Present',
+      status,
       login_lat: lat,
       login_lng: lng,
       login_location_status: locationStatus,
