@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      app_settings: {
+        Row: {
+          id: string
+          key: string
+          updated_at: string
+          updated_by: string | null
+          value: Json
+        }
+        Insert: {
+          id?: string
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Update: {
+          id?: string
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Relationships: []
+      }
       attendance: {
         Row: {
           created_at: string
@@ -507,6 +531,9 @@ export type Database = {
           id: string
           late_days: number | null
           late_deduction: number | null
+          locked: boolean
+          locked_at: string | null
+          locked_by: string | null
           overtime: number | null
           paid_leave_days: number | null
           present_days: number | null
@@ -534,6 +561,9 @@ export type Database = {
           id?: string
           late_days?: number | null
           late_deduction?: number | null
+          locked?: boolean
+          locked_at?: string | null
+          locked_by?: string | null
           overtime?: number | null
           paid_leave_days?: number | null
           present_days?: number | null
@@ -561,6 +591,9 @@ export type Database = {
           id?: string
           late_days?: number | null
           late_deduction?: number | null
+          locked?: boolean
+          locked_at?: string | null
+          locked_by?: string | null
           overtime?: number | null
           paid_leave_days?: number | null
           present_days?: number | null
