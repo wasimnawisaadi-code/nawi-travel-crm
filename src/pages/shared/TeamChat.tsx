@@ -150,10 +150,30 @@ export default function TeamChat() {
           setMessages(prev => [...prev, msg]);
         }
       })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'chat_messages' }, (payload) => {
+        const oldMsg = payload.old as any;
+        setMessages(prev => prev.filter(m => m.id !== oldMsg.id));
+      })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
   }, [activeChat, activeChatType, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchDMs = async () => {
+      const { data } = await supabase.from('chat_messages').select('sender_id, recipient_id')
+        .eq('message_type', 'direct' as any)
+        .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`);
+      const others = new Set<string>();
+      (data || []).forEach((m: any) => {
+        const otherId = m.sender_id === user.id ? m.recipient_id : m.sender_id;
+        if (otherId) others.add(otherId);
+      });
+      setDmConversations(Array.from(others));
+    };
+    fetchDMs();
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
