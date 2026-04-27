@@ -91,9 +91,11 @@ export default function Login() {
       }
     }
 
-    setLocationStatus('Recording attendance...');
-    // Record attendance with location
-    await recordLoginAttendanceWithLocation(user.id, loginLat, loginLng, locationStatusText);
+    // Admins are bosses — never tracked in attendance
+    if (!isAdminLike) {
+      setLocationStatus('Recording attendance...');
+      await recordLoginAttendanceWithLocation(user.id, loginLat, loginLng, locationStatusText);
+    }
     await generateDailyNotifications(user.id, isAdminLike);
 
     navigate(isAdminLike ? '/admin/dashboard' : '/employee/dashboard');
