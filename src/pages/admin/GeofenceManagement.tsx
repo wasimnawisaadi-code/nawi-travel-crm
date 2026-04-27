@@ -30,9 +30,8 @@ export default function GeofenceManagement() {
   const [search, setSearch] = useState('');
   const [showZonesPanel, setShowZonesPanel] = useState(false);
 
-  // Global defaults
+  // Global defaults (silent fallback — not editable here, used for placeholder display)
   const [att, setAtt] = useState<AttendanceSettings>(DEFAULT_ATTENDANCE);
-  const [savingAtt, setSavingAtt] = useState(false);
 
   // Per-employee overrides
   const [overrides, setOverrides] = useState<Record<string, EmployeeOverride>>({});
