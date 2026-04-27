@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { MapPin, Plus, Trash2, Edit2, Check, X, Navigation, Clock, Save, Users, Activity, Settings2, ChevronDown, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
-import { getAttendanceSettings, saveAttendanceSettings, getAttendanceOverrides, saveAttendanceOverrides, type AttendanceSettings, type EmployeeOverride } from '@/lib/settings';
+import { getAttendanceSettings, saveAttendanceSettings, getAttendanceOverrides, saveAttendanceOverrides, DEFAULT_ATTENDANCE, type AttendanceSettings, type EmployeeOverride } from '@/lib/settings';
 
 interface Zone {
   id: string;
@@ -31,7 +31,7 @@ export default function GeofenceManagement() {
   const [showZonesPanel, setShowZonesPanel] = useState(false);
 
   // Global defaults
-  const [att, setAtt] = useState<AttendanceSettings>({ work_start: '09:00', work_end: '18:00', grace_minutes: 15, weekend_days: [5, 6] });
+  const [att, setAtt] = useState<AttendanceSettings>(DEFAULT_ATTENDANCE);
   const [savingAtt, setSavingAtt] = useState(false);
 
   // Per-employee overrides
