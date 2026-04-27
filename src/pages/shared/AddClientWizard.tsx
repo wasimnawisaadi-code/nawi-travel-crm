@@ -494,14 +494,7 @@ export default function AddClientWizard() {
               <h3 className="text-base font-semibold font-display mb-4">{form.service} Details</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {form.service === 'Air Ticket' && <><Field label="Travel Date" k="travelDate" type="date" required /><Field label="Departure City" k="departureCity" required /><Field label="Arrival City" k="arrivalCity" required /><Field label="Flight Number" k="flightNumber" /><Field label="PNR" k="pnr" /><Field label="Return Date" k="returnDate" type="date" /><SelectField label="Class" k="travelClass" options={['Economy', 'Premium Economy', 'Business', 'First Class']} /></>}
-                {form.service === 'UAE Visa' && <>
-                  <SelectField label="Visa Type" k="visaType" options={['30 days', '60 days', '90 days', '1 Year', '2 Year', '5 Year', '10 Year Golden', 'Extension']} />
-                  <SelectField label="Application Type" k="applicationType" options={['Inside UAE', 'Outside UAE']} />
-                  <SelectField label="Entry Type" k="entryType" options={['Single', 'Multiple']} />
-                  <Field label="Nationality" k="nationality" />
-                  {form.serviceSubcategory === 'Family Visa' && <><Field label="Sponsor Name" k="sponsorName" required /><Field label="Sponsor UID" k="sponsorUid" /><Field label="Sponsor Salary" k="sponsorSalary" /></>}
-                  {form.serviceSubcategory === 'Abscond' && <><Field label="Last Known Location" k="lastLocation" /><Field label="Abscond Date" k="abscondDate" type="date" /><Field label="Case Reference" k="caseReference" /></>}
-                </>}
+                {form.service === 'UAE Visa' && <UAEVisaFields sub={form.serviceSubcategory} Field={Field} SelectField={SelectField} form={form} />}
                 {form.service === 'Global Visa' && <><Field label="Country" k="country" required /><SelectField label="Applicant Type" k="applicantType" options={['Employed', 'Self-Employed', 'Unemployed', 'Retired']} /><Field label="Travel Date" k="travelDate" type="date" /><Field label="Return Date" k="returnDate" type="date" />{form.serviceDetails.visaMode === 'eVisa' && <><Field label="Online Portal Reference" k="eVisaRef" /><Field label="Application URL" k="applicationUrl" /></>}{form.serviceDetails.visaMode === 'Sticker Visa' && <><Field label="Embassy Name" k="embassyName" /><Field label="Appointment Date" k="appointmentDate" type="date" /></>}</>}
                 {form.service === 'Holiday Package' && <><Field label="Travel Date" k="travelDate" type="date" /><Field label="Return Date" k="returnDate" type="date" /><Field label="Adults" k="adults" /><Field label="Children" k="children" /><Field label="Destination" k="destination" /></>}
                 {form.service === 'Travel Insurance' && <><Field label="Travel Date" k="travelDate" type="date" /><Field label="Return Date" k="returnDate" type="date" /><SelectField label="Coverage Type" k="coverageType" options={['Individual', 'Family', 'Group', 'Annual Multi-Trip']} /><Field label="Destination" k="destination" /></>}
