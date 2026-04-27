@@ -302,6 +302,9 @@ function LeadModal({ lead, onClose, onSaved, canEdit, currentUserId, currentUser
   const [notes, setNotes] = useState<Note[]>([]);
   const [newNote, setNewNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofUrl, setProofUrl] = useState<string | null>(lead.proof_url);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     supabase.from('lead_notes').select('*').eq('lead_id', lead.id).order('created_at', { ascending: false }).then(({ data }) => {
@@ -310,13 +313,31 @@ function LeadModal({ lead, onClose, onSaved, canEdit, currentUserId, currentUser
   }, [lead.id]);
 
   const save = async () => {
+    if (form.status === 'CONVERTED' && !proofUrl && !proofFile) {
+      toast.error('Please upload proof (ticket/payment) before marking as Converted');
+      return;
+    }
     setSaving(true);
-    const { error } = await supabase.from('social_leads').update({
+    let finalProof = proofUrl;
+    if (proofFile) {
+      setUploading(true);
+      const ext = proofFile.name.split('.').pop() || 'bin';
+      const path = `${lead.id}/${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from('lead-proofs').upload(path, proofFile, { upsert: true });
+      setUploading(false);
+      if (upErr) { setSaving(false); toast.error(`Upload failed: ${upErr.message}`); return; }
+      const { data: pub } = supabase.storage.from('lead-proofs').getPublicUrl(path);
+      finalProof = pub.publicUrl;
+    }
+    const update: any = {
       status: form.status,
       client_need: form.client_need || null,
       notes: form.notes || null,
       follow_up_date: form.follow_up_date || null,
-    }).eq('id', lead.id);
+      proof_url: finalProof,
+    };
+    if (form.status === 'CONVERTED' && !lead.converted_at) update.converted_at = new Date().toISOString();
+    const { error } = await supabase.from('social_leads').update(update).eq('id', lead.id);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success('Lead updated');
