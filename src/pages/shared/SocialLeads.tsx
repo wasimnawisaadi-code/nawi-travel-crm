@@ -26,6 +26,8 @@ interface Lead {
   last_interaction: string | null;
   last_seen: string | null;
   created_at: string;
+  proof_url: string | null;
+  converted_at: string | null;
 }
 
 interface Note { id: string; author_name: string; body: string; created_at: string; }
