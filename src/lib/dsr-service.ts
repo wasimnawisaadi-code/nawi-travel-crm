@@ -126,19 +126,22 @@ export async function bulkCreateEntries(
   template: DSRTemplate,
   employeeId: string,
   employeeName: string,
-  entryDate: string,
-  rows: Record<string, any>[]
+  entryDate: string,                  // fallback date when row has no detected date
+  rows: Record<string, any>[],
+  perRowDates?: (string | null)[]     // optional: aligned with rows; null → fallback
 ) {
-  const inserts = await Promise.all(rows.map(async (row) => {
+  const today = new Date().toISOString().split('T')[0];
+  const inserts = await Promise.all(rows.map(async (row, i) => {
     const display_id = await generateDisplayId('DSR');
     const { sale, cost, profit } = computeFinancials(template, row);
+    const rowDate = (perRowDates && perRowDates[i]) || entryDate || today;
     return {
       display_id,
       template_id: template.id,
       template_key: template.template_key,
       employee_id: employeeId,
       employee_name: employeeName,
-      entry_date: entryDate,
+      entry_date: rowDate,
       data: row,
       sale_amount: sale,
       cost_amount: cost,
