@@ -110,7 +110,41 @@ export default function EmployeeProfile() {
     }
   };
 
-  const tabs = ['overview', 'clients', 'tasks', 'attendance', 'leave', 'goals'];
+  const handleAssignZone = async (zoneId: string | null) => {
+    setSavingZone(true);
+    const { error } = await supabase.from('profiles').update({ assigned_zone_id: zoneId }).eq('id', emp.id);
+    setSavingZone(false);
+    if (error) { toast.error('Failed to assign zone'); return; }
+    setEmp({ ...emp, assigned_zone_id: zoneId });
+    await auditLog('employee_zone_assigned', 'employee', emp.user_id, { zone_id: zoneId });
+    toast.success(zoneId ? 'Zone assigned' : 'Zone cleared');
+  };
+
+  const handleSaveSchedule = async () => {
+    setSavingSchedule(true);
+    const allOverrides = await getAttendanceOverrides();
+    const cleaned: EmployeeOverride = { ...override };
+    Object.keys(cleaned).forEach(k => {
+      const v = (cleaned as any)[k];
+      if (v === '' || v === undefined || v === null) delete (cleaned as any)[k];
+    });
+    const next = { ...allOverrides };
+    if (Object.keys(cleaned).length === 0) delete next[emp.user_id]; else next[emp.user_id] = cleaned;
+    const { error } = await saveAttendanceOverrides(next);
+    setSavingSchedule(false);
+    if (error) { toast.error('Save failed'); return; }
+    await auditLog('employee_schedule_updated', 'employee', emp.user_id, cleaned as any);
+    toast.success('Schedule saved');
+  };
+
+  const tabs = ['overview', 'schedule', 'clients', 'tasks', 'attendance', 'leave', 'goals'];
+  const assignedZone = zones.find(z => z.id === emp?.assigned_zone_id);
+  const effective = { ...(globalAtt || {}), ...override };
+
+  const getMapsEmbed = (lat: number, lng: number, radius?: number) => {
+    const zoom = radius ? Math.max(13, Math.min(18, 17 - Math.log2(radius / 50))) : 15;
+    return `https://maps.google.com/maps?q=${lat},${lng}&z=${Math.round(zoom)}&output=embed`;
+  };
 
   return (
     <div className="space-y-4 animate-fade-in">
