@@ -214,10 +214,10 @@ export default function ImportantDates() {
           </button>
           <button
             onClick={() => toggleSilence(d)}
-            title={silenced ? 'Tap to TURN ON auto WhatsApp reminders (1d / 3d before)' : 'Tap to TURN OFF auto WhatsApp reminders'}
+            title={silenced ? 'Currently UNSENT — tap to enable auto WhatsApp reminders (1d / 3d before)' : 'Auto WhatsApp reminder will be SENT — tap to mark as Unsent'}
             className={`flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full transition-colors ${silenced ? 'bg-muted text-muted-foreground' : 'bg-success/15 text-success'}`}
           >
-            {silenced ? <><BellOff className="w-3 h-3" /> Off</> : <><Bell className="w-3 h-3" /> Auto</>}
+            {silenced ? <><BellOff className="w-3 h-3" /> Unsent</> : <><Bell className="w-3 h-3" /> Message sent</>}
           </button>
         </div>
       </div>
