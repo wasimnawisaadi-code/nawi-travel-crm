@@ -32,8 +32,13 @@ export default function PayrollManagement() {
 
   useEffect(() => {
     const fetchEmps = async () => {
-      const { data } = await supabase.from('profiles').select('*').eq('status', 'active');
-      setEmployees(data || []);
+      const [empsRes, rolesRes] = await Promise.all([
+        supabase.from('profiles').select('*').eq('status', 'active'),
+        supabase.from('user_roles').select('user_id, role'),
+      ]);
+      // Admins are bosses — exclude from payroll
+      const adminIds = new Set((rolesRes.data || []).filter((r: any) => r.role === 'admin' || r.role === 'superadmin').map((r: any) => r.user_id));
+      setEmployees((empsRes.data || []).filter((e: any) => !adminIds.has(e.user_id)));
     };
     fetchEmps();
   }, []);
