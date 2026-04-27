@@ -46,55 +46,64 @@ export default function Login() {
     const profileType = profileData?.profile_type || 'office';
     const assignedZoneId = profileData?.assigned_zone_id;
 
-    // Geofence check — for ALL plain employees (uses assigned zone if set, otherwise ALL active office zones)
+    // Geofence check — for plain employees, respecting global + per-employee overrides
     let loginLat: number | null = null;
     let loginLng: number | null = null;
     let locationStatusText = 'no_zone';
 
     if (!isAdminLike) {
-      // Pick zones to check: specific assigned zone, or all active office zones as fallback
-      let zonesToCheck: any[] = [];
-      if (assignedZoneId) {
-        const { data: zone } = await supabase
-          .from('geofence_zones').select('*').eq('id', assignedZoneId).eq('is_active', true).maybeSingle();
-        if (zone) zonesToCheck = [zone];
-      } else {
-        const { data: zones } = await supabase
-          .from('geofence_zones').select('*').eq('is_active', true).eq('zone_type', 'office');
-        zonesToCheck = zones || [];
-      }
+      const { getAttendanceSettings } = await import('@/lib/settings');
+      const settings = await getAttendanceSettings(user.id);
+      const enforce = settings.enforce_geofence !== false;
 
-      if (zonesToCheck.length > 0) {
-        setLocationStatus('Checking your location...');
-        try {
-          const pos = await getCurrentPosition();
-          loginLat = pos.lat;
-          loginLng = pos.lng;
+      if (enforce) {
+        // Resolve zone(s) to check: 1) employee-specific  2) global default  3) all active office zones
+        let zonesToCheck: any[] = [];
+        if (assignedZoneId) {
+          const { data: zone } = await supabase
+            .from('geofence_zones').select('*').eq('id', assignedZoneId).eq('is_active', true).maybeSingle();
+          if (zone) zonesToCheck = [zone];
+        } else if (settings.default_zone_id) {
+          const { data: zone } = await supabase
+            .from('geofence_zones').select('*').eq('id', settings.default_zone_id).eq('is_active', true).maybeSingle();
+          if (zone) zonesToCheck = [zone];
+        } else {
+          const { data: zones } = await supabase
+            .from('geofence_zones').select('*').eq('is_active', true).eq('zone_type', 'office');
+          zonesToCheck = zones || [];
+        }
 
-          const matchedZone = zonesToCheck.find((z) => isInsideZone(pos, z as any));
-          if (matchedZone) {
-            locationStatusText = 'inside_zone';
-          } else {
-            // Block login for office employees outside ALL zones
+        if (zonesToCheck.length > 0) {
+          setLocationStatus('Checking your location...');
+          try {
+            const pos = await getCurrentPosition();
+            loginLat = pos.lat;
+            loginLng = pos.lng;
+
+            const matchedZone = zonesToCheck.find((z) => isInsideZone(pos, z as any));
+            if (matchedZone) {
+              locationStatusText = 'inside_zone';
+            } else {
+              if (profileType === 'office') {
+                const zoneNames = zonesToCheck.map((z) => `${z.name} (${z.radius}m)`).join(', ');
+                await supabase.auth.signOut();
+                setError(`You must be within an authorized office zone to login. Allowed: ${zoneNames}. You are outside the allowed area.`);
+                setLoading(false);
+                setLocationStatus('');
+                return;
+              }
+              locationStatusText = 'outside_zone';
+            }
+          } catch {
             if (profileType === 'office') {
-              const zoneNames = zonesToCheck.map((z) => `${z.name} (${z.radius}m)`).join(', ');
               await supabase.auth.signOut();
-              setError(`You must be within an authorized office zone to login. Allowed: ${zoneNames}. You are outside the allowed area.`);
+              setError('Location access is required for office employees. Please enable location services and try again.');
               setLoading(false);
               setLocationStatus('');
               return;
             }
-            locationStatusText = 'outside_zone';
+            locationStatusText = 'location_denied';
           }
-        } catch {
-          if (profileType === 'office') {
-            await supabase.auth.signOut();
-            setError('Location access is required for office employees. Please enable location services and try again.');
-            setLoading(false);
-            setLocationStatus('');
-            return;
-          }
-          locationStatusText = 'location_denied';
         }
       }
     }
