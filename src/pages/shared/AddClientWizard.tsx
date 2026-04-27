@@ -308,15 +308,37 @@ export default function AddClientWizard() {
       <input type={type} value={form.serviceDetails[k] || ''} onChange={(e) => updateSD(k, e.target.value)} className="input-nawi" />
     </div>
   );
-  const SelectField = ({ label, k, options }: { label: string; k: string; options: string[] }) => (
-    <div>
-      <label className="block text-sm font-medium mb-1">{label}</label>
-      <select value={form.serviceDetails[k] || ''} onChange={(e) => updateSD(k, e.target.value)} className="input-nawi">
-        <option value="">Select</option>
-        {options.map(o => <option key={o}>{o}</option>)}
-      </select>
-    </div>
-  );
+  const SelectField = ({ label, k, options, allowOther = true }: { label: string; k: string; options: string[]; allowOther?: boolean }) => {
+    const current = form.serviceDetails[k] || '';
+    const isOther = current && !options.includes(current);
+    const [mode, setMode] = useState<'preset' | 'other'>(isOther ? 'other' : 'preset');
+    return (
+      <div>
+        <label className="block text-sm font-medium mb-1">{label}</label>
+        <select
+          value={mode === 'other' ? '__other__' : current}
+          onChange={(e) => {
+            if (e.target.value === '__other__') { setMode('other'); updateSD(k, ''); }
+            else { setMode('preset'); updateSD(k, e.target.value); }
+          }}
+          className="input-nawi"
+        >
+          <option value="">Select</option>
+          {options.map(o => <option key={o} value={o}>{o}</option>)}
+          {allowOther && <option value="__other__">Others (specify)</option>}
+        </select>
+        {mode === 'other' && (
+          <input
+            autoFocus
+            value={current}
+            onChange={(e) => updateSD(k, e.target.value)}
+            placeholder={`Enter custom ${label.toLowerCase()}`}
+            className="input-nawi mt-2"
+          />
+        )}
+      </div>
+    );
+  };
 
   const selectedServiceObj = SERVICES.find(s => s.key === form.service);
   const hasSubcategories = selectedServiceObj && 'subcategories' in selectedServiceObj;
