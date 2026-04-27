@@ -345,7 +345,7 @@ export default function AddClientWizard() {
 
   const steps = ['Type & Service', 'Documents (AI Scan)', 'Client Details', 'Review'];
 
-  const canProceedStep0 = form.clientType && form.leadSource && form.service && (!hasSubcategories || form.serviceSubcategory);
+  const canProceedStep0 = form.clientType && form.leadSource && form.leadSource.trim() && form.service && (!hasSubcategories || form.serviceSubcategory);
   const canProceedStep2 = form.name && form.mobile;
 
   return (
