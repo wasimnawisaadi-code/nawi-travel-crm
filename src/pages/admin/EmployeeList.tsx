@@ -21,12 +21,24 @@ export default function EmployeeList() {
     passportNo: '', emiratesId: '', photo: '',
   });
 
+  const [adminMap, setAdminMap] = useState<Record<string, 'admin' | 'superadmin'>>({});
   const load = async () => {
-    // Exclude admin AND superadmin users from the employee list
     const { data: roles } = await supabase.from('user_roles').select('user_id, role');
-    const adminIds = new Set((roles || []).filter((r: any) => r.role === 'admin' || r.role === 'superadmin').map((r: any) => r.user_id));
+    const map: Record<string, 'admin' | 'superadmin'> = {};
+    (roles || []).forEach((r: any) => {
+      if (r.role === 'superadmin') map[r.user_id] = 'superadmin';
+      else if (r.role === 'admin' && map[r.user_id] !== 'superadmin') map[r.user_id] = 'admin';
+    });
+    setAdminMap(map);
     const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-    setEmployees((data || []).filter((p: any) => !adminIds.has(p.user_id)));
+    // Show admins too — sorted to top — but render them as read-only Admin cards
+    const list = (data || []).slice().sort((a: any, b: any) => {
+      const aAdmin = !!map[a.user_id], bAdmin = !!map[b.user_id];
+      if (aAdmin && !bAdmin) return -1;
+      if (!aAdmin && bAdmin) return 1;
+      return 0;
+    });
+    setEmployees(list);
   };
   useEffect(() => { load(); }, []);
 
