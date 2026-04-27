@@ -150,6 +150,28 @@ export default function SocialLeads() {
     converted: leads.filter(l => l.status === 'CONVERTED').length,
   }), [leads]);
 
+  // Conversion analytics — by source × period (week / month)
+  const analytics = useMemo(() => {
+    const now = new Date();
+    const startOfWeek = new Date(now); startOfWeek.setDate(now.getDate() - 7); startOfWeek.setHours(0, 0, 0, 0);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const empty = () => ({ whatsapp: 0, instagram: 0, messenger: 0, total: 0 });
+    const week = empty();
+    const month = empty();
+    const allTime = empty();
+
+    leads.forEach(l => {
+      if (l.status !== 'CONVERTED' || !l.converted_at) return;
+      const d = new Date(l.converted_at);
+      const src = l.source as 'whatsapp' | 'instagram' | 'messenger';
+      allTime[src]++; allTime.total++;
+      if (d >= startOfMonth) { month[src]++; month.total++; }
+      if (d >= startOfWeek) { week[src]++; week.total++; }
+    });
+    return { week, month, allTime };
+  }, [leads]);
+
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex flex-wrap items-center justify-between gap-3">
