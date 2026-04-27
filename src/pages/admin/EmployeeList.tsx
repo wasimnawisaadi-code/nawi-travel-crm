@@ -21,12 +21,24 @@ export default function EmployeeList() {
     passportNo: '', emiratesId: '', photo: '',
   });
 
+  const [adminMap, setAdminMap] = useState<Record<string, 'admin' | 'superadmin'>>({});
   const load = async () => {
-    // Exclude admin AND superadmin users from the employee list
     const { data: roles } = await supabase.from('user_roles').select('user_id, role');
-    const adminIds = new Set((roles || []).filter((r: any) => r.role === 'admin' || r.role === 'superadmin').map((r: any) => r.user_id));
+    const map: Record<string, 'admin' | 'superadmin'> = {};
+    (roles || []).forEach((r: any) => {
+      if (r.role === 'superadmin') map[r.user_id] = 'superadmin';
+      else if (r.role === 'admin' && map[r.user_id] !== 'superadmin') map[r.user_id] = 'admin';
+    });
+    setAdminMap(map);
     const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-    setEmployees((data || []).filter((p: any) => !adminIds.has(p.user_id)));
+    // Show admins too — sorted to top — but render them as read-only Admin cards
+    const list = (data || []).slice().sort((a: any, b: any) => {
+      const aAdmin = !!map[a.user_id], bAdmin = !!map[b.user_id];
+      if (aAdmin && !bAdmin) return -1;
+      if (!aAdmin && bAdmin) return 1;
+      return 0;
+    });
+    setEmployees(list);
   };
   useEffect(() => { load(); }, []);
 
@@ -151,7 +163,14 @@ export default function EmployeeList() {
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-foreground truncate">{e.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-foreground truncate">{e.name}</p>
+                      {adminMap[e.user_id] && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 flex items-center gap-1">
+                          <Shield className="w-3 h-3" /> {adminMap[e.user_id] === 'superadmin' ? 'SUPERADMIN' : 'ADMIN'}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground font-mono mt-0.5">{e.user_id?.slice(0, 8)}</p>
                     <p className="text-xs text-muted-foreground mt-1">{e.email}</p>
                     <p className="text-xs text-muted-foreground">{e.mobile}</p>
@@ -159,7 +178,9 @@ export default function EmployeeList() {
                       <span className="text-xs text-muted-foreground">{clientCount} clients</span>
                       <div className="flex items-center gap-1">
                         <button title="View" onClick={(ev) => { ev.stopPropagation(); navigate(`/admin/employees/${e.user_id}`); }} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground"><Eye className="w-4 h-4" /></button>
-                        <button title="Delete permanently" onClick={(ev) => { ev.stopPropagation(); setPwdAction({ type: 'delete', emp: e }); }} className="p-1.5 hover:bg-destructive/10 rounded-lg text-muted-foreground hover:text-destructive"><Trash2 className="w-4 h-4" /></button>
+                        {!adminMap[e.user_id] && (
+                          <button title="Delete permanently" onClick={(ev) => { ev.stopPropagation(); setPwdAction({ type: 'delete', emp: e }); }} className="p-1.5 hover:bg-destructive/10 rounded-lg text-muted-foreground hover:text-destructive"><Trash2 className="w-4 h-4" /></button>
+                        )}
                       </div>
                     </div>
                   </div>
