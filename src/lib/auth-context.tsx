@@ -165,8 +165,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       watchIdRef.current = null;
     }
 
-    // Record logout attendance
-    if (user) {
+    // Admins are bosses — skip attendance logging on logout
+    const isAdminLike = role === 'admin' || role === 'superadmin';
+    if (user && !isAdminLike) {
       const today = new Date().toISOString().split('T')[0];
       const { data: todayRecord } = await supabase
         .from('attendance')
