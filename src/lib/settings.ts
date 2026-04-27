@@ -2,6 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 export interface AttendanceSettings {
   work_start: string;       // "09:00"
+  work_end: string;         // "18:00"
   grace_minutes: number;    // e.g., 15
   weekend_days: number[];   // 0=Sun..6=Sat (UAE default Fri/Sat = [5,6])
 }
@@ -11,6 +12,7 @@ export type AttendanceOverrides = Record<string, EmployeeOverride>;
 
 const DEFAULT_ATTENDANCE: AttendanceSettings = {
   work_start: '09:00',
+  work_end: '18:00',
   grace_minutes: 15,
   weekend_days: [5, 6],
 };

@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Briefcase, Calendar, FileText,
   DollarSign, Shield, LogOut, Menu,
   Search, ChevronLeft, Clock, PlaneTakeoff, MessageCircle, CalendarDays, Bell, MapPin,
-  ClipboardList, Sparkles, MessagesSquare,
+  ClipboardList, Sparkles, MessagesSquare, Trophy, Megaphone,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/integrations/supabase/client';
@@ -16,8 +16,10 @@ import { openAIChatbot } from '@/lib/ai-chatbot-bus';
 const adminLinks = [
   { to: '/admin/dashboard', label: 'Dashboard & Reports', icon: LayoutDashboard },
   { to: '/admin/employees', label: 'Employees', icon: Users },
+  { to: '/admin/performance', label: 'Performance', icon: Trophy },
   { to: '/admin/clients', label: 'Clients', icon: Briefcase },
   { to: '/admin/leads', label: 'Social Leads', icon: MessagesSquare },
+  { to: '/admin/broadcast', label: 'Broadcast', icon: Megaphone },
   { to: '/admin/calendar', label: 'Calendar', icon: Calendar },
   { to: '/admin/important-dates', label: 'Important Dates', icon: CalendarDays },
   { to: '/admin/dsr', label: 'Daily Status', icon: ClipboardList },
@@ -36,6 +38,7 @@ const employeeLinks = [
   { to: '/employee/calendar', label: 'Calendar', icon: Calendar },
   { to: '/employee/important-dates', label: 'Important Dates', icon: CalendarDays },
   { to: '/employee/dsr', label: 'My Daily Status', icon: ClipboardList },
+  { to: '/employee/performance', label: 'My Performance', icon: Trophy },
   { to: '/employee/attendance', label: 'Attendance', icon: Clock },
   { to: '/employee/leave', label: 'Leave', icon: FileText },
   { to: '/employee/chat', label: 'Team Chat', icon: MessageCircle },
@@ -127,7 +130,7 @@ export default function AppLayout() {
           </div>
           {!collapsed && (
             <div className="overflow-hidden">
-              <h1 className="text-sm font-bold text-sidebar-foreground font-display truncate">Nawi Saadi</h1>
+              <h1 className="text-sm font-bold text-sidebar-foreground font-display truncate">Nawi Saadi CRM</h1>
               <p className="text-xs text-sidebar-muted">Travel & Tourism</p>
             </div>
           )}

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { toast } from 'sonner';
-import { MessageCircle, Instagram, Facebook, RefreshCw, UserPlus, CheckCircle2, XCircle, Clock, Loader2, Send, StickyNote, Search, Filter } from 'lucide-react';
+import { MessageCircle, Instagram, Facebook, RefreshCw, UserPlus, UserMinus, CheckCircle2, XCircle, Clock, Loader2, Send, StickyNote, Search, Filter, Upload, FileImage } from 'lucide-react';
 import EmptyState from '@/components/ui/EmptyState';
 
 type Source = 'whatsapp' | 'instagram' | 'messenger';
@@ -26,6 +26,8 @@ interface Lead {
   last_interaction: string | null;
   last_seen: string | null;
   created_at: string;
+  proof_url: string | null;
+  converted_at: string | null;
 }
 
 interface Note { id: string; author_name: string; body: string; created_at: string; }
@@ -109,6 +111,20 @@ export default function SocialLeads() {
       .eq('id', lead.id);
     if (error) { toast.error(error.message); return; }
     toast.success('Lead assigned to you');
+    load();
+  };
+
+  const untakeLead = async (lead: Lead) => {
+    if (lead.assigned_to !== user?.id && profile?.email !== 'admin@nawisaadi.com') {
+      toast.error('Only the owner or admin can untake');
+      return;
+    }
+    const { error } = await supabase
+      .from('social_leads')
+      .update({ assigned_to: null, assigned_at: null, status: 'NEW' })
+      .eq('id', lead.id);
+    if (error) { toast.error(error.message); return; }
+    toast.success('Lead released back to pool');
     load();
   };
 
@@ -232,9 +248,14 @@ export default function SocialLeads() {
                     ) : <span className="text-warning font-medium">Unassigned</span>}
                   </div>
                   <div className="flex gap-2">
-                    {(!lead.assigned_to || isMine) && (
+                    {!lead.assigned_to && (
                       <button onClick={() => takeLead(lead)} className="btn-outline text-xs">
-                        <UserPlus className="w-3 h-3" /> {isMine ? 'Take again' : 'Take Lead'}
+                        <UserPlus className="w-3 h-3" /> Take Lead
+                      </button>
+                    )}
+                    {isMine && lead.status !== 'CONVERTED' && (
+                      <button onClick={() => untakeLead(lead)} className="btn-outline text-xs text-warning">
+                        <UserMinus className="w-3 h-3" /> Untake
                       </button>
                     )}
                     <button onClick={() => setOpenLead(lead)} className="btn-primary text-xs">
@@ -281,6 +302,9 @@ function LeadModal({ lead, onClose, onSaved, canEdit, currentUserId, currentUser
   const [notes, setNotes] = useState<Note[]>([]);
   const [newNote, setNewNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofUrl, setProofUrl] = useState<string | null>(lead.proof_url);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     supabase.from('lead_notes').select('*').eq('lead_id', lead.id).order('created_at', { ascending: false }).then(({ data }) => {
@@ -289,13 +313,31 @@ function LeadModal({ lead, onClose, onSaved, canEdit, currentUserId, currentUser
   }, [lead.id]);
 
   const save = async () => {
+    if (form.status === 'CONVERTED' && !proofUrl && !proofFile) {
+      toast.error('Please upload proof (ticket/payment) before marking as Converted');
+      return;
+    }
     setSaving(true);
-    const { error } = await supabase.from('social_leads').update({
+    let finalProof = proofUrl;
+    if (proofFile) {
+      setUploading(true);
+      const ext = proofFile.name.split('.').pop() || 'bin';
+      const path = `${lead.id}/${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from('lead-proofs').upload(path, proofFile, { upsert: true });
+      setUploading(false);
+      if (upErr) { setSaving(false); toast.error(`Upload failed: ${upErr.message}`); return; }
+      const { data: pub } = supabase.storage.from('lead-proofs').getPublicUrl(path);
+      finalProof = pub.publicUrl;
+    }
+    const update: any = {
       status: form.status,
       client_need: form.client_need || null,
       notes: form.notes || null,
       follow_up_date: form.follow_up_date || null,
-    }).eq('id', lead.id);
+      proof_url: finalProof,
+    };
+    if (form.status === 'CONVERTED' && !lead.converted_at) update.converted_at = new Date().toISOString();
+    const { error } = await supabase.from('social_leads').update(update).eq('id', lead.id);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success('Lead updated');
@@ -364,6 +406,18 @@ function LeadModal({ lead, onClose, onSaved, canEdit, currentUserId, currentUser
               <p className="text-xs text-muted-foreground text-center italic">Read-only — only the assigned employee or admin can edit.</p>
             )}
           </div>
+
+          {(form.status === 'CONVERTED' || proofUrl) && canEdit && (
+            <div className="pt-4 border-t border-border space-y-2">
+              <h4 className="text-sm font-semibold flex items-center gap-1.5"><FileImage className="w-4 h-4" /> Conversion Proof <span className="text-destructive">*</span></h4>
+              {proofUrl && (
+                <a href={proofUrl} target="_blank" rel="noopener" className="text-xs text-primary underline block">View current proof ↗</a>
+              )}
+              <input type="file" accept="image/*,application/pdf" onChange={e => setProofFile(e.target.files?.[0] || null)} className="input-nawi text-xs" />
+              {proofFile && <p className="text-[11px] text-muted-foreground"><Upload className="w-3 h-3 inline" /> {proofFile.name} ready to upload</p>}
+              {uploading && <p className="text-[11px] text-primary">Uploading…</p>}
+            </div>
+          )}
 
           <div className="pt-4 border-t border-border space-y-2">
             <h4 className="text-sm font-semibold flex items-center gap-1.5"><StickyNote className="w-4 h-4" /> Activity Log</h4>

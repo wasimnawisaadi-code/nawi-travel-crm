@@ -84,9 +84,9 @@ function pick(obj: Record<string, string>, ...keys: string[]): string {
 }
 
 function buildLead(source: "whatsapp" | "instagram" | "messenger", row: Record<string, string>) {
-  const first = pick(row, "First Name", "first_name");
-  const last = pick(row, "Last Name", "last_name");
-  const full = pick(row, "Full Name", "Name") || `${first} ${last}`.trim();
+  const first = pick(row, "First Name", "first_name", "Firstname");
+  const last = pick(row, "Last Name", "last_name", "Lastname");
+  const full = pick(row, "Full Name", "Name", "Full name") || `${first} ${last}`.trim();
 
   let unique_key = "";
   let phone = "";
@@ -94,13 +94,16 @@ function buildLead(source: "whatsapp" | "instagram" | "messenger", row: Record<s
   let pageId = pick(row, "Page ID", "page_id");
 
   if (source === "whatsapp") {
-    phone = pick(row, "Phone", "WhatsApp ID", "whatsapp_id");
-    unique_key = pick(row, "WhatsApp ID", "Phone", "Contact ID") || phone;
+    phone = pick(row, "Phone", "WhatsApp ID", "whatsapp_id", "Whatsapp ID", "WA ID");
+    unique_key = pick(row, "WhatsApp ID", "Phone", "Contact ID", "Whatsapp ID", "WA ID") || phone;
   } else if (source === "instagram") {
-    username = pick(row, "Username", "username");
-    unique_key = pick(row, "Instagram ID", "instagram_id") || username;
+    // Instagram sheets sometimes label differently
+    username = pick(row, "Username", "username", "Instagram Username", "IG Username", "Handle", "User Name");
+    const igId = pick(row, "Instagram ID", "instagram_id", "IG ID", "User ID", "Subscriber ID", "PSID", "ID");
+    unique_key = igId || username || full || `${first}-${last}`.trim();
   } else {
-    unique_key = pick(row, "Messenger ID", "messenger_id") || pageId;
+    const msgrId = pick(row, "Messenger ID", "messenger_id", "PSID", "Subscriber ID", "User ID", "ID");
+    unique_key = msgrId || pageId || full || `${first}-${last}`.trim();
   }
 
   if (!unique_key) return null;
