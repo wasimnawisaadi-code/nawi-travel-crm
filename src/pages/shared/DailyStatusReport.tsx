@@ -19,11 +19,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import {
   ClipboardList, Plus, Upload, Download, FileSpreadsheet, Pencil, Trash2,
-  Settings as SettingsIcon, TrendingUp, DollarSign, Users, AlertCircle, CheckCircle2, ExternalLink,
+  Settings as SettingsIcon, TrendingUp, DollarSign, Users, AlertCircle, CheckCircle2, ExternalLink, BarChart3,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import DSRGridEditor from '@/components/DSRGridEditor';
+import {
+  ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis,
+  CartesianGrid, Tooltip as RTooltip, Legend, Cell,
+} from 'recharts';
 
 export default function DailyStatusReport() {
   const { user, profile, isAdmin } = useAuth();
@@ -92,6 +96,31 @@ export default function DailyStatusReport() {
     });
     return Array.from(map.values()).sort((a, b) => b.profit - a.profit);
   }, [entries]);
+
+  // Daily trend for charts (sales/profit/count over time)
+  const dailyTrend = useMemo(() => {
+    const map = new Map<string, { date: string; sales: number; profit: number; count: number }>();
+    entries.forEach(e => {
+      const d = e.entry_date;
+      const cur = map.get(d) || { date: d, sales: 0, profit: 0, count: 0 };
+      cur.sales += Number(e.sale_amount || 0);
+      cur.profit += Number(e.profit_amount || 0);
+      cur.count += 1;
+      map.set(d, cur);
+    });
+    return Array.from(map.values())
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map(r => ({ ...r, label: r.date.slice(5) })); // MM-DD
+  }, [entries]);
+
+  // Top performers (top 7 by profit) for bar chart
+  const topPerformers = useMemo(() => empBreakdown.slice(0, 7).map(e => ({
+    name: e.name.length > 14 ? e.name.slice(0, 12) + '…' : e.name,
+    profit: Math.round(e.profit),
+    sales: Math.round(e.sale),
+  })), [empBreakdown]);
+
+  const BAR_COLORS = ['hsl(var(--primary))', 'hsl(var(--secondary))', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
   const handleSaveEntry = async (data: Record<string, any>) => {
     if (!activeTemplate || !user || !profile) return;
@@ -226,6 +255,78 @@ export default function DailyStatusReport() {
               <KpiCard icon={DollarSign} label="Cost" value={formatCurrency(kpis.totalCost)} />
               <KpiCard icon={TrendingUp} label="Profit" value={formatCurrency(kpis.totalProfit)} highlight />
             </div>
+
+            {/* BI Charts: trend + top performers */}
+            {entries.length > 0 && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <Card className="lg:col-span-2">
+                  <CardHeader className="flex flex-row items-center justify-between">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <TrendingUp className="h-4 w-4 text-primary" /> Daily Trend
+                    </CardTitle>
+                    <span className="text-xs text-muted-foreground">{dailyTrend.length} day{dailyTrend.length !== 1 ? 's' : ''}</span>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={dailyTrend} margin={{ top: 5, right: 8, left: -10, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="dsrSales" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="hsl(var(--secondary))" stopOpacity={0.4} />
+                              <stop offset="95%" stopColor="hsl(var(--secondary))" stopOpacity={0} />
+                            </linearGradient>
+                            <linearGradient id="dsrProfit" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.5} />
+                              <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                          <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+                          <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+                          <RTooltip
+                            contentStyle={{ background: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }}
+                            formatter={(v: any, n: string) => [formatCurrency(Number(v)), n === 'sales' ? 'Sales' : 'Profit']}
+                          />
+                          <Legend wrapperStyle={{ fontSize: 12 }} />
+                          <Area type="monotone" dataKey="sales" stroke="hsl(var(--secondary))" strokeWidth={2} fill="url(#dsrSales)" name="Sales" />
+                          <Area type="monotone" dataKey="profit" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#dsrProfit)" name="Profit" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <BarChart3 className="h-4 w-4 text-primary" /> Top Performers
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-64">
+                      {topPerformers.length === 0 ? (
+                        <div className="h-full flex items-center justify-center text-xs text-muted-foreground">No data</div>
+                      ) : (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={topPerformers} layout="vertical" margin={{ top: 5, right: 8, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                            <XAxis type="number" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+                            <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={75} stroke="hsl(var(--muted-foreground))" />
+                            <RTooltip
+                              contentStyle={{ background: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }}
+                              formatter={(v: any) => [formatCurrency(Number(v)), 'Profit']}
+                            />
+                            <Bar dataKey="profit" radius={[0, 6, 6, 0]}>
+                              {topPerformers.map((_, i) => <Cell key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />)}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
 
             {/* Admin breakdown */}
             {isAdmin && empBreakdown.length > 0 && (
