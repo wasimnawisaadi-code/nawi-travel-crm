@@ -395,12 +395,32 @@ export default function GeofenceManagement() {
             <Users className="w-5 h-5 text-primary" />
             <h3 className="font-semibold font-display">All Employees ({employees.length})</h3>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <input
               value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Search employee…"
               className="input-nawi text-sm py-1.5 w-48"
             />
+            <select
+              onChange={async (e) => {
+                const zoneId = e.target.value;
+                if (!zoneId) return;
+                if (!confirm(`Assign ${filteredEmployees.length} visible employee(s) to this zone?`)) { e.target.value = ''; return; }
+                await Promise.all(filteredEmployees.map(emp =>
+                  supabase.from('profiles').update({ assigned_zone_id: zoneId === '__none__' ? null : zoneId }).eq('id', emp.id)
+                ));
+                toast.success(`Updated ${filteredEmployees.length} employee(s)`);
+                loadEmployees();
+                e.target.value = '';
+              }}
+              className="input-nawi text-sm py-1.5"
+              defaultValue=""
+              title="Bulk assign zone to all visible employees"
+            >
+              <option value="" disabled>Bulk assign zone…</option>
+              <option value="__none__">— Clear zones —</option>
+              {zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
+            </select>
             <button onClick={handleSaveOverrides} disabled={savingOv} className="btn-primary text-sm">
               <Save className="w-4 h-4" /> {savingOv ? 'Saving…' : 'Save Overrides'}
             </button>
