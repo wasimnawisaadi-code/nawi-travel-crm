@@ -189,14 +189,55 @@ function normalize(s: string): string {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+export type ExcelParsedRow = {
+  data: Record<string, any>;
+  detectedDate: string | null;   // ISO yyyy-mm-dd, parsed from any "date" column in the row
+};
+
 export type ExcelParseResult = {
   ok: boolean;
   reason?: string;
   matchedColumns?: { excelHeader: string; key: string; label: string }[];
   unmatchedHeaders?: string[];
   missingRequired?: string[];
-  rows?: Record<string, any>[];
+  rows?: Record<string, any>[];        // legacy: data only
+  parsedRows?: ExcelParsedRow[];       // NEW: data + per-row detected date
+  hasDateColumn?: boolean;             // true if the file had a Date-like column
 };
+
+// Try parse a cell into ISO date (yyyy-mm-dd). Accepts Date, Excel serial, or strings.
+function tryParseDate(v: any): string | null {
+  if (v == null || v === '') return null;
+  if (v instanceof Date && !isNaN(v.getTime())) return v.toISOString().split('T')[0];
+  if (typeof v === 'number' && v > 20000 && v < 80000) {
+    // Excel serial date → JS date
+    const ms = Math.round((v - 25569) * 86400 * 1000);
+    const d = new Date(ms);
+    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  }
+  const s = String(v).trim();
+  if (!s) return null;
+  // Common formats: yyyy-mm-dd, dd/mm/yyyy, mm/dd/yyyy, dd-mm-yyyy
+  const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) {
+    const d = new Date(`${iso[1]}-${iso[2].padStart(2,'0')}-${iso[3].padStart(2,'0')}`);
+    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  }
+  const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (dmy) {
+    let [_, a, b, y] = dmy;
+    if (y.length === 2) y = '20' + y;
+    // Prefer dd/mm/yyyy (UAE locale). If first part >12, must be day.
+    const day = parseInt(a) > 12 ? a : a;
+    const mo = parseInt(a) > 12 ? b : b;
+    // dd/mm/yyyy
+    const d = new Date(`${y}-${mo.padStart(2,'0')}-${day.padStart(2,'0')}`);
+    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  }
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  return null;
+}
 
 /**
  * Parse Excel/CSV file against template. Auto-detect column mapping.
