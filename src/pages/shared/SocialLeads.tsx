@@ -173,6 +173,29 @@ export default function SocialLeads() {
     return { week, month, allTime };
   }, [leads]);
 
+  const handleExport = () => {
+    if (filtered.length === 0) { toast.error('No leads to export'); return; }
+    const rows = filtered.map((l) => ({
+      'Lead ID': l.display_id,
+      Source: SOURCE_META[l.source]?.label || l.source,
+      Status: STATUS_META[l.status]?.label || l.status,
+      Name: l.full_name || '',
+      Username: l.username || '',
+      Phone: l.phone || '',
+      Language: l.language || '',
+      'Client Need': l.client_need || '',
+      Notes: l.notes || '',
+      'Follow-up Date': l.follow_up_date || '',
+      'Assigned To': l.assigned_to ? (employees[l.assigned_to]?.name || l.assigned_to) : 'Unassigned',
+      'Last Interaction': l.last_interaction ? new Date(l.last_interaction).toLocaleString('en-GB') : '',
+      'Created At': new Date(l.created_at).toLocaleString('en-GB'),
+      'Converted At': l.converted_at ? new Date(l.converted_at).toLocaleString('en-GB') : '',
+      'Proof URL': l.proof_url || '',
+    }));
+    exportToExcel(rows, `social-leads-${new Date().toISOString().slice(0, 10)}`, 'Leads');
+    toast.success(`Exported ${rows.length} leads`);
+  };
+
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -180,10 +203,15 @@ export default function SocialLeads() {
           <h2 className="text-xl font-bold font-display">Social Media Leads</h2>
           <p className="text-sm text-muted-foreground">Auto-synced from WhatsApp, Instagram & Messenger every 15 minutes.</p>
         </div>
-        <button onClick={handleSync} disabled={syncing} className="btn-primary disabled:opacity-50">
-          {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-          {syncing ? 'Syncing…' : 'Sync Now'}
-        </button>
+        <div className="flex gap-2">
+          <button onClick={handleExport} className="btn-outline">
+            <Download className="w-4 h-4" /> Export Excel
+          </button>
+          <button onClick={handleSync} disabled={syncing} className="btn-primary disabled:opacity-50">
+            {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {syncing ? 'Syncing…' : 'Sync Now'}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
