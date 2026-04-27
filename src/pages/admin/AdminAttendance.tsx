@@ -23,12 +23,15 @@ export default function AdminAttendance() {
   const [allLeave, setAllLeave] = useState<any[]>([]);
 
   const loadData = async () => {
-    const [empRes, attRes, leaveRes] = await Promise.all([
+    const [empRes, attRes, leaveRes, rolesRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('status', 'active'),
       supabase.from('attendance').select('*'),
       supabase.from('leave_requests').select('*'),
+      supabase.from('user_roles').select('user_id, role'),
     ]);
-    setEmployees(empRes.data || []);
+    // Admins are bosses — exclude from attendance tracking lists
+    const adminIds = new Set((rolesRes.data || []).filter((r: any) => r.role === 'admin' || r.role === 'superadmin').map((r: any) => r.user_id));
+    setEmployees((empRes.data || []).filter((e: any) => !adminIds.has(e.user_id)));
     setAllAttendance(attRes.data || []);
     setAllLeave(leaveRes.data || []);
   };
