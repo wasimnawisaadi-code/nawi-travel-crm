@@ -183,14 +183,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .eq('employee_id', user.id)
         .eq('date', today)
         .is('logout_time', null)
-        .single();
+        .maybeSingle();
 
-      if (todayRecord) {
+      if (todayRecord && todayRecord.login_time) {
         const logoutTime = new Date().toISOString();
         const loginDate = new Date(todayRecord.login_time as string);
         const logoutDate = new Date(logoutTime);
         const hoursWorked = Math.round(((logoutDate.getTime() - loginDate.getTime()) / 3600000) * 10) / 10;
-        
+
         // Get current position for logout location
         let logoutLat = null, logoutLng = null;
         try {
@@ -203,8 +203,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         await supabase
           .from('attendance')
-          .update({ 
-            logout_time: logoutTime, 
+          .update({
+            logout_time: logoutTime,
             hours_worked: hoursWorked,
             logout_lat: logoutLat,
             logout_lng: logoutLng,
