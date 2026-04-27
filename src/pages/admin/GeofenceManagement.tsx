@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { MapPin, Users, Activity, ChevronDown, ChevronUp, Save, Plus, Trash2, Navigation } from 'lucide-react';
+import { MapPin, Users, Activity, ChevronDown, ChevronUp, Save, Plus, Trash2, Navigation, Edit2 } from 'lucide-react';
 import { toast } from 'sonner';
+import ZoneMapPicker from '@/components/ZoneMapPicker';
 import {
   getAttendanceSettings,
   getAttendanceOverrides,
