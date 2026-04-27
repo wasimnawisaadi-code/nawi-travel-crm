@@ -308,22 +308,44 @@ export default function AddClientWizard() {
       <input type={type} value={form.serviceDetails[k] || ''} onChange={(e) => updateSD(k, e.target.value)} className="input-nawi" />
     </div>
   );
-  const SelectField = ({ label, k, options }: { label: string; k: string; options: string[] }) => (
-    <div>
-      <label className="block text-sm font-medium mb-1">{label}</label>
-      <select value={form.serviceDetails[k] || ''} onChange={(e) => updateSD(k, e.target.value)} className="input-nawi">
-        <option value="">Select</option>
-        {options.map(o => <option key={o}>{o}</option>)}
-      </select>
-    </div>
-  );
+  const SelectField = ({ label, k, options, allowOther = true }: { label: string; k: string; options: string[]; allowOther?: boolean }) => {
+    const current = form.serviceDetails[k] || '';
+    const isOther = current && !options.includes(current);
+    const [mode, setMode] = useState<'preset' | 'other'>(isOther ? 'other' : 'preset');
+    return (
+      <div>
+        <label className="block text-sm font-medium mb-1">{label}</label>
+        <select
+          value={mode === 'other' ? '__other__' : current}
+          onChange={(e) => {
+            if (e.target.value === '__other__') { setMode('other'); updateSD(k, ''); }
+            else { setMode('preset'); updateSD(k, e.target.value); }
+          }}
+          className="input-nawi"
+        >
+          <option value="">Select</option>
+          {options.map(o => <option key={o} value={o}>{o}</option>)}
+          {allowOther && <option value="__other__">Others (specify)</option>}
+        </select>
+        {mode === 'other' && (
+          <input
+            autoFocus
+            value={current}
+            onChange={(e) => updateSD(k, e.target.value)}
+            placeholder={`Enter custom ${label.toLowerCase()}`}
+            className="input-nawi mt-2"
+          />
+        )}
+      </div>
+    );
+  };
 
   const selectedServiceObj = SERVICES.find(s => s.key === form.service);
   const hasSubcategories = selectedServiceObj && 'subcategories' in selectedServiceObj;
 
   const steps = ['Type & Service', 'Documents (AI Scan)', 'Client Details', 'Review'];
 
-  const canProceedStep0 = form.clientType && form.leadSource && form.service && (!hasSubcategories || form.serviceSubcategory);
+  const canProceedStep0 = form.clientType && form.leadSource && form.leadSource.trim() && form.service && (!hasSubcategories || form.serviceSubcategory);
   const canProceedStep2 = form.name && form.mobile;
 
   return (
@@ -402,7 +424,24 @@ export default function AddClientWizard() {
               {LEAD_SOURCES.map(s => (
                 <button key={s} onClick={() => updateForm({ leadSource: s })} className={`px-4 py-2 rounded-full text-sm font-medium border transition-colors ${form.leadSource === s ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:border-secondary'}`}>{s}</button>
               ))}
+              {(() => {
+                const isOther = form.leadSource && !LEAD_SOURCES.includes(form.leadSource);
+                return (
+                  <button onClick={() => updateForm({ leadSource: isOther ? form.leadSource : ' ' })} className={`px-4 py-2 rounded-full text-sm font-medium border transition-colors ${isOther ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:border-secondary'}`}>
+                    Others
+                  </button>
+                );
+              })()}
             </div>
+            {form.leadSource && !LEAD_SOURCES.includes(form.leadSource) && (
+              <input
+                autoFocus
+                value={form.leadSource.trim()}
+                onChange={(e) => updateForm({ leadSource: e.target.value || ' ' })}
+                placeholder="Enter custom lead source"
+                className="input-nawi mt-2 max-w-sm"
+              />
+            )}
 
             <h2 className="text-lg font-bold font-display pt-4">3. Select Service</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
