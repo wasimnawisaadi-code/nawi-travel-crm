@@ -407,6 +407,18 @@ function LeadModal({ lead, onClose, onSaved, canEdit, currentUserId, currentUser
             )}
           </div>
 
+          {(form.status === 'CONVERTED' || proofUrl) && canEdit && (
+            <div className="pt-4 border-t border-border space-y-2">
+              <h4 className="text-sm font-semibold flex items-center gap-1.5"><FileImage className="w-4 h-4" /> Conversion Proof <span className="text-destructive">*</span></h4>
+              {proofUrl && (
+                <a href={proofUrl} target="_blank" rel="noopener" className="text-xs text-primary underline block">View current proof ↗</a>
+              )}
+              <input type="file" accept="image/*,application/pdf" onChange={e => setProofFile(e.target.files?.[0] || null)} className="input-nawi text-xs" />
+              {proofFile && <p className="text-[11px] text-muted-foreground"><Upload className="w-3 h-3 inline" /> {proofFile.name} ready to upload</p>}
+              {uploading && <p className="text-[11px] text-primary">Uploading…</p>}
+            </div>
+          )}
+
           <div className="pt-4 border-t border-border space-y-2">
             <h4 className="text-sm font-semibold flex items-center gap-1.5"><StickyNote className="w-4 h-4" /> Activity Log</h4>
             <div className="flex gap-2">
