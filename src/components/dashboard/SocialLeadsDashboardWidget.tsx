@@ -1,10 +1,19 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { MessagesSquare, ChevronRight } from 'lucide-react';
-import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
+import { MessagesSquare, ChevronRight, MessageCircle, Instagram, Facebook } from 'lucide-react';
 
-const COLORS = { NEW: '#1A5B96', CONTACTED: '#C45000', CONVERTED: '#0A7040', LOST: '#C0392B' } as Record<string, string>;
+const STATUS_COLORS: Record<string, string> = {
+  NEW: '#1A5B96', IN_PROGRESS: '#C45000', CONVERTED: '#0A7040', NOT_CONVERTED: '#C0392B',
+};
+const STATUS_LABELS: Record<string, string> = {
+  NEW: 'New', IN_PROGRESS: 'In Progress', CONVERTED: 'Converted', NOT_CONVERTED: 'Not Converted',
+};
+const SOURCE_META: Record<string, { label: string; Icon: any; color: string }> = {
+  whatsapp:  { label: 'WhatsApp',  Icon: MessageCircle, color: '#0A7040' },
+  instagram: { label: 'Instagram', Icon: Instagram,    color: '#C45000' },
+  messenger: { label: 'Messenger', Icon: Facebook,     color: '#1A5B96' },
+};
 
 export default function SocialLeadsDashboardWidget({ basePath = '/admin' }: { basePath?: string }) {
   const [loading, setLoading] = useState(true);
@@ -54,31 +63,50 @@ export default function SocialLeadsDashboardWidget({ basePath = '/admin' }: { ba
             <Stat label="Converted" value={String(stats.converted)} highlight />
             <Stat label="Conv. Rate" value={`${conversionRate}%`} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <p className="text-xs font-semibold text-muted-foreground mb-1">By Source</p>
-              {stats.bySource.length === 0 ? <p className="text-xs text-muted-foreground py-3">None</p> :
-                <ResponsiveContainer width="100%" height={120}>
-                  <PieChart>
-                    <Pie data={stats.bySource} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={45}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
-                      {stats.bySource.map((_, i) => <Cell key={i} fill={['#052F59', '#1A5B96', '#0A7040', '#C45000'][i % 4]} />)}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              }
+              <p className="text-xs font-semibold text-muted-foreground mb-2">By Source</p>
+              {stats.bySource.length === 0 ? <p className="text-xs text-muted-foreground py-3">None</p> : (
+                <div className="space-y-1.5">
+                  {stats.bySource.map((s, i) => {
+                    const meta = SOURCE_META[s.name] || { label: s.name, Icon: MessagesSquare, color: '#64748B' };
+                    const Icon = meta.Icon;
+                    const pct = stats.total > 0 ? Math.round((s.value / stats.total) * 100) : 0;
+                    return (
+                      <div key={i} className="flex items-center gap-2 text-xs">
+                        <Icon className="w-3.5 h-3.5 shrink-0" style={{ color: meta.color }} />
+                        <span className="w-20 shrink-0 truncate">{meta.label}</span>
+                        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: meta.color }} />
+                        </div>
+                        <span className="w-8 text-right font-mono font-medium">{s.value}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             <div>
-              <p className="text-xs font-semibold text-muted-foreground mb-1">By Status</p>
-              <div className="space-y-1">
-                {stats.byStatus.map((s, i) => (
-                  <div key={i} className="flex items-center justify-between text-xs py-1">
-                    <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full" style={{ background: COLORS[s.name] || '#888' }} />{s.name}</span>
-                    <span className="font-medium">{s.value}</span>
-                  </div>
-                ))}
-              </div>
+              <p className="text-xs font-semibold text-muted-foreground mb-2">By Status</p>
+              {stats.byStatus.length === 0 ? <p className="text-xs text-muted-foreground py-3">None</p> : (
+                <div className="space-y-1.5">
+                  {stats.byStatus.map((s, i) => {
+                    const color = STATUS_COLORS[s.name] || '#888';
+                    const label = STATUS_LABELS[s.name] || s.name;
+                    const pct = stats.total > 0 ? Math.round((s.value / stats.total) * 100) : 0;
+                    return (
+                      <div key={i} className="flex items-center gap-2 text-xs">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />
+                        <span className="w-24 shrink-0 truncate">{label}</span>
+                        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+                        </div>
+                        <span className="w-8 text-right font-mono font-medium">{s.value}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </>

@@ -259,9 +259,9 @@ export default function AdminDashboard() {
             <div className="card-nawi">
               <h3 className="text-base font-semibold font-display mb-4">Service Distribution</h3>
               {data.serviceData.length === 0 ? <p className="text-sm text-muted-foreground text-center py-16">No data</p> : (
-                <ResponsiveContainer width="100%" height={280}>
+                <ResponsiveContainer width="100%" height={200}>
                   <PieChart>
-                    <Pie data={data.serviceData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={85} paddingAngle={3}
+                    <Pie data={data.serviceData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={75} paddingAngle={3}
                       label={({ name, percent }) => `${name.split(' ')[0]} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
                       {data.serviceData.map((_: any, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                     </Pie>
@@ -269,6 +269,27 @@ export default function AdminDashboard() {
                   </PieChart>
                 </ResponsiveContainer>
               )}
+              <div className="mt-3 pt-3 border-t border-border">
+                <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">By Status</p>
+                <div className="space-y-1.5">
+                  {(['New', 'Processing', 'Success', 'Failed'] as const).map(st => {
+                    const count = (data.statusCounts[st] as number) || 0;
+                    const total = data.totalClients || 1;
+                    const pct = Math.round((count / total) * 100);
+                    const color = st === 'New' ? '#1A5B96' : st === 'Processing' ? '#C45000' : st === 'Success' ? '#0A7040' : '#C0392B';
+                    return (
+                      <div key={st} className="flex items-center gap-2 text-xs">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />
+                        <span className="w-20 shrink-0">{st}</span>
+                        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+                        </div>
+                        <span className="w-8 text-right font-mono font-medium">{count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
 
