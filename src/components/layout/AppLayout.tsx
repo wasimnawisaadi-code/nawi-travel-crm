@@ -127,7 +127,7 @@ export default function AppLayout() {
           </div>
           {!collapsed && (
             <div className="overflow-hidden">
-              <h1 className="text-sm font-bold text-sidebar-foreground font-display truncate">Nawi Saadi</h1>
+              <h1 className="text-sm font-bold text-sidebar-foreground font-display truncate">Nawi Saadi CRM</h1>
               <p className="text-xs text-sidebar-muted">Travel & Tourism</p>
             </div>
           )}
