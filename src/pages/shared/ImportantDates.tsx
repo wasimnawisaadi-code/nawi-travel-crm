@@ -279,7 +279,7 @@ export default function ImportantDates() {
       <div className="card-nawi bg-primary/5 border-primary/20 py-2.5 px-3 flex items-start gap-2 text-xs">
         <Bell className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
         <p className="text-muted-foreground">
-          <strong className="text-primary">Auto reminders:</strong> Each date has a 🔔 Auto / 🔕 Off toggle. When ON, the system auto-sends a WhatsApp reminder 3 days and 1 day before. Tap to silence individual dates.
+          <strong className="text-primary">Auto reminders:</strong> Each date has a 🔔 <em>Message sent</em> / 🔕 <em>Unsent</em> toggle. When set to <em>Message sent</em>, the system auto-sends a WhatsApp reminder 3 days and 1 day before. Tap to mark individual dates as Unsent (no auto reminder).
         </p>
       </div>
 
