@@ -198,18 +198,31 @@ export default function Login() {
   );
 }
 
-// Enhanced attendance with location
+// Enhanced attendance with location.
+// Same-day rules:
+//   - First login of the day → create row (Present/Late based on grace)
+//   - Logged out + re-login same day → clear logout_time so the session resumes (no double-counting)
+//   - Already logged in (no logout) → leave as-is (idempotent)
 async function recordLoginAttendanceWithLocation(
   userId: string, lat: number | null, lng: number | null, locationStatus: string
 ) {
   const today = new Date().toISOString().split('T')[0];
+  const { getAttendanceSettings, classifyLogin, isWeekend } = await import('@/lib/settings');
+  const settings = await getAttendanceSettings(userId);
+
+  // Don't auto-create attendance on weekend days — they shouldn't count.
+  if (isWeekend(new Date(), settings)) return;
+
   const { data: existing } = await supabase
-    .from('attendance').select('id').eq('employee_id', userId).eq('date', today).single();
+    .from('attendance')
+    .select('id, login_time, logout_time')
+    .eq('employee_id', userId)
+    .eq('date', today)
+    .maybeSingle();
+
+  const now = new Date();
 
   if (!existing) {
-    const now = new Date();
-    const { getAttendanceSettings, classifyLogin } = await import('@/lib/settings');
-    const settings = await getAttendanceSettings(userId);
     const status = classifyLogin(now, settings);
     await supabase.from('attendance').insert({
       employee_id: userId,
@@ -220,5 +233,15 @@ async function recordLoginAttendanceWithLocation(
       login_lng: lng,
       login_location_status: locationStatus,
     } as any);
+    return;
   }
+
+  // Re-login after a logout same day → resume the session
+  if (existing.logout_time) {
+    await supabase.from('attendance').update({
+      logout_time: null,
+      hours_worked: 0,
+    } as any).eq('id', existing.id);
+  }
+  // Otherwise (already active) → no-op
 }
