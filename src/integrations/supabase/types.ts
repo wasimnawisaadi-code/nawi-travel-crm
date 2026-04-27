@@ -993,6 +993,7 @@ export type Database = {
           assigned_at: string | null
           assigned_to: string | null
           client_need: string | null
+          converted_at: string | null
           created_at: string
           display_id: string
           first_name: string | null
@@ -1009,6 +1010,7 @@ export type Database = {
           opted_in: boolean | null
           page_id: string | null
           phone: string | null
+          proof_url: string | null
           raw: Json | null
           source: string
           status: string
@@ -1022,6 +1024,7 @@ export type Database = {
           assigned_at?: string | null
           assigned_to?: string | null
           client_need?: string | null
+          converted_at?: string | null
           created_at?: string
           display_id: string
           first_name?: string | null
@@ -1038,6 +1041,7 @@ export type Database = {
           opted_in?: boolean | null
           page_id?: string | null
           phone?: string | null
+          proof_url?: string | null
           raw?: Json | null
           source: string
           status?: string
@@ -1051,6 +1055,7 @@ export type Database = {
           assigned_at?: string | null
           assigned_to?: string | null
           client_need?: string | null
+          converted_at?: string | null
           created_at?: string
           display_id?: string
           first_name?: string | null
@@ -1067,6 +1072,7 @@ export type Database = {
           opted_in?: boolean | null
           page_id?: string | null
           phone?: string | null
+          proof_url?: string | null
           raw?: Json | null
           source?: string
           status?: string
