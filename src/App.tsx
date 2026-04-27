@@ -28,6 +28,8 @@ import NotificationsPage from "./pages/shared/NotificationsPage";
 import DailyStatusReport from "./pages/shared/DailyStatusReport";
 import DSRTemplateAssignment from "./pages/admin/DSRTemplateAssignment";
 import SocialLeads from "./pages/shared/SocialLeads";
+import PerformanceLeaderboard from "./pages/shared/PerformanceLeaderboard";
+import BroadcastModule from "./pages/admin/BroadcastModule";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -65,6 +67,8 @@ const App = () => (
               <Route path="/admin/dsr" element={<DailyStatusReport />} />
               <Route path="/admin/dsr-assignments" element={<DSRTemplateAssignment />} />
               <Route path="/admin/leads" element={<SocialLeads />} />
+              <Route path="/admin/performance" element={<PerformanceLeaderboard />} />
+              <Route path="/admin/broadcast" element={<BroadcastModule />} />
 
               {/* Employee */}
               <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
@@ -79,6 +83,7 @@ const App = () => (
               <Route path="/employee/notifications" element={<NotificationsPage />} />
               <Route path="/employee/dsr" element={<DailyStatusReport />} />
               <Route path="/employee/leads" element={<SocialLeads />} />
+              <Route path="/employee/performance" element={<PerformanceLeaderboard />} />
             </Route>
 
             <Route path="*" element={<NotFound />} />
