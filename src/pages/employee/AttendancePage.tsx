@@ -47,11 +47,25 @@ export default function AttendancePage() {
       const loginDate = new Date(todayRecord.login_time);
       const logoutDate = new Date(logoutTime);
       const hoursWorked = Math.round(((logoutDate.getTime() - loginDate.getTime()) / 3600000) * 10) / 10;
+
+      // Best-effort capture of logout location
+      let logoutLat: number | null = null;
+      let logoutLng: number | null = null;
+      try {
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+        });
+        logoutLat = pos.coords.latitude;
+        logoutLng = pos.coords.longitude;
+      } catch { /* ignore */ }
+
       await supabase.from('attendance').update({
         logout_time: logoutTime,
         hours_worked: hoursWorked,
+        logout_lat: logoutLat,
+        logout_lng: logoutLng,
         work_summary: workSummary.trim() || null,
-      }).eq('id', todayRecord.id);
+      } as any).eq('id', todayRecord.id);
       setShowCheckout(false);
       setWorkSummary('');
       load();
