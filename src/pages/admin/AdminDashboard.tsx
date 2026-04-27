@@ -7,6 +7,8 @@ import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/integrations/supabase/client';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area, Legend, LineChart, Line } from 'recharts';
+import DSRDashboardWidget from '@/components/dashboard/DSRDashboardWidget';
+import SocialLeadsDashboardWidget from '@/components/dashboard/SocialLeadsDashboardWidget';
 
 const COLORS = ['#052F59', '#1A5B96', '#0A7040', '#C45000', '#C0392B', '#64748B', '#7C3AED', '#0891B2'];
 
@@ -231,10 +233,12 @@ export default function AdminDashboard() {
               </div>
             ))}
           </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <DSRDashboardWidget basePath="/admin" />
+            <SocialLeadsDashboardWidget basePath="/admin" />
+          </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="card-nawi lg:col-span-2">
-              <h3 className="text-base font-semibold font-display mb-4">Revenue & Profit Trend</h3>
+
               <ResponsiveContainer width="100%" height={280}>
                 <AreaChart data={data.revenueData}>
                   <defs>
