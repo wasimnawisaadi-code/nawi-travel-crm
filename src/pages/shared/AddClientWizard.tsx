@@ -757,3 +757,163 @@ function DatesSection({
     </div>
   );
 }
+
+// ============= UAE Visa subcategory-specific fields =============
+function UAEVisaFields({ sub, Field, SelectField, form }: { sub: string; Field: any; SelectField: any; form: any }) {
+  const Hint = ({ items }: { items: string[] }) => (
+    <div className="md:col-span-2 mt-2 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+      <p className="text-xs font-semibold text-primary mb-1">📋 Required Documents</p>
+      <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
+        {items.map((i) => <li key={i}>{i}</li>)}
+      </ul>
+    </div>
+  );
+  const Note = ({ text }: { text: string }) => (
+    <div className="md:col-span-2 p-2 bg-warning/5 border border-warning/20 rounded-lg text-xs text-warning-foreground">
+      ⏱ {text}
+    </div>
+  );
+
+  switch (sub) {
+    case 'Transit Visa':
+      return (
+        <>
+          <SelectField label="Transit Duration" k="transitDuration" options={['48 Hours', '96 Hours']} />
+          <Field label="Onward Destination" k="onwardDestination" />
+          <Field label="Third Country Visa" k="thirdCountryVisa" />
+          <Field label="Hotel Booking Ref" k="hotelBookingRef" />
+          <Field label="Onward Ticket Ref" k="onwardTicketRef" />
+          <Field label="Nationality" k="nationality" />
+          <Note text="Validity: 2/4 days from entry. Must be used within 14 days of issuance." />
+          <Hint items={[
+            'Passport copy — front & back (valid 6+ months)',
+            'One photograph',
+            'Third country visa copy',
+            'Confirmed onward ticket to third destination',
+            'Confirmed hotel booking',
+          ]} />
+        </>
+      );
+    case 'Outside Visa - Single Entry':
+      return (
+        <>
+          <SelectField label="Visa Duration" k="visaDuration" options={['30 Days', '60 Days']} />
+          <Field label="Nationality" k="nationality" />
+          <Field label="Travel Date" k="travelDate" type="date" />
+          <Field label="Hotel Booking Ref" k="hotelBookingRef" />
+          <Field label="Ticket Reference" k="ticketReference" />
+          <Note text="Visa must be used within 60 days of issuance." />
+          <Hint items={[
+            'Passport copy — front & back (valid 6+ months)',
+            'Passport cover page',
+            'One photograph',
+            'Confirmed ticket copy',
+            'Confirmed hotel booking',
+            'Bank statement (for certain nationalities)',
+          ]} />
+        </>
+      );
+    case 'Outside Visa - Multiple Entry':
+      return (
+        <>
+          <SelectField label="Visa Duration" k="visaDuration" options={['30 Days', '60 Days']} />
+          <Field label="Nationality" k="nationality" />
+          <Field label="Travel Date" k="travelDate" type="date" />
+          <Field label="Hotel Booking Ref" k="hotelBookingRef" />
+          <Field label="Ticket Reference" k="ticketReference" />
+          <Note text="Multiple entries allowed. Must be used within 60 days of issuance." />
+          <Hint items={[
+            'Passport copy — front & back (valid 6+ months)',
+            'Passport cover page',
+            'One photograph',
+            'Confirmed ticket copy',
+            'Confirmed hotel booking',
+          ]} />
+        </>
+      );
+    case 'Visa Extension':
+      return (
+        <>
+          <SelectField label="Original Visa Duration" k="originalVisaDuration" options={['30 Days', '60 Days']} />
+          <SelectField label="Extension Number" k="extensionNumber" options={['1st Extension', '2nd Extension', '3rd Extension']} />
+          <Field label="Current Visa Number" k="currentVisaNumber" />
+          <Field label="Current Visa Expiry" k="currentVisaExpiry" type="date" />
+          <Note text="Inside-country extension for next 30 days. 30-day visa: up to 3 extensions. 60-day visa: up to 2 extensions. Only for visas we issued." />
+        </>
+      );
+    case 'Visa Change by Bus':
+      return (
+        <>
+          <SelectField label="Bus Service Type" k="busServiceType" options={['Visit Visa Renewal', 'Residence Cancellation']} />
+          <SelectField label="Pickup Emirate" k="pickupEmirate" options={['Dubai - Near Dnata', 'Sharjah - Safari Mall', 'Abu Dhabi - Mussaffa Safeer Center', 'Abu Dhabi - Madinat Zayed']} />
+          <Field label="Travel Date" k="travelDate" type="date" />
+          <Field label="Guarantor Name" k="guarantorName" />
+          <Field label="Guarantor Emirates ID" k="guarantorEid" />
+          <Note text="Inclusion: 60-day visa (Sharjah/Dubai) without deposit, 10-day Oman visa, round trip ticket, 1-day accommodation, exit voucher, 3 meals. Same-day return possible if visa approved before 4 PM." />
+          <Hint items={
+            form.serviceDetails.busServiceType === 'Residence Cancellation'
+              ? [
+                  'Passport copy — front & back',
+                  'Passport cover page',
+                  'Cancellation paper',
+                  'Original Emirates ID',
+                  'One white-background photograph',
+                  'Guarantor Emirates ID',
+                ]
+              : [
+                  'Passport copy — front & back',
+                  'Passport cover page',
+                  'Current visit visa copy',
+                  'One white-background photograph',
+                  'Guarantor Emirates ID',
+                ]
+          } />
+        </>
+      );
+    case 'Visa Change by Flight':
+      return (
+        <>
+          <SelectField label="Airline" k="airline" options={['Fly Dubai', 'Al Jazeera Airways', 'Air Arabia']} />
+          <Field label="Travel Date" k="travelDate" type="date" />
+          <Field label="Guarantor Name" k="guarantorName" />
+          <Field label="Guarantor Emirates ID" k="guarantorEid" />
+          <Note text="Inclusion: 60-day Dubai visa without deposit + 10-day Oman visa. Same-day return; passenger waits at airport until visa approved. Fly Dubai: overstay/outpass cases not allowed; must be first A2A." />
+          <Hint items={[
+            'Passport copy — front & back',
+            'Passport cover page',
+            'Current visit visa copy or cancellation paper',
+            'One white-background photograph',
+            'Guarantor Emirates ID',
+          ]} />
+        </>
+      );
+    case 'Family Visa':
+      return (
+        <>
+          <Field label="Sponsor Name" k="sponsorName" required />
+          <Field label="Sponsor UID" k="sponsorUid" />
+          <Field label="Sponsor Salary" k="sponsorSalary" />
+          <Field label="Relationship" k="relationship" />
+          <Field label="Nationality" k="nationality" />
+        </>
+      );
+    case 'Abscond':
+      return (
+        <>
+          <Field label="Last Known Location" k="lastLocation" />
+          <Field label="Abscond Date" k="abscondDate" type="date" />
+          <Field label="Case Reference" k="caseReference" />
+        </>
+      );
+    case 'Status Change':
+    case 'Visa Cancellation':
+    default:
+      return (
+        <>
+          <SelectField label="Application Type" k="applicationType" options={['Inside UAE', 'Outside UAE']} />
+          <Field label="Current Visa Number" k="currentVisaNumber" />
+          <Field label="Nationality" k="nationality" />
+        </>
+      );
+  }
+}
