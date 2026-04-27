@@ -334,7 +334,6 @@ export default function GeofenceManagement() {
 
                   {isOpen && (
                     <EmployeeEditor
-                      key={emp.id + (emp.assigned_zone_id || '')}
                       emp={emp}
                       zones={zones}
                       defaults={att}
@@ -374,6 +373,10 @@ function EmployeeEditor({
 }) {
   const [zoneId, setZoneId] = useState<string>(emp.assigned_zone_id || '');
   const [ov, setOv] = useState<EmployeeOverride>(currentOv);
+
+  // Re-sync when parent state changes (e.g. after a save committed to the server)
+  useEffect(() => { setZoneId(emp.assigned_zone_id || ''); }, [emp.assigned_zone_id]);
+  useEffect(() => { setOv(currentOv); }, [JSON.stringify(currentOv)]);
 
   const set = (patch: Partial<EmployeeOverride>) => setOv(o => ({ ...o, ...patch }));
 
