@@ -1,8 +1,17 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { MapPin, Users, Activity, ExternalLink } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { getAttendanceSettings, getAttendanceOverrides, DEFAULT_ATTENDANCE, type AttendanceSettings, type EmployeeOverride } from '@/lib/settings';
+import { MapPin, Users, Activity, ChevronDown, ChevronUp, Save, Plus, Trash2, Navigation } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  getAttendanceSettings,
+  getAttendanceOverrides,
+  saveAttendanceOverrides,
+  invalidateAttendanceCache,
+  DEFAULT_ATTENDANCE,
+  type AttendanceSettings,
+  type EmployeeOverride,
+  type AttendanceOverrides,
+} from '@/lib/settings';
 
 interface Zone {
   id: string;
@@ -14,15 +23,23 @@ interface Zone {
   is_active: boolean;
 }
 
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
 export default function GeofenceManagement() {
   const [zones, setZones] = useState<Zone[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [todayAtt, setTodayAtt] = useState<Record<string, any>>({});
   const [search, setSearch] = useState('');
 
-  // Global defaults — silent fallback for row preview
   const [att, setAtt] = useState<AttendanceSettings>(DEFAULT_ATTENDANCE);
-  const [overrides, setOverrides] = useState<Record<string, EmployeeOverride>>({});
+  const [overrides, setOverrides] = useState<AttendanceOverrides>({});
+
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  // Zone create form
+  const [showZoneForm, setShowZoneForm] = useState(false);
+  const [zForm, setZForm] = useState({ name: '', latitude: '', longitude: '', radius: '100' });
 
   const loadZones = async () => {
     const { data } = await supabase.from('geofence_zones').select('*').order('created_at', { ascending: false });
@@ -65,19 +82,129 @@ export default function GeofenceManagement() {
     return a && a.login_time && !a.logout_time;
   }).length;
 
+  // ---- Zone CRUD ----
+  const useMyLocation = () => {
+    if (!navigator.geolocation) return toast.error('Geolocation not supported');
+    navigator.geolocation.getCurrentPosition(
+      (p) => setZForm(f => ({ ...f, latitude: p.coords.latitude.toFixed(6), longitude: p.coords.longitude.toFixed(6) })),
+      () => toast.error('Could not get location')
+    );
+  };
+
+  const createZone = async () => {
+    if (!zForm.name.trim() || !zForm.latitude || !zForm.longitude) return toast.error('Fill name, lat, lng');
+    const { error } = await supabase.from('geofence_zones').insert({
+      name: zForm.name.trim(),
+      latitude: Number(zForm.latitude),
+      longitude: Number(zForm.longitude),
+      radius: Number(zForm.radius) || 100,
+      zone_type: 'office',
+      is_active: true,
+    });
+    if (error) return toast.error(error.message);
+    toast.success('Zone created');
+    setZForm({ name: '', latitude: '', longitude: '', radius: '100' });
+    setShowZoneForm(false);
+    loadZones();
+  };
+
+  const deleteZone = async (id: string) => {
+    if (!confirm('Delete this zone? Employees assigned to it will lose their zone.')) return;
+    const { error } = await supabase.from('geofence_zones').delete().eq('id', id);
+    if (error) return toast.error(error.message);
+    toast.success('Zone deleted');
+    loadZones();
+    loadEmployees();
+  };
+
+  // ---- Per-employee save ----
+  const saveEmployee = async (emp: any, patch: { zoneId?: string | null; ov?: EmployeeOverride }) => {
+    setSavingId(emp.id);
+    try {
+      if (patch.zoneId !== undefined) {
+        const { error } = await supabase.from('profiles').update({ assigned_zone_id: patch.zoneId }).eq('id', emp.id);
+        if (error) throw error;
+        setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, assigned_zone_id: patch.zoneId } : e));
+      }
+      if (patch.ov !== undefined) {
+        const cleaned: EmployeeOverride = {};
+        Object.entries(patch.ov).forEach(([k, v]) => {
+          if (v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0 && k !== 'weekend_days')) {
+            (cleaned as any)[k] = v;
+          }
+        });
+        const next = { ...overrides, [emp.user_id]: cleaned };
+        if (Object.keys(cleaned).length === 0) delete next[emp.user_id];
+        const { error } = await saveAttendanceOverrides(next);
+        if (error) throw error;
+        setOverrides(next);
+        invalidateAttendanceCache();
+      }
+      toast.success('Saved');
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to save');
+    } finally {
+      setSavingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-lg font-bold font-display">Employee Control Room</h2>
-          <p className="text-sm text-muted-foreground">Manage every employee's zone, schedule, and live attendance from one place.</p>
+          <h2 className="text-lg font-bold font-display">Geofence Control Room</h2>
+          <p className="text-sm text-muted-foreground">Assign a zone & schedule per employee. They can only login from inside their zone.</p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="px-3 py-1.5 rounded-full bg-success/10 text-success text-xs font-medium flex items-center gap-1.5">
-            <Activity className="w-3.5 h-3.5" /> {liveCount} active now
+        <div className="px-3 py-1.5 rounded-full bg-success/10 text-success text-xs font-medium flex items-center gap-1.5">
+          <Activity className="w-3.5 h-3.5" /> {liveCount} active now
+        </div>
+      </div>
+
+      {/* ZONES */}
+      <div className="card-nawi space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <MapPin className="w-5 h-5 text-primary" />
+            <h3 className="font-semibold font-display">Zones ({zones.length})</h3>
           </div>
+          <button className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1" onClick={() => setShowZoneForm(s => !s)}>
+            <Plus className="w-3.5 h-3.5" /> New Zone
+          </button>
         </div>
+
+        {showZoneForm && (
+          <div className="border border-border rounded-lg p-3 grid grid-cols-1 sm:grid-cols-5 gap-2 bg-muted/30">
+            <input className="input-nawi text-sm py-1.5 sm:col-span-2" placeholder="Zone name (e.g. HQ Office)" value={zForm.name} onChange={e => setZForm(f => ({ ...f, name: e.target.value }))} />
+            <input className="input-nawi text-sm py-1.5" placeholder="Latitude" value={zForm.latitude} onChange={e => setZForm(f => ({ ...f, latitude: e.target.value }))} />
+            <input className="input-nawi text-sm py-1.5" placeholder="Longitude" value={zForm.longitude} onChange={e => setZForm(f => ({ ...f, longitude: e.target.value }))} />
+            <input className="input-nawi text-sm py-1.5" placeholder="Radius (m)" type="number" value={zForm.radius} onChange={e => setZForm(f => ({ ...f, radius: e.target.value }))} />
+            <div className="sm:col-span-5 flex gap-2">
+              <button className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1" onClick={useMyLocation}>
+                <Navigation className="w-3.5 h-3.5" /> Use my location
+              </button>
+              <button className="btn-primary text-xs py-1.5 px-3" onClick={createZone}>Create Zone</button>
+            </div>
+          </div>
+        )}
+
+        {zones.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-3 text-center">No zones yet. Create one to enforce location-based login.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {zones.map(z => (
+              <div key={z.id} className="border border-border rounded-lg px-3 py-2 flex items-center justify-between text-sm">
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{z.name}</p>
+                  <p className="text-[11px] text-muted-foreground truncate">{z.latitude.toFixed(4)}, {z.longitude.toFixed(4)} · {z.radius}m</p>
+                </div>
+                <button className="text-destructive hover:bg-destructive/10 p-1.5 rounded" onClick={() => deleteZone(z.id)}>
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* EMPLOYEE CONTROL ROOM */}
@@ -95,7 +222,7 @@ export default function GeofenceManagement() {
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Click any employee to open their profile and set their <strong>Zone</strong>, <strong>Work Schedule</strong>, and <strong>Attendance Rules</strong>.
+          Click an employee to assign their <strong>Zone</strong> & <strong>Schedule</strong>. They can only log in if they are physically inside their zone (when geofence is enforced).
         </p>
 
         {filteredEmployees.length === 0 ? (
@@ -108,43 +235,200 @@ export default function GeofenceManagement() {
               const zone = zones.find(z => z.id === emp.assigned_zone_id);
               const att2 = todayAtt[emp.user_id];
               const isLive = att2 && att2.login_time && !att2.logout_time;
-              const geofenceOff = ov.enforce_geofence === false;
+              const enforce = ov.enforce_geofence !== false;
+              const autoLogout = ov.auto_logout_outside_zone ?? att.auto_logout_outside_zone;
+              const ws = ov.work_start || att.work_start;
+              const we = ov.work_end || att.work_end;
+              const grace = ov.grace_minutes ?? att.grace_minutes;
+              const weekend = ov.weekend_days || att.weekend_days;
+              const isOpen = expanded === emp.id;
 
               return (
-                <Link
-                  key={emp.id}
-                  to={`/admin/employees/${emp.id}`}
-                  className="block border border-border rounded-lg hover:bg-muted/40 transition-colors"
-                >
-                  <div className="flex items-center gap-3 px-3 py-2.5 text-left">
+                <div key={emp.id} className="border border-border rounded-lg overflow-hidden">
+                  <button
+                    onClick={() => setExpanded(isOpen ? null : emp.id)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-muted/40 transition-colors"
+                  >
                     {emp.photo_url ? <img src={emp.photo_url} className="w-10 h-10 rounded-full object-cover flex-shrink-0" alt="" /> :
-                      <div className="w-10 h-10 rounded-full bg-secondary text-secondary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">{emp.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}</div>}
+                      <div className="w-10 h-10 rounded-full bg-secondary text-secondary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">{(emp.name || '?').split(' ').map((n: string) => n[0]).join('').slice(0, 2)}</div>}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-medium truncate">{emp.name}</p>
                         {isLive && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-success/15 text-success font-medium">● LIVE</span>}
-                        {hasOverride && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">CUSTOM RULES</span>}
-                        {geofenceOff && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-warning/10 text-warning font-medium">GEOFENCE OFF</span>}
+                        {hasOverride && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">CUSTOM</span>}
+                        {!enforce && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-warning/10 text-warning font-medium">GEOFENCE OFF</span>}
                       </div>
                       <p className="text-[11px] text-muted-foreground truncate mt-0.5">
                         {zone ? <><MapPin className="w-2.5 h-2.5 inline" /> {zone.name} ({zone.radius}m)</> : <span className="text-warning">No zone assigned</span>}
                         <span className="mx-1.5">•</span>
-                        {ov.work_start || att.work_start}–{ov.work_end || att.work_end} · {ov.grace_minutes ?? att.grace_minutes}m grace
+                        {ws}–{we} · {grace}m grace
                       </p>
                     </div>
-                    {isLive && att2 && (
-                      <span className="text-[11px] text-muted-foreground flex-shrink-0 hidden sm:inline">
-                        Login {new Date(att2.login_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    )}
-                    <ExternalLink className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                  </div>
-                </Link>
+                    {isOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                  </button>
+
+                  {isOpen && (
+                    <EmployeeEditor
+                      key={emp.id + (emp.assigned_zone_id || '')}
+                      emp={emp}
+                      zones={zones}
+                      defaults={att}
+                      currentOv={ov}
+                      saving={savingId === emp.id}
+                      onSave={(zoneId, newOv) => saveEmployee(emp, { zoneId, ov: newOv })}
+                      onReset={() => saveEmployee(emp, { ov: {} })}
+                      weekend={weekend}
+                      autoLogout={autoLogout}
+                      enforce={enforce}
+                    />
+                  )}
+                </div>
               );
             })}
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ============= Inline editor =============
+function EmployeeEditor({
+  emp, zones, defaults, currentOv, saving, onSave, onReset,
+}: {
+  emp: any;
+  zones: Zone[];
+  defaults: AttendanceSettings;
+  currentOv: EmployeeOverride;
+  saving: boolean;
+  onSave: (zoneId: string | null, ov: EmployeeOverride) => void;
+  onReset: () => void;
+  weekend: number[];
+  autoLogout: boolean;
+  enforce: boolean;
+}) {
+  const [zoneId, setZoneId] = useState<string>(emp.assigned_zone_id || '');
+  const [ov, setOv] = useState<EmployeeOverride>(currentOv);
+
+  const set = (patch: Partial<EmployeeOverride>) => setOv(o => ({ ...o, ...patch }));
+
+  const enforce = ov.enforce_geofence !== false;
+  const autoLogout = ov.auto_logout_outside_zone ?? defaults.auto_logout_outside_zone;
+  const weekend = ov.weekend_days || defaults.weekend_days;
+
+  const toggleDay = (d: number) => {
+    const next = weekend.includes(d) ? weekend.filter(x => x !== d) : [...weekend, d].sort();
+    set({ weekend_days: next });
+  };
+
+  return (
+    <div className="border-t border-border bg-muted/20 p-4 space-y-4">
+      {/* ZONE */}
+      <div>
+        <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Assigned Zone</label>
+        <select className="input-nawi text-sm py-1.5 mt-1 w-full" value={zoneId} onChange={e => setZoneId(e.target.value)}>
+          <option value="">— No zone (cannot login if geofence ON) —</option>
+          {zones.map(z => (
+            <option key={z.id} value={z.id}>{z.name} · {z.radius}m</option>
+          ))}
+        </select>
+      </div>
+
+      {/* TOGGLES */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Toggle
+          label="Enforce Geofence"
+          hint="If ON, employee can only log in from inside their zone."
+          checked={enforce}
+          onChange={(v) => set({ enforce_geofence: v ? undefined : false })}
+        />
+        <Toggle
+          label="Auto-logout if leaves zone"
+          hint="Force logout when employee exits the zone during the day."
+          checked={autoLogout}
+          onChange={(v) => set({ auto_logout_outside_zone: v })}
+        />
+      </div>
+
+      {/* SCHEDULE */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Field label="Work Start" hint={`Default: ${defaults.work_start}`}>
+          <input type="time" className="input-nawi text-sm py-1.5 w-full" value={ov.work_start || ''} onChange={e => set({ work_start: e.target.value || undefined })} />
+        </Field>
+        <Field label="Work End" hint={`Default: ${defaults.work_end}`}>
+          <input type="time" className="input-nawi text-sm py-1.5 w-full" value={ov.work_end || ''} onChange={e => set({ work_end: e.target.value || undefined })} />
+        </Field>
+        <Field label="Grace (min)" hint={`Default: ${defaults.grace_minutes}m`}>
+          <input type="number" min={0} max={120} className="input-nawi text-sm py-1.5 w-full"
+            value={ov.grace_minutes ?? ''}
+            placeholder={String(defaults.grace_minutes)}
+            onChange={e => set({ grace_minutes: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0) })} />
+        </Field>
+      </div>
+
+      {/* WEEKEND */}
+      <div>
+        <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Weekend Days</label>
+        <div className="flex gap-1.5 mt-1.5 flex-wrap">
+          {WEEKDAYS.map((d, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => toggleDay(i)}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
+                weekend.includes(i) ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:bg-muted'
+              }`}
+            >{d}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* ACTIONS */}
+      <div className="flex items-center justify-between pt-2 border-t border-border flex-wrap gap-2">
+        <button
+          className="text-xs text-muted-foreground hover:text-destructive"
+          onClick={onReset}
+          disabled={saving}
+        >
+          Reset to defaults
+        </button>
+        <button
+          className="btn-primary text-xs py-1.5 px-4 flex items-center gap-1.5"
+          onClick={() => onSave(zoneId || null, ov)}
+          disabled={saving}
+        >
+          <Save className="w-3.5 h-3.5" />
+          {saving ? 'Saving…' : 'Save Changes'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</label>
+      <div className="mt-1">{children}</div>
+      {hint && <p className="text-[10px] text-muted-foreground mt-0.5">{hint}</p>}
+    </div>
+  );
+}
+
+function Toggle({ label, hint, checked, onChange }: { label: string; hint?: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border border-border rounded-lg px-3 py-2 bg-background">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{label}</p>
+        {hint && <p className="text-[11px] text-muted-foreground mt-0.5">{hint}</p>}
+      </div>
+      <button
+        type="button"
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${checked ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+      >
+        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`} />
+      </button>
     </div>
   );
 }
