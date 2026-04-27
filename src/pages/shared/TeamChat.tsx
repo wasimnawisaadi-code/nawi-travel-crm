@@ -83,19 +83,36 @@ export default function TeamChat() {
   useEffect(() => {
     if (!user) return;
     const fetchGroups = async () => {
-      const { data } = await supabase.from('chat_groups').select('*').contains('members', [user.id]);
-      setGroups(data || []);
-      if (data && !data.find(g => g.name === 'General')) {
-        const allUserIds = allUsers.map(u => u.user_id);
+      const { data } = await supabase
+        .from('chat_groups')
+        .select('*')
+        .contains('members', [user.id])
+        .order('created_at', { ascending: true });
+
+      // Dedupe any accidental duplicate "General" rows — keep the OLDEST, delete the rest
+      const generals = (data || []).filter((g) => g.name === 'General');
+      let cleaned = data || [];
+      if (generals.length > 1) {
+        const keep = generals[0];
+        const dupeIds = generals.slice(1).map((g) => g.id);
+        await supabase.from('chat_groups').delete().in('id', dupeIds);
+        cleaned = (data || []).filter((g) => !dupeIds.includes(g.id));
+      }
+
+      setGroups(cleaned);
+
+      if (cleaned.length === 0 && allUsers.length > 0) {
+        // Bootstrap a single shared General room (only if none exists in their view)
+        const allUserIds = allUsers.map((u) => u.user_id);
         const { data: newGroup } = await supabase.from('chat_groups').insert([{
           name: 'General', members: allUserIds, created_by: user.id,
         }]).select().single();
         if (newGroup) {
-          setGroups(prev => [newGroup, ...prev]);
+          setGroups([newGroup]);
           setActiveChat(newGroup.id);
         }
-      } else if (data && data.length > 0 && !activeChat) {
-        setActiveChat(data[0].id);
+      } else if (cleaned.length > 0 && !activeChat) {
+        setActiveChat(cleaned[0].id);
       }
     };
     fetchGroups();
