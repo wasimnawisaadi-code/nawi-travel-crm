@@ -38,13 +38,12 @@ export default function EmployeeProfile() {
       }
       if (!profile) return;
 
-      // Skip admin/superadmin accounts silently — they don't appear in employee list
+      // Detect role — admins are shown read-only (no delete/deactivate, no schedule edits)
       const { data: roleRows } = await supabase.from('user_roles').select('role').eq('user_id', profile.user_id);
       const roles = new Set((roleRows || []).map((r: any) => r.role));
-      if (roles.has('admin') || roles.has('superadmin')) {
-        navigate('/admin/employees');
-        return;
-      }
+      const detectedRole: 'admin' | 'superadmin' | 'employee' =
+        roles.has('superadmin') ? 'superadmin' : roles.has('admin') ? 'admin' : 'employee';
+      setEmpRole(detectedRole);
 
       setEmp(profile);
       setForm(profile);
