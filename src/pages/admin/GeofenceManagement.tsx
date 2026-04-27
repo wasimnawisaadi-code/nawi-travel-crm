@@ -500,6 +500,16 @@ export default function GeofenceManagement() {
                             </div>
                           </div>
                         )}
+                        <label className="flex items-center gap-2 mt-3 cursor-pointer text-xs">
+                          <input
+                            type="checkbox"
+                            checked={ov.enforce_geofence !== false}
+                            onChange={(e) => setEmpOverride(emp.user_id, { enforce_geofence: e.target.checked ? undefined : false })}
+                            className="w-4 h-4 rounded border-border"
+                          />
+                          <span>Enforce geofence for this employee</span>
+                          <span className="text-muted-foreground">(uncheck for sales/field staff who work outside)</span>
+                        </label>
                       </div>
 
                       {/* Schedule overrides */}
