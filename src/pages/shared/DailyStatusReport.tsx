@@ -19,10 +19,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import {
   ClipboardList, Plus, Upload, Download, FileSpreadsheet, Pencil, Trash2,
-  Settings as SettingsIcon, TrendingUp, DollarSign, Users, AlertCircle, CheckCircle2,
+  Settings as SettingsIcon, TrendingUp, DollarSign, Users, AlertCircle, CheckCircle2, ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
+import DSRGridEditor from '@/components/DSRGridEditor';
 
 export default function DailyStatusReport() {
   const { user, profile, isAdmin } = useAuth();
@@ -211,12 +212,7 @@ export default function DailyStatusReport() {
                     <FileSpreadsheet className="h-4 w-4 mr-1" />Export
                   </Button>
                   {!isAdmin && (
-                    <>
-                      <ExcelUploadButton template={activeTemplate} userId={user!.id} userName={profile!.name} entryDate={fromDate} onDone={loadEntries} />
-                      <Button size="sm" onClick={() => { setEditingEntry(null); setShowEntryModal(true); }}>
-                        <Plus className="h-4 w-4 mr-1" />Add Row
-                      </Button>
-                    </>
+                    <ExcelUploadButton template={activeTemplate} userId={user!.id} userName={profile!.name} entryDate={fromDate} onDone={loadEntries} />
                   )}
                 </div>
               </CardContent>
@@ -255,57 +251,25 @@ export default function DailyStatusReport() {
               </Card>
             )}
 
-            {/* Entries table */}
+            {/* Inline grid editor — Excel-like, no wizard */}
             <Card>
-              <CardHeader><CardTitle className="text-base">{activeTemplate.icon} {activeTemplate.name} — Entries</CardTitle></CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="text-base">{activeTemplate.icon} {activeTemplate.name} — Entries</CardTitle>
+                <Button asChild size="sm" variant="outline">
+                  <a href={`https://docs.google.com/spreadsheets/create`} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-3.5 w-3.5 mr-1" />Open in Google Sheets
+                  </a>
+                </Button>
+              </CardHeader>
               <CardContent>
-                {loading ? <div className="text-center py-8 text-muted-foreground">Loading…</div>
-                  : entries.length === 0 ? <div className="text-center py-8 text-muted-foreground">No entries for this period</div>
-                  : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-muted/50">
-                          <tr className="text-xs text-muted-foreground">
-                            <th className="text-left p-2 whitespace-nowrap">ID</th>
-                            <th className="text-left p-2 whitespace-nowrap">Date</th>
-                            {isAdmin && <th className="text-left p-2 whitespace-nowrap">Employee</th>}
-                            {activeTemplate.columns.slice(0, 6).map(c => (
-                              <th key={c.key} className="text-left p-2 whitespace-nowrap">{c.label}</th>
-                            ))}
-                            <th className="text-right p-2 whitespace-nowrap">Profit</th>
-                            <th className="p-2">Source</th>
-                            <th className="p-2"></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {entries.map(e => (
-                            <tr key={e.id} className="border-b hover:bg-muted/30">
-                              <td className="p-2 font-mono text-xs">{e.display_id}</td>
-                              <td className="p-2 whitespace-nowrap">{e.entry_date}</td>
-                              {isAdmin && <td className="p-2">{e.employee_name}</td>}
-                              {activeTemplate.columns.slice(0, 6).map(c => (
-                                <td key={c.key} className="p-2 max-w-[180px] truncate">{e.data[c.key] || '—'}</td>
-                              ))}
-                              <td className="p-2 text-right text-green-600 font-medium whitespace-nowrap">{formatCurrency(Number(e.profit_amount || 0))}</td>
-                              <td className="p-2"><Badge variant={e.source === 'excel' ? 'secondary' : 'outline'} className="text-xs">{e.source}</Badge></td>
-                              <td className="p-2 whitespace-nowrap">
-                                {(e.employee_id === user?.id || isAdmin) && (
-                                  <div className="flex gap-1">
-                                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setEditingEntry(e); setShowEntryModal(true); }}>
-                                      <Pencil className="h-3.5 w-3.5" />
-                                    </Button>
-                                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => handleDelete(e.id)}>
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </Button>
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                <DSRGridEditor
+                  template={activeTemplate}
+                  fromDate={fromDate}
+                  toDate={toDate}
+                  isAdmin={isAdmin}
+                  employeeFilter={employeeFilter}
+                  onChanged={loadEntries}
+                />
               </CardContent>
             </Card>
           </TabsContent>
