@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { MapPin, Plus, Trash2, Edit2, Check, X, Navigation, Clock, Save, Users, Activity, Settings2, ChevronDown, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
-import { getAttendanceSettings, saveAttendanceSettings, getAttendanceOverrides, saveAttendanceOverrides, DEFAULT_ATTENDANCE, type AttendanceSettings, type EmployeeOverride } from '@/lib/settings';
+import { getAttendanceSettings, getAttendanceOverrides, saveAttendanceOverrides, DEFAULT_ATTENDANCE, type AttendanceSettings, type EmployeeOverride } from '@/lib/settings';
 
 interface Zone {
   id: string;
