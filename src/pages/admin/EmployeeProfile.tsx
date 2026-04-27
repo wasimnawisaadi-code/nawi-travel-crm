@@ -49,18 +49,24 @@ export default function EmployeeProfile() {
       setForm(profile);
 
       const userId = profile.user_id;
-      const [cRes, tRes, aRes, lRes, gRes] = await Promise.all([
+      const [cRes, tRes, aRes, lRes, gRes, zRes, ovAll, baseAtt] = await Promise.all([
         supabase.from('clients').select('*').or(`assigned_to.eq.${userId},created_by.eq.${userId}`),
         supabase.from('tasks').select('*').or(`assigned_to.eq.${userId},created_by.eq.${userId}`),
         supabase.from('attendance').select('*').eq('employee_id', userId).order('date', { ascending: false }).limit(50),
         supabase.from('leave_requests').select('*').eq('employee_id', userId).order('created_at', { ascending: false }),
         supabase.from('goals').select('*').or(`assigned_to.eq.${userId},assigned_to.is.null`),
+        supabase.from('geofence_zones').select('*').eq('is_active', true).order('name'),
+        getAttendanceOverrides(),
+        getAttendanceSettings(),
       ]);
       setClients(cRes.data || []);
       setTasks(tRes.data || []);
       setAttendance(aRes.data || []);
       setLeave(lRes.data || []);
       setGoals(gRes.data || []);
+      setZones(zRes.data || []);
+      setGlobalAtt(baseAtt);
+      setOverride(ovAll[userId] || {});
     };
     fetchAll();
   }, [id]);
