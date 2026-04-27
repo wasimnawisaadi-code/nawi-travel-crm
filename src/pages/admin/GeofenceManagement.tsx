@@ -221,28 +221,8 @@ export default function GeofenceManagement() {
           </div>
         </div>
 
-        {/* Hours / classification */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Half Day Below (h)</label>
-            <input type="number" min={1} max={12} step={0.5} value={att.half_day_after_hours}
-              onChange={e => setAtt(s => ({ ...s, half_day_after_hours: Math.max(0, Number(e.target.value) || 0) }))}
-              className="input-nawi" />
-            <p className="text-[11px] text-muted-foreground mt-0.5">Worked &lt; this = Half Day</p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Full Day From (h)</label>
-            <input type="number" min={1} max={16} step={0.5} value={att.min_full_day_hours}
-              onChange={e => setAtt(s => ({ ...s, min_full_day_hours: Math.max(0, Number(e.target.value) || 0) }))}
-              className="input-nawi" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Early Leave (min)</label>
-            <input type="number" min={0} max={120} value={att.early_leave_threshold_min}
-              onChange={e => setAtt(s => ({ ...s, early_leave_threshold_min: Math.max(0, Number(e.target.value) || 0) }))}
-              className="input-nawi" />
-            <p className="text-[11px] text-muted-foreground mt-0.5">Logout &gt; N min before End</p>
-          </div>
+        {/* Default zone only */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Default Zone</label>
             <select value={att.default_zone_id || ''} onChange={e => setAtt(s => ({ ...s, default_zone_id: e.target.value || null }))} className="input-nawi text-sm">
@@ -251,6 +231,7 @@ export default function GeofenceManagement() {
                 <option key={z.id} value={z.id}>{z.name} ({z.zone_type}, {z.radius}m)</option>
               ))}
             </select>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Used when an employee has no specific zone assigned.</p>
           </div>
         </div>
 
