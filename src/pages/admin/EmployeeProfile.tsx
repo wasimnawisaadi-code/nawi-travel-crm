@@ -21,6 +21,11 @@ export default function EmployeeProfile() {
   const [leave, setLeave] = useState<any[]>([]);
   const [goals, setGoals] = useState<any[]>([]);
   const [pwdAction, setPwdAction] = useState<'save' | 'activate' | 'deactivate' | 'delete' | null>(null);
+  const [zones, setZones] = useState<any[]>([]);
+  const [globalAtt, setGlobalAtt] = useState<any>(null);
+  const [override, setOverride] = useState<EmployeeOverride>({});
+  const [savingZone, setSavingZone] = useState(false);
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   useEffect(() => {
     const fetchAll = async () => {
