@@ -235,20 +235,24 @@ export default function GeofenceManagement() {
           </div>
         </div>
 
-        {/* Geofence master switches */}
-        <div className="flex flex-wrap gap-4 pt-1">
-          <label className="flex items-center gap-2 cursor-pointer text-sm">
-            <input type="checkbox" checked={att.enforce_geofence}
-              onChange={e => setAtt(s => ({ ...s, enforce_geofence: e.target.checked }))}
-              className="w-4 h-4 rounded border-border" />
-            <span>Enforce geofence on login</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer text-sm">
-            <input type="checkbox" checked={att.auto_logout_outside_zone}
-              onChange={e => setAtt(s => ({ ...s, auto_logout_outside_zone: e.target.checked }))}
-              className="w-4 h-4 rounded border-border" />
-            <span>Auto-logout if employee leaves zone</span>
-          </label>
+        {/* Geofence master switches — on/off pills */}
+        <div className="flex flex-wrap gap-3 pt-1">
+          {[
+            { key: 'enforce_geofence', label: 'Enforce geofence on login', val: att.enforce_geofence },
+            { key: 'auto_logout_outside_zone', label: 'Auto-logout if employee leaves zone', val: att.auto_logout_outside_zone },
+          ].map(t => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setAtt(s => ({ ...s, [t.key]: !t.val }))}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm transition-colors ${t.val ? 'bg-success/10 text-success border-success/30' : 'bg-muted text-muted-foreground border-border'}`}
+            >
+              <span className={`w-8 h-4 rounded-full relative transition-colors ${t.val ? 'bg-success' : 'bg-border'}`}>
+                <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-card shadow transition-all ${t.val ? 'left-[18px]' : 'left-0.5'}`} />
+              </span>
+              <span>{t.label} <span className="font-bold">{t.val ? 'ON' : 'OFF'}</span></span>
+            </button>
+          ))}
         </div>
 
         <div>
