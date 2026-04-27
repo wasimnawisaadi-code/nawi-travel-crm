@@ -83,19 +83,36 @@ export default function TeamChat() {
   useEffect(() => {
     if (!user) return;
     const fetchGroups = async () => {
-      const { data } = await supabase.from('chat_groups').select('*').contains('members', [user.id]);
-      setGroups(data || []);
-      if (data && !data.find(g => g.name === 'General')) {
-        const allUserIds = allUsers.map(u => u.user_id);
+      const { data } = await supabase
+        .from('chat_groups')
+        .select('*')
+        .contains('members', [user.id])
+        .order('created_at', { ascending: true });
+
+      // Dedupe any accidental duplicate "General" rows — keep the OLDEST, delete the rest
+      const generals = (data || []).filter((g) => g.name === 'General');
+      let cleaned = data || [];
+      if (generals.length > 1) {
+        const keep = generals[0];
+        const dupeIds = generals.slice(1).map((g) => g.id);
+        await supabase.from('chat_groups').delete().in('id', dupeIds);
+        cleaned = (data || []).filter((g) => !dupeIds.includes(g.id));
+      }
+
+      setGroups(cleaned);
+
+      if (cleaned.length === 0 && allUsers.length > 0) {
+        // Bootstrap a single shared General room (only if none exists in their view)
+        const allUserIds = allUsers.map((u) => u.user_id);
         const { data: newGroup } = await supabase.from('chat_groups').insert([{
           name: 'General', members: allUserIds, created_by: user.id,
         }]).select().single();
         if (newGroup) {
-          setGroups(prev => [newGroup, ...prev]);
+          setGroups([newGroup]);
           setActiveChat(newGroup.id);
         }
-      } else if (data && data.length > 0 && !activeChat) {
-        setActiveChat(data[0].id);
+      } else if (cleaned.length > 0 && !activeChat) {
+        setActiveChat(cleaned[0].id);
       }
     };
     fetchGroups();
@@ -133,10 +150,30 @@ export default function TeamChat() {
           setMessages(prev => [...prev, msg]);
         }
       })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'chat_messages' }, (payload) => {
+        const oldMsg = payload.old as any;
+        setMessages(prev => prev.filter(m => m.id !== oldMsg.id));
+      })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
   }, [activeChat, activeChatType, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchDMs = async () => {
+      const { data } = await supabase.from('chat_messages').select('sender_id, recipient_id')
+        .eq('message_type', 'direct' as any)
+        .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`);
+      const others = new Set<string>();
+      (data || []).forEach((m: any) => {
+        const otherId = m.sender_id === user.id ? m.recipient_id : m.sender_id;
+        if (otherId) others.add(otherId);
+      });
+      setDmConversations(Array.from(others));
+    };
+    fetchDMs();
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -259,6 +296,31 @@ export default function TeamChat() {
     } finally { setUploading(false); }
   };
 
+  const deleteMessage = async (msg: any) => {
+    if (msg.sender_id !== user?.id) { toast.error('You can only delete your own messages'); return; }
+    if (!confirm('Delete this message? This cannot be undone.')) return;
+    const { error } = await supabase.from('chat_messages').delete().eq('id', msg.id);
+    if (error) { toast.error(error.message); return; }
+    setMessages(prev => prev.filter(m => m.id !== msg.id));
+    toast.success('Message deleted');
+  };
+
+  const deleteGroup = async (group: any) => {
+    if (group.created_by !== user?.id) { toast.error('Only the group creator can delete it'); return; }
+    if (group.name === 'General') { toast.error('The General group cannot be deleted'); return; }
+    if (!confirm(`Delete group "${group.name}"? All messages will be lost.`)) return;
+    await supabase.from('chat_messages').delete().eq('group_id', group.id);
+    const { error } = await supabase.from('chat_groups').delete().eq('id', group.id);
+    if (error) { toast.error(error.message); return; }
+    setGroups(prev => prev.filter(g => g.id !== group.id));
+    if (activeChat === group.id) {
+      const remaining = groups.filter(g => g.id !== group.id);
+      if (remaining.length > 0) { setActiveChat(remaining[0].id); setActiveChatType('group'); }
+      else setActiveChat('');
+    }
+    toast.success('Group deleted');
+  };
+
   const createGroup = async () => {
     if (!groupForm.name.trim() || !user) return;
     const { data } = await supabase.from('chat_groups').insert([{
@@ -304,13 +366,25 @@ export default function TeamChat() {
             {groups.map((g: any) => {
               const unread = unreadCounts[g.id] || 0;
               const isActive = activeChat === g.id && activeChatType === 'group';
+              const canDelete = g.created_by === user?.id && g.name !== 'General';
               return (
-                <button key={g.id} onClick={() => { setActiveChat(g.id); setActiveChatType('group'); }}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${isActive ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted text-foreground'}`}>
-                  <Hash className="w-4 h-4 flex-shrink-0" />
-                  <span className="truncate flex-1">{g.name}</span>
-                  {unread > 0 && !isActive && <span className="bg-destructive text-destructive-foreground text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{unread}</span>}
-                </button>
+                <div key={g.id} className={`group/grp w-full flex items-center gap-1 rounded-lg pr-1 transition-colors ${isActive ? 'bg-primary/10' : 'hover:bg-muted'}`}>
+                  <button onClick={() => { setActiveChat(g.id); setActiveChatType('group'); }}
+                    className={`flex-1 text-left px-3 py-2 text-sm flex items-center gap-2 ${isActive ? 'text-primary font-medium' : 'text-foreground'}`}>
+                    <Hash className="w-4 h-4 flex-shrink-0" />
+                    <span className="truncate flex-1">{g.name}</span>
+                    {unread > 0 && !isActive && <span className="bg-destructive text-destructive-foreground text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{unread}</span>}
+                  </button>
+                  {canDelete && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteGroup(g); }}
+                      title="Delete group"
+                      className="opacity-0 group-hover/grp:opacity-100 p-1 rounded text-muted-foreground hover:text-destructive transition-opacity"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -358,7 +432,7 @@ export default function TeamChat() {
                 {showDate && (
                   <div className="text-center my-4"><span className="text-xs text-muted-foreground bg-muted px-3 py-1 rounded-full">{formatDay(msg.created_at)}</span></div>
                 )}
-                <div className={`flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                <div className={`group/msg flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
                   {!isMe && (
                     msg.sender_photo ? (
                       <img src={msg.sender_photo} alt="" className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
@@ -367,6 +441,15 @@ export default function TeamChat() {
                         {msg.sender_name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
                       </div>
                     )
+                  )}
+                  {isMe && (
+                    <button
+                      onClick={() => deleteMessage(msg)}
+                      title="Unsend / delete"
+                      className="opacity-0 group-hover/msg:opacity-100 p-1.5 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-opacity self-center"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   )}
                   <div className={`max-w-[70%] ${isMe ? 'order-first' : ''}`}>
                     {!isMe && <p className="text-xs text-muted-foreground mb-1 ml-1">{msg.sender_name}</p>}

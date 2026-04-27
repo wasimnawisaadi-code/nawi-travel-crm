@@ -214,10 +214,10 @@ export default function ImportantDates() {
           </button>
           <button
             onClick={() => toggleSilence(d)}
-            title={silenced ? 'Tap to TURN ON auto WhatsApp reminders (1d / 3d before)' : 'Tap to TURN OFF auto WhatsApp reminders'}
+            title={silenced ? 'Currently UNSENT — tap to enable auto WhatsApp reminders (1d / 3d before)' : 'Auto WhatsApp reminder will be SENT — tap to mark as Unsent'}
             className={`flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full transition-colors ${silenced ? 'bg-muted text-muted-foreground' : 'bg-success/15 text-success'}`}
           >
-            {silenced ? <><BellOff className="w-3 h-3" /> Off</> : <><Bell className="w-3 h-3" /> Auto</>}
+            {silenced ? <><BellOff className="w-3 h-3" /> Unsent</> : <><Bell className="w-3 h-3" /> Message sent</>}
           </button>
         </div>
       </div>
@@ -279,7 +279,7 @@ export default function ImportantDates() {
       <div className="card-nawi bg-primary/5 border-primary/20 py-2.5 px-3 flex items-start gap-2 text-xs">
         <Bell className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
         <p className="text-muted-foreground">
-          <strong className="text-primary">Auto reminders:</strong> Each date has a 🔔 Auto / 🔕 Off toggle. When ON, the system auto-sends a WhatsApp reminder 3 days and 1 day before. Tap to silence individual dates.
+          <strong className="text-primary">Auto reminders:</strong> Each date has a 🔔 <em>Message sent</em> / 🔕 <em>Unsent</em> toggle. When set to <em>Message sent</em>, the system auto-sends a WhatsApp reminder 3 days and 1 day before. Tap to mark individual dates as Unsent (no auto reminder).
         </p>
       </div>
 
