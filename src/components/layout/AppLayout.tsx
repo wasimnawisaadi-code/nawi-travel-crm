@@ -10,7 +10,7 @@ import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/integrations/supabase/client';
 import logo from '@/assets/logo.png';
 import AIChatbot from '@/components/AIChatbot';
-import CalculatorWidget from '@/components/CalculatorWidget';
+import HeaderCalculator from '@/components/HeaderCalculator';
 import { openAIChatbot } from '@/lib/ai-chatbot-bus';
 
 const adminLinks = [
@@ -219,6 +219,7 @@ export default function AppLayout() {
           <Link to={`/${isAdmin ? 'admin' : 'employee'}/calendar`} className="p-2 hover:bg-muted rounded-lg transition-colors" title="Calendar">
             <Calendar className="w-5 h-5 text-muted-foreground" />
           </Link>
+          <HeaderCalculator />
           <button onClick={openAIChatbot} className="p-2 hover:bg-muted rounded-lg transition-colors" title="AI Assistant" aria-label="AI Assistant">
             <Sparkles className="w-5 h-5 text-muted-foreground" />
           </button>
@@ -230,7 +231,6 @@ export default function AppLayout() {
         </main>
       </div>
 
-      <CalculatorWidget />
       <AIChatbot hideFloatingButton />
     </div>
   );

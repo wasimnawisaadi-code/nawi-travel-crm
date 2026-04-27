@@ -5,6 +5,8 @@ import { useAuth } from '@/lib/auth-context';
 import { formatCurrency, formatDate, daysUntil } from '@/lib/supabase-service';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { Link } from 'react-router-dom';
+import DSRDashboardWidget from '@/components/dashboard/DSRDashboardWidget';
+import SocialLeadsDashboardWidget from '@/components/dashboard/SocialLeadsDashboardWidget';
 
 export default function EmployeeDashboard() {
   const { user } = useAuth();
@@ -78,6 +80,11 @@ export default function EmployeeDashboard() {
           <StatusBadge status={data.attendance.status} />
         </div>
       )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <DSRDashboardWidget basePath="/employee" />
+        <SocialLeadsDashboardWidget basePath="/employee" />
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card-nawi">
