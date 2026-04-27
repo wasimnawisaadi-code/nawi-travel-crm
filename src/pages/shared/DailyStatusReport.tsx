@@ -97,6 +97,31 @@ export default function DailyStatusReport() {
     return Array.from(map.values()).sort((a, b) => b.profit - a.profit);
   }, [entries]);
 
+  // Daily trend for charts (sales/profit/count over time)
+  const dailyTrend = useMemo(() => {
+    const map = new Map<string, { date: string; sales: number; profit: number; count: number }>();
+    entries.forEach(e => {
+      const d = e.entry_date;
+      const cur = map.get(d) || { date: d, sales: 0, profit: 0, count: 0 };
+      cur.sales += Number(e.sale_amount || 0);
+      cur.profit += Number(e.profit_amount || 0);
+      cur.count += 1;
+      map.set(d, cur);
+    });
+    return Array.from(map.values())
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map(r => ({ ...r, label: r.date.slice(5) })); // MM-DD
+  }, [entries]);
+
+  // Top performers (top 7 by profit) for bar chart
+  const topPerformers = useMemo(() => empBreakdown.slice(0, 7).map(e => ({
+    name: e.name.length > 14 ? e.name.slice(0, 12) + '…' : e.name,
+    profit: Math.round(e.profit),
+    sales: Math.round(e.sale),
+  })), [empBreakdown]);
+
+  const BAR_COLORS = ['hsl(var(--primary))', 'hsl(var(--secondary))', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
+
   const handleSaveEntry = async (data: Record<string, any>) => {
     if (!activeTemplate || !user || !profile) return;
     try {
