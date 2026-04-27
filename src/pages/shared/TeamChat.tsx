@@ -366,13 +366,25 @@ export default function TeamChat() {
             {groups.map((g: any) => {
               const unread = unreadCounts[g.id] || 0;
               const isActive = activeChat === g.id && activeChatType === 'group';
+              const canDelete = g.created_by === user?.id && g.name !== 'General';
               return (
-                <button key={g.id} onClick={() => { setActiveChat(g.id); setActiveChatType('group'); }}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${isActive ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted text-foreground'}`}>
-                  <Hash className="w-4 h-4 flex-shrink-0" />
-                  <span className="truncate flex-1">{g.name}</span>
-                  {unread > 0 && !isActive && <span className="bg-destructive text-destructive-foreground text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{unread}</span>}
-                </button>
+                <div key={g.id} className={`group/grp w-full flex items-center gap-1 rounded-lg pr-1 transition-colors ${isActive ? 'bg-primary/10' : 'hover:bg-muted'}`}>
+                  <button onClick={() => { setActiveChat(g.id); setActiveChatType('group'); }}
+                    className={`flex-1 text-left px-3 py-2 text-sm flex items-center gap-2 ${isActive ? 'text-primary font-medium' : 'text-foreground'}`}>
+                    <Hash className="w-4 h-4 flex-shrink-0" />
+                    <span className="truncate flex-1">{g.name}</span>
+                    {unread > 0 && !isActive && <span className="bg-destructive text-destructive-foreground text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{unread}</span>}
+                  </button>
+                  {canDelete && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteGroup(g); }}
+                      title="Delete group"
+                      className="opacity-0 group-hover/grp:opacity-100 p-1 rounded text-muted-foreground hover:text-destructive transition-opacity"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>
