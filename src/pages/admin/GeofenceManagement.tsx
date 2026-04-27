@@ -19,29 +19,18 @@ interface Zone {
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function GeofenceManagement() {
-  const { user } = useAuth();
   const [zones, setZones] = useState<Zone[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showZoneForm, setShowZoneForm] = useState(false);
-  const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
-  const [zoneForm, setZoneForm] = useState({ name: '', latitude: '', longitude: '', radius: '100', zone_type: 'office' });
   const [employees, setEmployees] = useState<any[]>([]);
   const [todayAtt, setTodayAtt] = useState<Record<string, any>>({});
-  const [expandedEmp, setExpandedEmp] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [showZonesPanel, setShowZonesPanel] = useState(false);
 
-  // Global defaults (silent fallback — not editable here, used for placeholder display)
+  // Global defaults — silent fallback for row preview
   const [att, setAtt] = useState<AttendanceSettings>(DEFAULT_ATTENDANCE);
-
-  // Per-employee overrides
   const [overrides, setOverrides] = useState<Record<string, EmployeeOverride>>({});
-  const [savingOv, setSavingOv] = useState(false);
 
   const loadZones = async () => {
     const { data } = await supabase.from('geofence_zones').select('*').order('created_at', { ascending: false });
     setZones((data as any[]) || []);
-    setLoading(false);
   };
 
   const loadEmployees = async () => {
@@ -68,86 +57,6 @@ export default function GeofenceManagement() {
     const i = setInterval(loadTodayAttendance, 30000);
     return () => clearInterval(i);
   }, []);
-
-  const setEmpOverride = (userId: string, patch: EmployeeOverride) => {
-    setOverrides(prev => {
-      const cur = prev[userId] || {};
-      const next = { ...cur, ...patch };
-      Object.keys(next).forEach(k => { if ((next as any)[k] === '' || (next as any)[k] === undefined || (next as any)[k] === null) delete (next as any)[k]; });
-      const out = { ...prev };
-      if (Object.keys(next).length === 0) delete out[userId]; else out[userId] = next;
-      return out;
-    });
-  };
-
-  const clearEmpOverride = (userId: string) => {
-    setOverrides(prev => { const out = { ...prev }; delete out[userId]; return out; });
-  };
-
-  const handleSaveOverrides = async () => {
-    setSavingOv(true);
-    const { error } = await saveAttendanceOverrides(overrides, user?.id);
-    setSavingOv(false);
-    if (error) { toast.error('Save failed'); return; }
-    toast.success('Per-employee schedules saved');
-  };
-
-  const handleGetCurrentLocation = () => {
-    if (!navigator.geolocation) { toast.error('Geolocation not supported'); return; }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setZoneForm(f => ({ ...f, latitude: pos.coords.latitude.toFixed(6), longitude: pos.coords.longitude.toFixed(6) }));
-        toast.success('Location captured');
-      },
-      () => toast.error('Could not get location')
-    );
-  };
-
-  const handleSaveZone = async () => {
-    if (!zoneForm.name || !zoneForm.latitude || !zoneForm.longitude) { toast.error('Fill all required fields'); return; }
-    const payload = {
-      name: zoneForm.name,
-      latitude: parseFloat(zoneForm.latitude),
-      longitude: parseFloat(zoneForm.longitude),
-      radius: parseInt(zoneForm.radius) || 100,
-      zone_type: zoneForm.zone_type,
-      created_by: user?.id,
-    };
-    if (editingZoneId) {
-      await supabase.from('geofence_zones').update(payload).eq('id', editingZoneId);
-      toast.success('Zone updated');
-    } else {
-      await supabase.from('geofence_zones').insert(payload);
-      toast.success('Zone created');
-    }
-    setShowZoneForm(false); setEditingZoneId(null);
-    setZoneForm({ name: '', latitude: '', longitude: '', radius: '100', zone_type: 'office' });
-    loadZones();
-  };
-
-  const handleEditZone = (z: Zone) => {
-    setZoneForm({ name: z.name, latitude: z.latitude.toString(), longitude: z.longitude.toString(), radius: z.radius.toString(), zone_type: z.zone_type });
-    setEditingZoneId(z.id); setShowZoneForm(true); setShowZonesPanel(true);
-  };
-
-  const handleDeleteZone = async (id: string) => {
-    if (!confirm('Delete this zone? Assigned employees will be unassigned.')) return;
-    await supabase.from('profiles').update({ assigned_zone_id: null }).eq('assigned_zone_id', id);
-    await supabase.from('geofence_zones').delete().eq('id', id);
-    toast.success('Zone deleted');
-    loadZones(); loadEmployees();
-  };
-
-  const handleAssignZone = async (employeeId: string, zoneId: string | null) => {
-    await supabase.from('profiles').update({ assigned_zone_id: zoneId }).eq('id', employeeId);
-    toast.success(zoneId ? 'Zone assigned' : 'Zone cleared');
-    loadEmployees();
-  };
-
-  const getGoogleMapsEmbedUrl = (lat: string | number, lng: string | number, radius?: number) => {
-    const zoom = radius ? Math.max(13, Math.min(18, 17 - Math.log2(Number(radius) / 50))) : 15;
-    return `https://maps.google.com/maps?q=${lat},${lng}&z=${Math.round(zoom)}&output=embed`;
-  };
 
   const filteredEmployees = useMemo(() => {
     const q = search.toLowerCase().trim();
