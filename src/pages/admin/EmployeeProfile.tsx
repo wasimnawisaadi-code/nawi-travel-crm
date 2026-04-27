@@ -12,6 +12,7 @@ export default function EmployeeProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [emp, setEmp] = useState<any>(null);
+  const [empRole, setEmpRole] = useState<'admin' | 'superadmin' | 'employee'>('employee');
   const [tab, setTab] = useState('overview');
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<any>({});
