@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Edit, Save, X, Camera, MapPin, Power, PowerOff, Trash2 } from 'lucide-react';
+import { ArrowLeft, Edit, Save, X, MapPin, Power, PowerOff, Trash2, Clock, Shield } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { formatCurrency, formatDate, auditLog } from '@/lib/supabase-service';
 import StatusBadge from '@/components/ui/StatusBadge';
 import PasswordConfirmDialog from '@/components/PasswordConfirmDialog';
+import { getAttendanceSettings, getAttendanceOverrides, saveAttendanceOverrides, type EmployeeOverride } from '@/lib/settings';
 import { toast } from 'sonner';
 
 export default function EmployeeProfile() {
