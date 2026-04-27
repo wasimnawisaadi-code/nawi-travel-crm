@@ -9,8 +9,8 @@ import WhatsAppTemplateModal from '@/components/WhatsAppTemplateModal';
 
 const SERVICES = [
   { key: 'Air Ticket', emoji: '✈️' },
-  { key: 'UAE Visa', emoji: '🪪', subcategories: ['Tourist Visa', 'Visit Visa', 'Transit Visa', 'Family Visa', 'Extension', 'Status Change', 'Visa Cancellation', 'Abscond'] },
-  { key: 'Global Visa', emoji: '🌍', subcategories: ['Tourist', 'Business', 'Transit', 'Medical'], visaMode: true },
+  { key: 'UAE Visa', emoji: '🪪', subcategories: ['Transit Visa', 'Outside Visa - Single Entry', 'Outside Visa - Multiple Entry', 'Visa Extension', 'Visa Change by Bus', 'Visa Change by Flight', 'Family Visa', 'Status Change', 'Visa Cancellation', 'Abscond'] },
+  { key: 'Global Visa', emoji: '🌍', subcategories: ['Tourist', 'Business'], visaMode: true },
   { key: 'Holiday Package', emoji: '🏝️' },
   { key: 'Travel Insurance', emoji: '🛡️' },
   { key: 'Pilgrimage', emoji: '🕌' },
