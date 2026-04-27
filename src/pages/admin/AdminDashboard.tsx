@@ -238,7 +238,9 @@ export default function AdminDashboard() {
             <SocialLeadsDashboardWidget basePath="/admin" />
           </div>
 
-
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="card-nawi lg:col-span-2">
+              <h3 className="text-base font-semibold font-display mb-4">Revenue & Profit Trend</h3>
               <ResponsiveContainer width="100%" height={280}>
                 <AreaChart data={data.revenueData}>
                   <defs>
