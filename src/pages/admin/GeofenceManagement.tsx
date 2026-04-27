@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { MapPin, Users, Activity, ChevronDown, ChevronUp, Save, Plus, Trash2, Navigation } from 'lucide-react';
+import { MapPin, Users, Activity, ChevronDown, ChevronUp, Save, Plus, Trash2, Navigation, Edit2 } from 'lucide-react';
 import { toast } from 'sonner';
+import ZoneMapPicker from '@/components/ZoneMapPicker';
 import {
   getAttendanceSettings,
   getAttendanceOverrides,
@@ -37,9 +38,11 @@ export default function GeofenceManagement() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
 
-  // Zone create form
+  // Zone create/edit form
   const [showZoneForm, setShowZoneForm] = useState(false);
-  const [zForm, setZForm] = useState({ name: '', latitude: '', longitude: '', radius: '100' });
+  const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
+  // Default Dubai centre — overridden as soon as we have geolocation or click
+  const [zForm, setZForm] = useState({ name: '', latitude: 25.2048, longitude: 55.2708, radius: 100 });
 
   const loadZones = async () => {
     const { data } = await supabase.from('geofence_zones').select('*').order('created_at', { ascending: false });
@@ -83,28 +86,50 @@ export default function GeofenceManagement() {
   }).length;
 
   // ---- Zone CRUD ----
+  const openNewZone = () => {
+    setEditingZoneId(null);
+    setZForm({ name: '', latitude: 25.2048, longitude: 55.2708, radius: 100 });
+    setShowZoneForm(true);
+    // Try to centre on user's current location
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (p) => setZForm(f => ({ ...f, latitude: p.coords.latitude, longitude: p.coords.longitude })),
+        () => {}
+      );
+    }
+  };
+
+  const openEditZone = (z: Zone) => {
+    setEditingZoneId(z.id);
+    setZForm({ name: z.name, latitude: z.latitude, longitude: z.longitude, radius: z.radius });
+    setShowZoneForm(true);
+  };
+
   const useMyLocation = () => {
     if (!navigator.geolocation) return toast.error('Geolocation not supported');
     navigator.geolocation.getCurrentPosition(
-      (p) => setZForm(f => ({ ...f, latitude: p.coords.latitude.toFixed(6), longitude: p.coords.longitude.toFixed(6) })),
+      (p) => setZForm(f => ({ ...f, latitude: p.coords.latitude, longitude: p.coords.longitude })),
       () => toast.error('Could not get location')
     );
   };
 
-  const createZone = async () => {
-    if (!zForm.name.trim() || !zForm.latitude || !zForm.longitude) return toast.error('Fill name, lat, lng');
-    const { error } = await supabase.from('geofence_zones').insert({
+  const saveZone = async () => {
+    if (!zForm.name.trim()) return toast.error('Zone name is required');
+    const payload = {
       name: zForm.name.trim(),
       latitude: Number(zForm.latitude),
       longitude: Number(zForm.longitude),
       radius: Number(zForm.radius) || 100,
       zone_type: 'office',
       is_active: true,
-    });
+    };
+    const { error } = editingZoneId
+      ? await supabase.from('geofence_zones').update(payload).eq('id', editingZoneId)
+      : await supabase.from('geofence_zones').insert(payload);
     if (error) return toast.error(error.message);
-    toast.success('Zone created');
-    setZForm({ name: '', latitude: '', longitude: '', radius: '100' });
+    toast.success(editingZoneId ? 'Zone updated' : 'Zone created');
     setShowZoneForm(false);
+    setEditingZoneId(null);
     loadZones();
   };
 
@@ -168,22 +193,59 @@ export default function GeofenceManagement() {
             <MapPin className="w-5 h-5 text-primary" />
             <h3 className="font-semibold font-display">Zones ({zones.length})</h3>
           </div>
-          <button className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1" onClick={() => setShowZoneForm(s => !s)}>
-            <Plus className="w-3.5 h-3.5" /> New Zone
+          <button className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1" onClick={() => showZoneForm ? setShowZoneForm(false) : openNewZone()}>
+            <Plus className="w-3.5 h-3.5" /> {showZoneForm ? 'Close' : 'New Zone'}
           </button>
         </div>
 
         {showZoneForm && (
-          <div className="border border-border rounded-lg p-3 grid grid-cols-1 sm:grid-cols-5 gap-2 bg-muted/30">
-            <input className="input-nawi text-sm py-1.5 sm:col-span-2" placeholder="Zone name (e.g. HQ Office)" value={zForm.name} onChange={e => setZForm(f => ({ ...f, name: e.target.value }))} />
-            <input className="input-nawi text-sm py-1.5" placeholder="Latitude" value={zForm.latitude} onChange={e => setZForm(f => ({ ...f, latitude: e.target.value }))} />
-            <input className="input-nawi text-sm py-1.5" placeholder="Longitude" value={zForm.longitude} onChange={e => setZForm(f => ({ ...f, longitude: e.target.value }))} />
-            <input className="input-nawi text-sm py-1.5" placeholder="Radius (m)" type="number" value={zForm.radius} onChange={e => setZForm(f => ({ ...f, radius: e.target.value }))} />
-            <div className="sm:col-span-5 flex gap-2">
-              <button className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1" onClick={useMyLocation}>
-                <Navigation className="w-3.5 h-3.5" /> Use my location
-              </button>
-              <button className="btn-primary text-xs py-1.5 px-3" onClick={createZone}>Create Zone</button>
+          <div className="border border-border rounded-lg p-3 space-y-3 bg-muted/30">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <input
+                className="input-nawi text-sm py-1.5 sm:col-span-2"
+                placeholder="Zone name (e.g. HQ Office)"
+                value={zForm.name}
+                onChange={e => setZForm(f => ({ ...f, name: e.target.value }))}
+              />
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-muted-foreground whitespace-nowrap">Radius</label>
+                <input
+                  className="input-nawi text-sm py-1.5 flex-1"
+                  type="number"
+                  min={20}
+                  max={5000}
+                  value={zForm.radius}
+                  onChange={e => setZForm(f => ({ ...f, radius: Math.max(20, Number(e.target.value) || 100) }))}
+                />
+                <span className="text-xs text-muted-foreground">m</span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-muted-foreground">
+              <strong>Click anywhere on the map</strong> or <strong>drag the pin</strong> to set the zone centre. Blue circle = effective area employees must be inside to log in.
+            </p>
+
+            <ZoneMapPicker
+              lat={zForm.latitude}
+              lng={zForm.longitude}
+              radius={zForm.radius}
+              onChange={(lat, lng) => setZForm(f => ({ ...f, latitude: lat, longitude: lng }))}
+              extraZones={zones.filter(z => z.id !== editingZoneId)}
+              height={340}
+            />
+
+            <div className="flex flex-wrap gap-2 items-center justify-between">
+              <p className="text-[11px] text-muted-foreground font-mono">
+                {zForm.latitude.toFixed(6)}, {zForm.longitude.toFixed(6)} · {zForm.radius}m
+              </p>
+              <div className="flex gap-2">
+                <button className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1" onClick={useMyLocation}>
+                  <Navigation className="w-3.5 h-3.5" /> Use my location
+                </button>
+                <button className="btn-primary text-xs py-1.5 px-3" onClick={saveZone}>
+                  {editingZoneId ? 'Update Zone' : 'Create Zone'}
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -193,12 +255,15 @@ export default function GeofenceManagement() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {zones.map(z => (
-              <div key={z.id} className="border border-border rounded-lg px-3 py-2 flex items-center justify-between text-sm">
-                <div className="min-w-0">
+              <div key={z.id} className="border border-border rounded-lg px-3 py-2 flex items-center justify-between text-sm gap-2">
+                <div className="min-w-0 flex-1">
                   <p className="font-medium truncate">{z.name}</p>
                   <p className="text-[11px] text-muted-foreground truncate">{z.latitude.toFixed(4)}, {z.longitude.toFixed(4)} · {z.radius}m</p>
                 </div>
-                <button className="text-destructive hover:bg-destructive/10 p-1.5 rounded" onClick={() => deleteZone(z.id)}>
+                <button className="text-primary hover:bg-primary/10 p-1.5 rounded flex-shrink-0" title="Edit zone on map" onClick={() => openEditZone(z)}>
+                  <Edit2 className="w-3.5 h-3.5" />
+                </button>
+                <button className="text-destructive hover:bg-destructive/10 p-1.5 rounded flex-shrink-0" onClick={() => deleteZone(z.id)}>
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -321,17 +386,29 @@ function EmployeeEditor({
     set({ weekend_days: next });
   };
 
+  const selectedZone = zones.find(z => z.id === zoneId);
+
   return (
     <div className="border-t border-border bg-muted/20 p-4 space-y-4">
       {/* ZONE */}
-      <div>
+      <div className="space-y-2">
         <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Assigned Zone</label>
-        <select className="input-nawi text-sm py-1.5 mt-1 w-full" value={zoneId} onChange={e => setZoneId(e.target.value)}>
+        <select className="input-nawi text-sm py-1.5 w-full" value={zoneId} onChange={e => setZoneId(e.target.value)}>
           <option value="">— No zone (cannot login if geofence ON) —</option>
           {zones.map(z => (
             <option key={z.id} value={z.id}>{z.name} · {z.radius}m</option>
           ))}
         </select>
+        {selectedZone && (
+          <ZoneMapPicker
+            lat={selectedZone.latitude}
+            lng={selectedZone.longitude}
+            radius={selectedZone.radius}
+            onChange={() => {}}
+            readOnly
+            height={200}
+          />
+        )}
       </div>
 
       {/* TOGGLES */}

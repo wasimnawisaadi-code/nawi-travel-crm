@@ -87,7 +87,7 @@ export default function Login() {
               if (profileType === 'office') {
                 const zoneNames = zonesToCheck.map((z) => `${z.name} (${z.radius}m)`).join(', ');
                 await supabase.auth.signOut();
-                setError(`You must be within an authorized office zone to login. Allowed: ${zoneNames}. You are outside the allowed area.`);
+                setError(`🚫 Unauthorized zone — login blocked. You must be physically inside: ${zoneNames}. Move to your authorized location and try again.`);
                 setLoading(false);
                 setLocationStatus('');
                 return;

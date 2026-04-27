@@ -150,6 +150,28 @@ export default function SocialLeads() {
     converted: leads.filter(l => l.status === 'CONVERTED').length,
   }), [leads]);
 
+  // Conversion analytics — by source × period (week / month)
+  const analytics = useMemo(() => {
+    const now = new Date();
+    const startOfWeek = new Date(now); startOfWeek.setDate(now.getDate() - 7); startOfWeek.setHours(0, 0, 0, 0);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const empty = () => ({ whatsapp: 0, instagram: 0, messenger: 0, total: 0 });
+    const week = empty();
+    const month = empty();
+    const allTime = empty();
+
+    leads.forEach(l => {
+      if (l.status !== 'CONVERTED' || !l.converted_at) return;
+      const d = new Date(l.converted_at);
+      const src = l.source as 'whatsapp' | 'instagram' | 'messenger';
+      allTime[src]++; allTime.total++;
+      if (d >= startOfMonth) { month[src]++; month.total++; }
+      if (d >= startOfWeek) { week[src]++; week.total++; }
+    });
+    return { week, month, allTime };
+  }, [leads]);
+
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -168,6 +190,43 @@ export default function SocialLeads() {
         <StatCard label="New" value={counts.new} color="text-primary" />
         <StatCard label="In Progress" value={counts.inProgress} color="text-warning" />
         <StatCard label="Converted" value={counts.converted} color="text-success" />
+      </div>
+
+      {/* Conversion Analytics — by source × period */}
+      <div className="card-nawi space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <h3 className="text-sm font-semibold font-display flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-success" /> Conversion Analytics
+          </h3>
+          <p className="text-[11px] text-muted-foreground">Live count of converted leads by channel</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {([['This Week', analytics.week], ['This Month', analytics.month], ['All Time', analytics.allTime]] as const).map(([label, data]) => (
+            <div key={label} className="border border-border rounded-lg p-3 space-y-2 bg-muted/20">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+                <p className="text-xl font-bold font-display text-success">{data.total}</p>
+              </div>
+              <div className="space-y-1">
+                {(['whatsapp', 'instagram', 'messenger'] as const).map(src => {
+                  const meta = SOURCE_META[src];
+                  const Icon = meta.Icon;
+                  const pct = data.total > 0 ? Math.round((data[src] / data.total) * 100) : 0;
+                  return (
+                    <div key={src} className="flex items-center gap-2 text-xs">
+                      <Icon className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="w-20">{meta.label}</span>
+                      <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div className={`h-full ${src === 'whatsapp' ? 'bg-success' : src === 'instagram' ? 'bg-warning' : 'bg-secondary'}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="w-8 text-right font-mono">{data[src]}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2 items-center">
@@ -357,11 +416,29 @@ function LeadModal({ lead, onClose, onSaved, canEdit, currentUserId, currentUser
       follow_up_date: form.follow_up_date || null,
       proof_url: finalProof,
     };
-    if (form.status === 'CONVERTED' && !lead.converted_at) update.converted_at = new Date().toISOString();
+    const isNewConversion = form.status === 'CONVERTED' && !lead.converted_at;
+    if (isNewConversion) update.converted_at = new Date().toISOString();
     const { error } = await supabase.from('social_leads').update(update).eq('id', lead.id);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
-    toast.success('Lead updated');
+
+    // 🔔 Notify all admins on new conversion
+    if (isNewConversion) {
+      try {
+        const { data: adminRoles } = await supabase.from('user_roles').select('user_id').in('role', ['admin', 'superadmin']);
+        const sourceLabel = SOURCE_META[lead.source].label;
+        const leadName = lead.full_name || lead.username || lead.phone || lead.display_id;
+        const rows = (adminRoles || []).map((a: any) => ({
+          user_id: a.user_id,
+          title: `🎉 Lead Converted — ${sourceLabel}`,
+          message: `${currentUserName} converted ${leadName} (${lead.display_id}). ${form.client_need ? 'Need: ' + form.client_need : ''}`.trim(),
+          type: 'lead_converted',
+        }));
+        if (rows.length > 0) await supabase.from('notifications').insert(rows);
+      } catch { /* non-fatal */ }
+    }
+
+    toast.success(isNewConversion ? '🎉 Conversion logged & admins notified' : 'Lead updated');
     onSaved();
   };
 
