@@ -357,11 +357,29 @@ function LeadModal({ lead, onClose, onSaved, canEdit, currentUserId, currentUser
       follow_up_date: form.follow_up_date || null,
       proof_url: finalProof,
     };
-    if (form.status === 'CONVERTED' && !lead.converted_at) update.converted_at = new Date().toISOString();
+    const isNewConversion = form.status === 'CONVERTED' && !lead.converted_at;
+    if (isNewConversion) update.converted_at = new Date().toISOString();
     const { error } = await supabase.from('social_leads').update(update).eq('id', lead.id);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
-    toast.success('Lead updated');
+
+    // 🔔 Notify all admins on new conversion
+    if (isNewConversion) {
+      try {
+        const { data: adminRoles } = await supabase.from('user_roles').select('user_id').in('role', ['admin', 'superadmin']);
+        const sourceLabel = SOURCE_META[lead.source].label;
+        const leadName = lead.full_name || lead.username || lead.phone || lead.display_id;
+        const rows = (adminRoles || []).map((a: any) => ({
+          user_id: a.user_id,
+          title: `🎉 Lead Converted — ${sourceLabel}`,
+          message: `${currentUserName} converted ${leadName} (${lead.display_id}). ${form.client_need ? 'Need: ' + form.client_need : ''}`.trim(),
+          type: 'lead_converted',
+        }));
+        if (rows.length > 0) await supabase.from('notifications').insert(rows);
+      } catch { /* non-fatal */ }
+    }
+
+    toast.success(isNewConversion ? '🎉 Conversion logged & admins notified' : 'Lead updated');
     onSaved();
   };
 
