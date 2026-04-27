@@ -1,10 +1,19 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { MessagesSquare, ChevronRight } from 'lucide-react';
-import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
+import { MessagesSquare, ChevronRight, MessageCircle, Instagram, Facebook } from 'lucide-react';
 
-const COLORS = { NEW: '#1A5B96', CONTACTED: '#C45000', CONVERTED: '#0A7040', LOST: '#C0392B' } as Record<string, string>;
+const STATUS_COLORS: Record<string, string> = {
+  NEW: '#1A5B96', IN_PROGRESS: '#C45000', CONVERTED: '#0A7040', NOT_CONVERTED: '#C0392B',
+};
+const STATUS_LABELS: Record<string, string> = {
+  NEW: 'New', IN_PROGRESS: 'In Progress', CONVERTED: 'Converted', NOT_CONVERTED: 'Not Converted',
+};
+const SOURCE_META: Record<string, { label: string; Icon: any; color: string }> = {
+  whatsapp:  { label: 'WhatsApp',  Icon: MessageCircle, color: '#0A7040' },
+  instagram: { label: 'Instagram', Icon: Instagram,    color: '#C45000' },
+  messenger: { label: 'Messenger', Icon: Facebook,     color: '#1A5B96' },
+};
 
 export default function SocialLeadsDashboardWidget({ basePath = '/admin' }: { basePath?: string }) {
   const [loading, setLoading] = useState(true);
