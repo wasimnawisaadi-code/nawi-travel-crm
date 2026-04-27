@@ -72,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Start geofence watching only for plain employees with assigned zones
     if (userRole === 'employee' && profileData?.assigned_zone_id) {
-      startZoneWatching(profileData.assigned_zone_id as string, profileData.profile_type as string);
+      startZoneWatching(profileData.assigned_zone_id as string, profileData.profile_type as string, userId);
     } else {
       setIsInZone(true); // No restriction
     }
