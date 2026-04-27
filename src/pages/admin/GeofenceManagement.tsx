@@ -386,17 +386,29 @@ function EmployeeEditor({
     set({ weekend_days: next });
   };
 
+  const selectedZone = zones.find(z => z.id === zoneId);
+
   return (
     <div className="border-t border-border bg-muted/20 p-4 space-y-4">
       {/* ZONE */}
-      <div>
+      <div className="space-y-2">
         <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Assigned Zone</label>
-        <select className="input-nawi text-sm py-1.5 mt-1 w-full" value={zoneId} onChange={e => setZoneId(e.target.value)}>
+        <select className="input-nawi text-sm py-1.5 w-full" value={zoneId} onChange={e => setZoneId(e.target.value)}>
           <option value="">— No zone (cannot login if geofence ON) —</option>
           {zones.map(z => (
             <option key={z.id} value={z.id}>{z.name} · {z.radius}m</option>
           ))}
         </select>
+        {selectedZone && (
+          <ZoneMapPicker
+            lat={selectedZone.latitude}
+            lng={selectedZone.longitude}
+            radius={selectedZone.radius}
+            onChange={() => {}}
+            readOnly
+            height={200}
+          />
+        )}
       </div>
 
       {/* TOGGLES */}
