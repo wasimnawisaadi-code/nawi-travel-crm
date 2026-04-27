@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { MapPin, Plus, Trash2, Edit2, Check, X, Navigation, Clock, Save, Users, Activity, Settings2, ChevronDown, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
-import { getAttendanceSettings, saveAttendanceSettings, getAttendanceOverrides, saveAttendanceOverrides, DEFAULT_ATTENDANCE, type AttendanceSettings, type EmployeeOverride } from '@/lib/settings';
+import { getAttendanceSettings, getAttendanceOverrides, saveAttendanceOverrides, DEFAULT_ATTENDANCE, type AttendanceSettings, type EmployeeOverride } from '@/lib/settings';
 
 interface Zone {
   id: string;
@@ -30,9 +30,8 @@ export default function GeofenceManagement() {
   const [search, setSearch] = useState('');
   const [showZonesPanel, setShowZonesPanel] = useState(false);
 
-  // Global defaults
+  // Global defaults (silent fallback — not editable here, used for placeholder display)
   const [att, setAtt] = useState<AttendanceSettings>(DEFAULT_ATTENDANCE);
-  const [savingAtt, setSavingAtt] = useState(false);
 
   // Per-employee overrides
   const [overrides, setOverrides] = useState<Record<string, EmployeeOverride>>({});
@@ -144,18 +143,6 @@ export default function GeofenceManagement() {
     loadEmployees();
   };
 
-  const toggleDay = (d: number) => {
-    setAtt(s => ({ ...s, weekend_days: s.weekend_days.includes(d) ? s.weekend_days.filter(x => x !== d) : [...s.weekend_days, d].sort() }));
-  };
-
-  const handleSaveAtt = async () => {
-    setSavingAtt(true);
-    const { error } = await saveAttendanceSettings(att, user?.id);
-    setSavingAtt(false);
-    if (error) { toast.error('Save failed'); return; }
-    toast.success('Default attendance rules saved');
-  };
-
   const getGoogleMapsEmbedUrl = (lat: string | number, lng: string | number, radius?: number) => {
     const zoom = radius ? Math.max(13, Math.min(18, 17 - Math.log2(Number(radius) / 50))) : 15;
     return `https://maps.google.com/maps?q=${lat},${lng}&z=${Math.round(zoom)}&output=embed`;
@@ -188,87 +175,6 @@ export default function GeofenceManagement() {
             <MapPin className="w-4 h-4" /> Zones ({zones.length})
           </button>
         </div>
-      </div>
-
-      {/* Default Rules */}
-      <div className="card-nawi space-y-4">
-        <div className="flex items-center gap-2">
-          <Clock className="w-5 h-5 text-primary" />
-          <h3 className="font-semibold font-display">Default Attendance Rules</h3>
-          <span className="text-xs text-muted-foreground">(applies to all employees unless overridden below)</span>
-        </div>
-
-        {/* Schedule */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Work Start</label>
-            <input type="time" value={att.work_start} onChange={e => setAtt(s => ({ ...s, work_start: e.target.value }))} className="input-nawi" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Work End</label>
-            <input type="time" value={att.work_end} onChange={e => setAtt(s => ({ ...s, work_end: e.target.value }))} className="input-nawi" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Grace (min)</label>
-            <input type="number" min={0} max={120} value={att.grace_minutes}
-              onChange={e => setAtt(s => ({ ...s, grace_minutes: Math.max(0, Number(e.target.value) || 0) }))}
-              className="input-nawi" />
-            <p className="text-[11px] text-muted-foreground mt-0.5">Late after Start + Grace</p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Cutoff for Present</label>
-            <div className="input-nawi flex items-center text-sm text-muted-foreground bg-muted">{att.work_start} + {att.grace_minutes}m</div>
-          </div>
-        </div>
-
-        {/* Default zone only */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Default Zone</label>
-            <select value={att.default_zone_id || ''} onChange={e => setAtt(s => ({ ...s, default_zone_id: e.target.value || null }))} className="input-nawi text-sm">
-              <option value="">— None (use any active office zone) —</option>
-              {zones.filter(z => z.is_active).map(z => (
-                <option key={z.id} value={z.id}>{z.name} ({z.zone_type}, {z.radius}m)</option>
-              ))}
-            </select>
-            <p className="text-[11px] text-muted-foreground mt-0.5">Used when an employee has no specific zone assigned.</p>
-          </div>
-        </div>
-
-        {/* Geofence master switches — on/off pills */}
-        <div className="flex flex-wrap gap-3 pt-1">
-          {[
-            { key: 'enforce_geofence', label: 'Enforce geofence on login', val: att.enforce_geofence },
-            { key: 'auto_logout_outside_zone', label: 'Auto-logout if employee leaves zone', val: att.auto_logout_outside_zone },
-          ].map(t => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setAtt(s => ({ ...s, [t.key]: !t.val }))}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm transition-colors ${t.val ? 'bg-success/10 text-success border-success/30' : 'bg-muted text-muted-foreground border-border'}`}
-            >
-              <span className={`w-8 h-4 rounded-full relative transition-colors ${t.val ? 'bg-success' : 'bg-border'}`}>
-                <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-card shadow transition-all ${t.val ? 'left-[18px]' : 'left-0.5'}`} />
-              </span>
-              <span>{t.label} <span className="font-bold">{t.val ? 'ON' : 'OFF'}</span></span>
-            </button>
-          ))}
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-2">Weekend Days</label>
-          <div className="flex flex-wrap gap-2">
-            {DAYS.map((d, i) => (
-              <button key={d} type="button" onClick={() => toggleDay(i)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${att.weekend_days.includes(i) ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border hover:border-primary/50'}`}>
-                {d}
-              </button>
-            ))}
-          </div>
-        </div>
-        <button onClick={handleSaveAtt} disabled={savingAtt} className="btn-primary text-sm">
-          <Save className="w-4 h-4" /> {savingAtt ? 'Saving…' : 'Save Default Rules'}
-        </button>
       </div>
 
       {/* Zones Panel (collapsible) */}
@@ -485,22 +391,27 @@ export default function GeofenceManagement() {
                             </div>
                           </div>
                         )}
-                        {(() => {
-                          const on = ov.enforce_geofence !== false;
-                          return (
-                            <button
-                              type="button"
-                              onClick={() => setEmpOverride(emp.user_id, { enforce_geofence: on ? false : undefined })}
-                              className={`mt-3 flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-colors ${on ? 'bg-success/10 text-success border-success/30' : 'bg-muted text-muted-foreground border-border'}`}
-                            >
-                              <span className={`w-8 h-4 rounded-full relative transition-colors ${on ? 'bg-success' : 'bg-border'}`}>
-                                <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-card shadow transition-all ${on ? 'left-[18px]' : 'left-0.5'}`} />
-                              </span>
-                              <span>Geofence <span className="font-bold">{on ? 'ON' : 'OFF'}</span></span>
-                              <span className="text-muted-foreground hidden sm:inline">— turn off for sales/field staff</span>
-                            </button>
-                          );
-                        })()}
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {[
+                            { key: 'enforce_geofence' as const, label: 'Enforce geofence', defaultOn: true, hint: 'turn off for field/sales staff' },
+                            { key: 'auto_logout_outside_zone' as const, label: 'Auto-logout if leaves zone', defaultOn: true, hint: '' },
+                          ].map(t => {
+                            const on = ov[t.key] === undefined ? t.defaultOn : !!ov[t.key];
+                            return (
+                              <button
+                                key={t.key}
+                                type="button"
+                                onClick={() => setEmpOverride(emp.user_id, { [t.key]: on ? false : true } as any)}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-colors ${on ? 'bg-success/10 text-success border-success/30' : 'bg-muted text-muted-foreground border-border'}`}
+                              >
+                                <span className={`w-8 h-4 rounded-full relative transition-colors ${on ? 'bg-success' : 'bg-border'}`}>
+                                  <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-card shadow transition-all ${on ? 'left-[18px]' : 'left-0.5'}`} />
+                                </span>
+                                <span>{t.label} <span className="font-bold">{on ? 'ON' : 'OFF'}</span></span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
 
                       {/* Schedule overrides */}
