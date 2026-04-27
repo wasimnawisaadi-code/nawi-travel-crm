@@ -404,22 +404,27 @@ export default function GeofenceManagement() {
                             </div>
                           </div>
                         )}
-                        {(() => {
-                          const on = ov.enforce_geofence !== false;
-                          return (
-                            <button
-                              type="button"
-                              onClick={() => setEmpOverride(emp.user_id, { enforce_geofence: on ? false : undefined })}
-                              className={`mt-3 flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-colors ${on ? 'bg-success/10 text-success border-success/30' : 'bg-muted text-muted-foreground border-border'}`}
-                            >
-                              <span className={`w-8 h-4 rounded-full relative transition-colors ${on ? 'bg-success' : 'bg-border'}`}>
-                                <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-card shadow transition-all ${on ? 'left-[18px]' : 'left-0.5'}`} />
-                              </span>
-                              <span>Geofence <span className="font-bold">{on ? 'ON' : 'OFF'}</span></span>
-                              <span className="text-muted-foreground hidden sm:inline">— turn off for sales/field staff</span>
-                            </button>
-                          );
-                        })()}
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {[
+                            { key: 'enforce_geofence' as const, label: 'Enforce geofence', defaultOn: true, hint: 'turn off for field/sales staff' },
+                            { key: 'auto_logout_outside_zone' as const, label: 'Auto-logout if leaves zone', defaultOn: true, hint: '' },
+                          ].map(t => {
+                            const on = ov[t.key] === undefined ? t.defaultOn : !!ov[t.key];
+                            return (
+                              <button
+                                key={t.key}
+                                type="button"
+                                onClick={() => setEmpOverride(emp.user_id, { [t.key]: on ? false : true } as any)}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-colors ${on ? 'bg-success/10 text-success border-success/30' : 'bg-muted text-muted-foreground border-border'}`}
+                              >
+                                <span className={`w-8 h-4 rounded-full relative transition-colors ${on ? 'bg-success' : 'bg-border'}`}>
+                                  <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-card shadow transition-all ${on ? 'left-[18px]' : 'left-0.5'}`} />
+                                </span>
+                                <span>{t.label} <span className="font-bold">{on ? 'ON' : 'OFF'}</span></span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
 
                       {/* Schedule overrides */}
