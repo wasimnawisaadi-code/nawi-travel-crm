@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
-import { MapPin, Plus, Trash2, Edit2, Check, X, Navigation, Clock, Save, Users, Activity, Settings2, ChevronDown, ChevronRight } from 'lucide-react';
+import { MapPin, Users, Activity, ExternalLink } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { getAttendanceSettings, getAttendanceOverrides, saveAttendanceOverrides, DEFAULT_ATTENDANCE, type AttendanceSettings, type EmployeeOverride } from '@/lib/settings';
 
