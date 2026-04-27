@@ -1,10 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/lib/auth-context';
 import { MapPin, Users, Activity, ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { toast } from 'sonner';
-import { getAttendanceSettings, getAttendanceOverrides, saveAttendanceOverrides, DEFAULT_ATTENDANCE, type AttendanceSettings, type EmployeeOverride } from '@/lib/settings';
+import { getAttendanceSettings, getAttendanceOverrides, DEFAULT_ATTENDANCE, type AttendanceSettings, type EmployeeOverride } from '@/lib/settings';
 
 interface Zone {
   id: string;
@@ -15,8 +13,6 @@ interface Zone {
   zone_type: string;
   is_active: boolean;
 }
-
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function GeofenceManagement() {
   const [zones, setZones] = useState<Zone[]>([]);
