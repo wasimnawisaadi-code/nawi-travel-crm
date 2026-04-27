@@ -114,6 +114,20 @@ export default function SocialLeads() {
     load();
   };
 
+  const untakeLead = async (lead: Lead) => {
+    if (lead.assigned_to !== user?.id && profile?.email !== 'admin@nawisaadi.com') {
+      toast.error('Only the owner or admin can untake');
+      return;
+    }
+    const { error } = await supabase
+      .from('social_leads')
+      .update({ assigned_to: null, assigned_at: null, status: 'NEW' })
+      .eq('id', lead.id);
+    if (error) { toast.error(error.message); return; }
+    toast.success('Lead released back to pool');
+    load();
+  };
+
   const filtered = useMemo(() => {
     return leads.filter(l => {
       if (filterSource !== 'all' && l.source !== filterSource) return false;
@@ -234,9 +248,14 @@ export default function SocialLeads() {
                     ) : <span className="text-warning font-medium">Unassigned</span>}
                   </div>
                   <div className="flex gap-2">
-                    {(!lead.assigned_to || isMine) && (
+                    {!lead.assigned_to && (
                       <button onClick={() => takeLead(lead)} className="btn-outline text-xs">
-                        <UserPlus className="w-3 h-3" /> {isMine ? 'Take again' : 'Take Lead'}
+                        <UserPlus className="w-3 h-3" /> Take Lead
+                      </button>
+                    )}
+                    {isMine && lead.status !== 'CONVERTED' && (
+                      <button onClick={() => untakeLead(lead)} className="btn-outline text-xs text-warning">
+                        <UserMinus className="w-3 h-3" /> Untake
                       </button>
                     )}
                     <button onClick={() => setOpenLead(lead)} className="btn-primary text-xs">
