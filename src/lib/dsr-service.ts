@@ -126,19 +126,22 @@ export async function bulkCreateEntries(
   template: DSRTemplate,
   employeeId: string,
   employeeName: string,
-  entryDate: string,
-  rows: Record<string, any>[]
+  entryDate: string,                  // fallback date when row has no detected date
+  rows: Record<string, any>[],
+  perRowDates?: (string | null)[]     // optional: aligned with rows; null → fallback
 ) {
-  const inserts = await Promise.all(rows.map(async (row) => {
+  const today = new Date().toISOString().split('T')[0];
+  const inserts = await Promise.all(rows.map(async (row, i) => {
     const display_id = await generateDisplayId('DSR');
     const { sale, cost, profit } = computeFinancials(template, row);
+    const rowDate = (perRowDates && perRowDates[i]) || entryDate || today;
     return {
       display_id,
       template_id: template.id,
       template_key: template.template_key,
       employee_id: employeeId,
       employee_name: employeeName,
-      entry_date: entryDate,
+      entry_date: rowDate,
       data: row,
       sale_amount: sale,
       cost_amount: cost,
@@ -189,14 +192,55 @@ function normalize(s: string): string {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+export type ExcelParsedRow = {
+  data: Record<string, any>;
+  detectedDate: string | null;   // ISO yyyy-mm-dd, parsed from any "date" column in the row
+};
+
 export type ExcelParseResult = {
   ok: boolean;
   reason?: string;
   matchedColumns?: { excelHeader: string; key: string; label: string }[];
   unmatchedHeaders?: string[];
   missingRequired?: string[];
-  rows?: Record<string, any>[];
+  rows?: Record<string, any>[];        // legacy: data only
+  parsedRows?: ExcelParsedRow[];       // NEW: data + per-row detected date
+  hasDateColumn?: boolean;             // true if the file had a Date-like column
 };
+
+// Try parse a cell into ISO date (yyyy-mm-dd). Accepts Date, Excel serial, or strings.
+function tryParseDate(v: any): string | null {
+  if (v == null || v === '') return null;
+  if (v instanceof Date && !isNaN(v.getTime())) return v.toISOString().split('T')[0];
+  if (typeof v === 'number' && v > 20000 && v < 80000) {
+    // Excel serial date → JS date
+    const ms = Math.round((v - 25569) * 86400 * 1000);
+    const d = new Date(ms);
+    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  }
+  const s = String(v).trim();
+  if (!s) return null;
+  // Common formats: yyyy-mm-dd, dd/mm/yyyy, mm/dd/yyyy, dd-mm-yyyy
+  const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) {
+    const d = new Date(`${iso[1]}-${iso[2].padStart(2,'0')}-${iso[3].padStart(2,'0')}`);
+    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  }
+  const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (dmy) {
+    let [_, a, b, y] = dmy;
+    if (y.length === 2) y = '20' + y;
+    // Prefer dd/mm/yyyy (UAE locale). If first part >12, must be day.
+    const day = parseInt(a) > 12 ? a : a;
+    const mo = parseInt(a) > 12 ? b : b;
+    // dd/mm/yyyy
+    const d = new Date(`${y}-${mo.padStart(2,'0')}-${day.padStart(2,'0')}`);
+    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  }
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  return null;
+}
 
 /**
  * Parse Excel/CSV file against template. Auto-detect column mapping.
@@ -265,8 +309,17 @@ export async function parseExcelForTemplate(file: File, template: DSRTemplate): 
     };
   }
 
+  // Detect a "date" header column in the Excel (separate from template columns)
+  const dateHeaderIdx = headers.findIndex(h => {
+    const n = normalize(h);
+    return n === 'date' || n === 'entrydate' || n === 'reportdate' || n === 'day' || n.includes('date');
+  });
+  // Also: if any matched template column is type=date, treat as row-date source
+  const dateColMatch = matched.find(m => template.columns.find(c => c.key === m.key && c.type === 'date'));
+
   // Build rows
   const rows: Record<string, any>[] = [];
+  const parsedRows: ExcelParsedRow[] = [];
   for (let r = 1; r < json.length; r++) {
     const rawRow = json[r] as any[];
     if (!rawRow || rawRow.every(v => v === '' || v == null)) continue;
@@ -276,9 +329,16 @@ export async function parseExcelForTemplate(file: File, template: DSRTemplate): 
       if (val instanceof Date) row[m.key] = val.toISOString().split('T')[0];
       else row[m.key] = val == null ? '' : String(val).trim();
     });
-    // Skip if required field is empty in this row
     const hasRequired = requiredKeys.every(k => row[k] && String(row[k]).trim() !== '');
-    if (hasRequired) rows.push(row);
+    if (!hasRequired) continue;
+
+    // Detect per-row date
+    let detectedDate: string | null = null;
+    if (dateHeaderIdx >= 0) detectedDate = tryParseDate(rawRow[dateHeaderIdx]);
+    if (!detectedDate && dateColMatch) detectedDate = tryParseDate(row[dateColMatch.key]);
+
+    rows.push(row);
+    parsedRows.push({ data: row, detectedDate });
   }
 
   if (rows.length === 0) {
@@ -290,6 +350,8 @@ export async function parseExcelForTemplate(file: File, template: DSRTemplate): 
     matchedColumns: matched.map(({ excelHeader, key, label }) => ({ excelHeader, key, label })),
     unmatchedHeaders: unmatched,
     rows,
+    parsedRows,
+    hasDateColumn: dateHeaderIdx >= 0 || !!dateColMatch,
   };
 }
 
