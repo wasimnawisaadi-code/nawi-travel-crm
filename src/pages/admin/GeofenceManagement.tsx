@@ -38,9 +38,11 @@ export default function GeofenceManagement() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
 
-  // Zone create form
+  // Zone create/edit form
   const [showZoneForm, setShowZoneForm] = useState(false);
-  const [zForm, setZForm] = useState({ name: '', latitude: '', longitude: '', radius: '100' });
+  const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
+  // Default Dubai centre — overridden as soon as we have geolocation or click
+  const [zForm, setZForm] = useState({ name: '', latitude: 25.2048, longitude: 55.2708, radius: 100 });
 
   const loadZones = async () => {
     const { data } = await supabase.from('geofence_zones').select('*').order('created_at', { ascending: false });
