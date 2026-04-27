@@ -197,10 +197,14 @@ export default function GeofenceManagement() {
           <h3 className="font-semibold font-display">Default Attendance Rules</h3>
           <span className="text-xs text-muted-foreground">(applies to all employees unless overridden below)</span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Work Start</label>
             <input type="time" value={att.work_start} onChange={e => setAtt(s => ({ ...s, work_start: e.target.value }))} className="input-nawi" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Work End</label>
+            <input type="time" value={att.work_end} onChange={e => setAtt(s => ({ ...s, work_end: e.target.value }))} className="input-nawi" />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Grace (minutes)</label>
@@ -428,7 +432,7 @@ export default function GeofenceManagement() {
                       {/* Schedule overrides */}
                       <div>
                         <label className="block text-xs font-semibold mb-2 flex items-center gap-1.5"><Settings2 className="w-3.5 h-3.5" /> Schedule Override</label>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                           <div>
                             <label className="block text-[11px] text-muted-foreground mb-1">Work Start</label>
                             <input
@@ -439,6 +443,17 @@ export default function GeofenceManagement() {
                               className="input-nawi text-sm py-1.5 w-full"
                             />
                             <p className="text-[10px] text-muted-foreground mt-0.5">Default: {att.work_start}</p>
+                          </div>
+                          <div>
+                            <label className="block text-[11px] text-muted-foreground mb-1">Work End</label>
+                            <input
+                              type="time"
+                              value={ov.work_end || ''}
+                              onChange={(e) => setEmpOverride(emp.user_id, { work_end: e.target.value || undefined })}
+                              placeholder={att.work_end}
+                              className="input-nawi text-sm py-1.5 w-full"
+                            />
+                            <p className="text-[10px] text-muted-foreground mt-0.5">Default: {att.work_end}</p>
                           </div>
                           <div>
                             <label className="block text-[11px] text-muted-foreground mb-1">Grace (min)</label>
