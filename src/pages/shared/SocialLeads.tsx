@@ -192,6 +192,43 @@ export default function SocialLeads() {
         <StatCard label="Converted" value={counts.converted} color="text-success" />
       </div>
 
+      {/* Conversion Analytics — by source × period */}
+      <div className="card-nawi space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <h3 className="text-sm font-semibold font-display flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-success" /> Conversion Analytics
+          </h3>
+          <p className="text-[11px] text-muted-foreground">Live count of converted leads by channel</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {([['This Week', analytics.week], ['This Month', analytics.month], ['All Time', analytics.allTime]] as const).map(([label, data]) => (
+            <div key={label} className="border border-border rounded-lg p-3 space-y-2 bg-muted/20">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+                <p className="text-xl font-bold font-display text-success">{data.total}</p>
+              </div>
+              <div className="space-y-1">
+                {(['whatsapp', 'instagram', 'messenger'] as const).map(src => {
+                  const meta = SOURCE_META[src];
+                  const Icon = meta.Icon;
+                  const pct = data.total > 0 ? Math.round((data[src] / data.total) * 100) : 0;
+                  return (
+                    <div key={src} className="flex items-center gap-2 text-xs">
+                      <Icon className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="w-20">{meta.label}</span>
+                      <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div className={`h-full ${src === 'whatsapp' ? 'bg-success' : src === 'instagram' ? 'bg-warning' : 'bg-secondary'}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="w-8 text-right font-mono">{data[src]}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="flex flex-wrap gap-2 items-center">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
