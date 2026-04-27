@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { toast } from 'sonner';
-import { MessageCircle, Instagram, Facebook, RefreshCw, UserPlus, UserMinus, CheckCircle2, XCircle, Clock, Loader2, Send, StickyNote, Search, Filter, Upload, FileImage } from 'lucide-react';
+import { MessageCircle, Instagram, Facebook, RefreshCw, UserPlus, UserMinus, CheckCircle2, XCircle, Clock, Loader2, Send, StickyNote, Search, Filter, Upload, FileImage, Download, Trash2 } from 'lucide-react';
 import EmptyState from '@/components/ui/EmptyState';
+import { exportToExcel } from '@/lib/excel-export';
 
 type Source = 'whatsapp' | 'instagram' | 'messenger';
 type Status = 'NEW' | 'IN_PROGRESS' | 'CONVERTED' | 'NOT_CONVERTED';
