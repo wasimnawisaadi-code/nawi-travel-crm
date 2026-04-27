@@ -536,12 +536,40 @@ function LeadModal({ lead, onClose, onSaved, canEdit, currentUserId, currentUser
 
           {(form.status === 'CONVERTED' || proofUrl) && canEdit && (
             <div className="pt-4 border-t border-border space-y-2">
-              <h4 className="text-sm font-semibold flex items-center gap-1.5"><FileImage className="w-4 h-4" /> Conversion Proof <span className="text-destructive">*</span></h4>
-              {proofUrl && (
-                <a href={proofUrl} target="_blank" rel="noopener" className="text-xs text-primary underline block">View current proof ↗</a>
+              <h4 className="text-sm font-semibold flex items-center gap-1.5">
+                <FileImage className="w-4 h-4" /> Conversion Proof <span className="text-destructive">*</span>
+              </h4>
+              {proofUrl && !proofFile && (
+                <div className="flex items-center gap-3 p-2 border border-border rounded-lg bg-muted/30">
+                  {/\.(jpe?g|png|gif|webp)$/i.test(proofUrl) ? (
+                    <img src={proofUrl} alt="proof" className="w-16 h-16 rounded object-cover border border-border" />
+                  ) : (
+                    <div className="w-16 h-16 rounded bg-muted flex items-center justify-center"><FileImage className="w-6 h-6 text-muted-foreground" /></div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <a href={proofUrl} target="_blank" rel="noopener" className="text-xs text-primary underline block truncate">View current proof ↗</a>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Pick a new file below to replace.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { if (confirm('Remove the current proof?')) { setProofUrl(null); setProofFile(null); } }}
+                    title="Remove proof"
+                    className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               )}
-              <input type="file" accept="image/*,application/pdf" onChange={e => setProofFile(e.target.files?.[0] || null)} className="input-nawi text-xs" />
-              {proofFile && <p className="text-[11px] text-muted-foreground"><Upload className="w-3 h-3 inline" /> {proofFile.name} ready to upload</p>}
+              <label className="block">
+                <span className="text-[11px] text-muted-foreground">{proofUrl ? 'Replace with' : 'Upload'} image or PDF</span>
+                <input type="file" accept="image/*,application/pdf" onChange={e => setProofFile(e.target.files?.[0] || null)} className="input-nawi text-xs mt-1" />
+              </label>
+              {proofFile && (
+                <div className="flex items-center justify-between p-2 border border-primary/30 rounded-lg bg-primary/5">
+                  <p className="text-[11px] text-primary"><Upload className="w-3 h-3 inline" /> {proofFile.name} ready</p>
+                  <button type="button" onClick={() => setProofFile(null)} className="text-[11px] text-muted-foreground hover:text-destructive">Cancel</button>
+                </div>
+              )}
               {uploading && <p className="text-[11px] text-primary">Uploading…</p>}
             </div>
           )}
