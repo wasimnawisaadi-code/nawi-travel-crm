@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { MapPin, Users, Activity, ChevronDown, ChevronUp, Save, Plus, Trash2, Navigation, Edit2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -374,6 +374,10 @@ function EmployeeEditor({
 }) {
   const [zoneId, setZoneId] = useState<string>(emp.assigned_zone_id || '');
   const [ov, setOv] = useState<EmployeeOverride>(currentOv);
+
+  // Re-sync when parent state changes (e.g. after a save committed to the server)
+  useEffect(() => { setZoneId(emp.assigned_zone_id || ''); }, [emp.assigned_zone_id]);
+  useEffect(() => { setOv(currentOv); }, [JSON.stringify(currentOv)]);
 
   const set = (patch: Partial<EmployeeOverride>) => setOv(o => ({ ...o, ...patch }));
 
