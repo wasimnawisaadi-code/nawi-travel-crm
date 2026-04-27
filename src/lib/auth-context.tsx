@@ -78,7 +78,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const startZoneWatching = async (zoneId: string, profileType: string) => {
+  const startZoneWatching = async (zoneId: string, profileType: string, userId: string) => {
+    // Honor settings: skip watching if geofence is disabled or auto-logout is off
+    const { getAttendanceSettings } = await import('@/lib/settings');
+    const settings = await getAttendanceSettings(userId);
+    if (settings.enforce_geofence === false || settings.auto_logout_outside_zone === false) {
+      setIsInZone(true);
+      return;
+    }
+
     const { data: zone } = await supabase
       .from('geofence_zones')
       .select('*')
@@ -89,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!zone) { setIsInZone(true); return; }
 
     const geoZone = zone as unknown as GeofenceZone;
-    
+
     // Watch position and auto-logout if leaving zone (office employees)
     if (watchIdRef.current !== null) {
       navigator.geolocation.clearWatch(watchIdRef.current);
