@@ -334,7 +334,6 @@ export default function GeofenceManagement() {
 
                   {isOpen && (
                     <EmployeeEditor
-                      key={emp.id + (emp.assigned_zone_id || '')}
                       emp={emp}
                       zones={zones}
                       defaults={att}
