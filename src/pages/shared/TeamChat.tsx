@@ -432,7 +432,7 @@ export default function TeamChat() {
                 {showDate && (
                   <div className="text-center my-4"><span className="text-xs text-muted-foreground bg-muted px-3 py-1 rounded-full">{formatDay(msg.created_at)}</span></div>
                 )}
-                <div className={`flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                <div className={`group/msg flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
                   {!isMe && (
                     msg.sender_photo ? (
                       <img src={msg.sender_photo} alt="" className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
@@ -441,6 +441,15 @@ export default function TeamChat() {
                         {msg.sender_name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
                       </div>
                     )
+                  )}
+                  {isMe && (
+                    <button
+                      onClick={() => deleteMessage(msg)}
+                      title="Unsend / delete"
+                      className="opacity-0 group-hover/msg:opacity-100 p-1.5 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-opacity self-center"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   )}
                   <div className={`max-w-[70%] ${isMe ? 'order-first' : ''}`}>
                     {!isMe && <p className="text-xs text-muted-foreground mb-1 ml-1">{msg.sender_name}</p>}
