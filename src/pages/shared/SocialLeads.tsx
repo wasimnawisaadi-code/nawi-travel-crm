@@ -232,8 +232,29 @@ export default function SocialLeads() {
                   </div>
                 </div>
 
-                {lead.client_need && (
-                  <p className="text-xs bg-muted/50 rounded p-2"><strong>Need:</strong> {lead.client_need}</p>
+                {/* Employee progress block — visible to all, key for admin oversight */}
+                {(lead.client_need || lead.follow_up_date || lead.notes || lead.proof_url || lead.converted_at) && (
+                  <div className="border border-border/60 rounded-lg p-2.5 bg-muted/30 space-y-1.5">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Employee Progress</p>
+                    {lead.client_need && (
+                      <p className="text-xs"><strong className="text-muted-foreground">Need:</strong> {lead.client_need}</p>
+                    )}
+                    {lead.follow_up_date && (
+                      <p className="text-xs"><strong className="text-muted-foreground">Follow-up:</strong> {new Date(lead.follow_up_date).toLocaleDateString('en-GB')}</p>
+                    )}
+                    {lead.notes && (
+                      <p className="text-xs line-clamp-2"><strong className="text-muted-foreground">Notes:</strong> {lead.notes}</p>
+                    )}
+                    {lead.converted_at && (
+                      <p className="text-xs text-success"><CheckCircle2 className="w-3 h-3 inline" /> <strong>Converted</strong> on {new Date(lead.converted_at).toLocaleDateString('en-GB')}</p>
+                    )}
+                    {lead.proof_url && (
+                      <a href={lead.proof_url} target="_blank" rel="noopener" className="inline-flex items-center gap-2 mt-1">
+                        <img src={lead.proof_url} alt="Conversion proof" className="w-16 h-16 rounded border border-border object-cover hover:opacity-80 transition-opacity" />
+                        <span className="text-[11px] text-primary underline">View proof</span>
+                      </a>
+                    )}
+                  </div>
                 )}
 
                 <div className="flex items-center justify-between gap-2 flex-wrap">
