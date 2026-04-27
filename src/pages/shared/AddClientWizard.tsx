@@ -424,7 +424,24 @@ export default function AddClientWizard() {
               {LEAD_SOURCES.map(s => (
                 <button key={s} onClick={() => updateForm({ leadSource: s })} className={`px-4 py-2 rounded-full text-sm font-medium border transition-colors ${form.leadSource === s ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:border-secondary'}`}>{s}</button>
               ))}
+              {(() => {
+                const isOther = form.leadSource && !LEAD_SOURCES.includes(form.leadSource);
+                return (
+                  <button onClick={() => updateForm({ leadSource: isOther ? form.leadSource : ' ' })} className={`px-4 py-2 rounded-full text-sm font-medium border transition-colors ${isOther ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:border-secondary'}`}>
+                    Others
+                  </button>
+                );
+              })()}
             </div>
+            {form.leadSource && !LEAD_SOURCES.includes(form.leadSource) && (
+              <input
+                autoFocus
+                value={form.leadSource.trim()}
+                onChange={(e) => updateForm({ leadSource: e.target.value || ' ' })}
+                placeholder="Enter custom lead source"
+                className="input-nawi mt-2 max-w-sm"
+              />
+            )}
 
             <h2 className="text-lg font-bold font-display pt-4">3. Select Service</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
