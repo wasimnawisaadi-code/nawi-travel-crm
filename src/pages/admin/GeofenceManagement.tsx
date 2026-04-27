@@ -197,7 +197,9 @@ export default function GeofenceManagement() {
           <h3 className="font-semibold font-display">Default Attendance Rules</h3>
           <span className="text-xs text-muted-foreground">(applies to all employees unless overridden below)</span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+
+        {/* Schedule */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Work Start</label>
             <input type="time" value={att.work_start} onChange={e => setAtt(s => ({ ...s, work_start: e.target.value }))} className="input-nawi" />
@@ -207,16 +209,67 @@ export default function GeofenceManagement() {
             <input type="time" value={att.work_end} onChange={e => setAtt(s => ({ ...s, work_end: e.target.value }))} className="input-nawi" />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Grace (minutes)</label>
+            <label className="block text-sm font-medium mb-1">Grace (min)</label>
             <input type="number" min={0} max={120} value={att.grace_minutes}
               onChange={e => setAtt(s => ({ ...s, grace_minutes: Math.max(0, Number(e.target.value) || 0) }))}
               className="input-nawi" />
+            <p className="text-[11px] text-muted-foreground mt-0.5">Late after Start + Grace</p>
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Cutoff for Present</label>
             <div className="input-nawi flex items-center text-sm text-muted-foreground bg-muted">{att.work_start} + {att.grace_minutes}m</div>
           </div>
         </div>
+
+        {/* Hours / classification */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Half Day Below (h)</label>
+            <input type="number" min={1} max={12} step={0.5} value={att.half_day_after_hours}
+              onChange={e => setAtt(s => ({ ...s, half_day_after_hours: Math.max(0, Number(e.target.value) || 0) }))}
+              className="input-nawi" />
+            <p className="text-[11px] text-muted-foreground mt-0.5">Worked &lt; this = Half Day</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Full Day From (h)</label>
+            <input type="number" min={1} max={16} step={0.5} value={att.min_full_day_hours}
+              onChange={e => setAtt(s => ({ ...s, min_full_day_hours: Math.max(0, Number(e.target.value) || 0) }))}
+              className="input-nawi" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Early Leave (min)</label>
+            <input type="number" min={0} max={120} value={att.early_leave_threshold_min}
+              onChange={e => setAtt(s => ({ ...s, early_leave_threshold_min: Math.max(0, Number(e.target.value) || 0) }))}
+              className="input-nawi" />
+            <p className="text-[11px] text-muted-foreground mt-0.5">Logout &gt; N min before End</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Default Zone</label>
+            <select value={att.default_zone_id || ''} onChange={e => setAtt(s => ({ ...s, default_zone_id: e.target.value || null }))} className="input-nawi text-sm">
+              <option value="">— None (use any active office zone) —</option>
+              {zones.filter(z => z.is_active).map(z => (
+                <option key={z.id} value={z.id}>{z.name} ({z.zone_type}, {z.radius}m)</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Geofence master switches */}
+        <div className="flex flex-wrap gap-4 pt-1">
+          <label className="flex items-center gap-2 cursor-pointer text-sm">
+            <input type="checkbox" checked={att.enforce_geofence}
+              onChange={e => setAtt(s => ({ ...s, enforce_geofence: e.target.checked }))}
+              className="w-4 h-4 rounded border-border" />
+            <span>Enforce geofence on login</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer text-sm">
+            <input type="checkbox" checked={att.auto_logout_outside_zone}
+              onChange={e => setAtt(s => ({ ...s, auto_logout_outside_zone: e.target.checked }))}
+              className="w-4 h-4 rounded border-border" />
+            <span>Auto-logout if employee leaves zone</span>
+          </label>
+        </div>
+
         <div>
           <label className="block text-sm font-medium mb-2">Weekend Days</label>
           <div className="flex flex-wrap gap-2">
