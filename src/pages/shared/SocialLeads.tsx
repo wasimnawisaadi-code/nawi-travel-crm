@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { toast } from 'sonner';
-import { MessageCircle, Instagram, Facebook, RefreshCw, UserPlus, CheckCircle2, XCircle, Clock, Loader2, Send, StickyNote, Search, Filter } from 'lucide-react';
+import { MessageCircle, Instagram, Facebook, RefreshCw, UserPlus, UserMinus, CheckCircle2, XCircle, Clock, Loader2, Send, StickyNote, Search, Filter, Upload, FileImage } from 'lucide-react';
 import EmptyState from '@/components/ui/EmptyState';
 
 type Source = 'whatsapp' | 'instagram' | 'messenger';
