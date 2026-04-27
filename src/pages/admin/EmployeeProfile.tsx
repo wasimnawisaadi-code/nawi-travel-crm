@@ -163,9 +163,21 @@ export default function EmployeeProfile() {
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-xl font-bold text-foreground font-display">{emp.name}</h1>
           </div>
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
             <StatusBadge status={emp.status} />
             <span className="text-xs text-muted-foreground">Joined {formatDate(emp.created_at)}</span>
+            {assignedZone ? (
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium inline-flex items-center gap-1">
+                <MapPin className="w-3 h-3" /> {assignedZone.name} ({assignedZone.radius}m)
+              </span>
+            ) : (
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-warning/10 text-warning font-medium inline-flex items-center gap-1">
+                <MapPin className="w-3 h-3" /> No zone
+              </span>
+            )}
+            {Object.keys(override).length > 0 && (
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground font-medium">Custom schedule</span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
