@@ -306,8 +306,17 @@ export async function parseExcelForTemplate(file: File, template: DSRTemplate): 
     };
   }
 
+  // Detect a "date" header column in the Excel (separate from template columns)
+  const dateHeaderIdx = headers.findIndex(h => {
+    const n = normalize(h);
+    return n === 'date' || n === 'entrydate' || n === 'reportdate' || n === 'day' || n.includes('date');
+  });
+  // Also: if any matched template column is type=date, treat as row-date source
+  const dateColMatch = matched.find(m => template.columns.find(c => c.key === m.key && c.type === 'date'));
+
   // Build rows
   const rows: Record<string, any>[] = [];
+  const parsedRows: ExcelParsedRow[] = [];
   for (let r = 1; r < json.length; r++) {
     const rawRow = json[r] as any[];
     if (!rawRow || rawRow.every(v => v === '' || v == null)) continue;
@@ -317,9 +326,16 @@ export async function parseExcelForTemplate(file: File, template: DSRTemplate): 
       if (val instanceof Date) row[m.key] = val.toISOString().split('T')[0];
       else row[m.key] = val == null ? '' : String(val).trim();
     });
-    // Skip if required field is empty in this row
     const hasRequired = requiredKeys.every(k => row[k] && String(row[k]).trim() !== '');
-    if (hasRequired) rows.push(row);
+    if (!hasRequired) continue;
+
+    // Detect per-row date
+    let detectedDate: string | null = null;
+    if (dateHeaderIdx >= 0) detectedDate = tryParseDate(rawRow[dateHeaderIdx]);
+    if (!detectedDate && dateColMatch) detectedDate = tryParseDate(row[dateColMatch.key]);
+
+    rows.push(row);
+    parsedRows.push({ data: row, detectedDate });
   }
 
   if (rows.length === 0) {
@@ -331,6 +347,8 @@ export async function parseExcelForTemplate(file: File, template: DSRTemplate): 
     matchedColumns: matched.map(({ excelHeader, key, label }) => ({ excelHeader, key, label })),
     unmatchedHeaders: unmatched,
     rows,
+    parsedRows,
+    hasDateColumn: dateHeaderIdx >= 0 || !!dateColMatch,
   };
 }
 
