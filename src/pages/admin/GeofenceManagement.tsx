@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { MapPin, Plus, Trash2, Edit2, Check, X, Navigation, Clock, Save, Users, Activity, Settings2, ChevronDown, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
-import { getAttendanceSettings, saveAttendanceSettings, getAttendanceOverrides, saveAttendanceOverrides, type AttendanceSettings, type EmployeeOverride } from '@/lib/settings';
+import { getAttendanceSettings, saveAttendanceSettings, getAttendanceOverrides, saveAttendanceOverrides, DEFAULT_ATTENDANCE, type AttendanceSettings, type EmployeeOverride } from '@/lib/settings';
 
 interface Zone {
   id: string;
@@ -31,7 +31,7 @@ export default function GeofenceManagement() {
   const [showZonesPanel, setShowZonesPanel] = useState(false);
 
   // Global defaults
-  const [att, setAtt] = useState<AttendanceSettings>({ work_start: '09:00', work_end: '18:00', grace_minutes: 15, weekend_days: [5, 6] });
+  const [att, setAtt] = useState<AttendanceSettings>(DEFAULT_ATTENDANCE);
   const [savingAtt, setSavingAtt] = useState(false);
 
   // Per-employee overrides
@@ -197,7 +197,9 @@ export default function GeofenceManagement() {
           <h3 className="font-semibold font-display">Default Attendance Rules</h3>
           <span className="text-xs text-muted-foreground">(applies to all employees unless overridden below)</span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+
+        {/* Schedule */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Work Start</label>
             <input type="time" value={att.work_start} onChange={e => setAtt(s => ({ ...s, work_start: e.target.value }))} className="input-nawi" />
@@ -207,16 +209,67 @@ export default function GeofenceManagement() {
             <input type="time" value={att.work_end} onChange={e => setAtt(s => ({ ...s, work_end: e.target.value }))} className="input-nawi" />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Grace (minutes)</label>
+            <label className="block text-sm font-medium mb-1">Grace (min)</label>
             <input type="number" min={0} max={120} value={att.grace_minutes}
               onChange={e => setAtt(s => ({ ...s, grace_minutes: Math.max(0, Number(e.target.value) || 0) }))}
               className="input-nawi" />
+            <p className="text-[11px] text-muted-foreground mt-0.5">Late after Start + Grace</p>
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Cutoff for Present</label>
             <div className="input-nawi flex items-center text-sm text-muted-foreground bg-muted">{att.work_start} + {att.grace_minutes}m</div>
           </div>
         </div>
+
+        {/* Hours / classification */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Half Day Below (h)</label>
+            <input type="number" min={1} max={12} step={0.5} value={att.half_day_after_hours}
+              onChange={e => setAtt(s => ({ ...s, half_day_after_hours: Math.max(0, Number(e.target.value) || 0) }))}
+              className="input-nawi" />
+            <p className="text-[11px] text-muted-foreground mt-0.5">Worked &lt; this = Half Day</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Full Day From (h)</label>
+            <input type="number" min={1} max={16} step={0.5} value={att.min_full_day_hours}
+              onChange={e => setAtt(s => ({ ...s, min_full_day_hours: Math.max(0, Number(e.target.value) || 0) }))}
+              className="input-nawi" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Early Leave (min)</label>
+            <input type="number" min={0} max={120} value={att.early_leave_threshold_min}
+              onChange={e => setAtt(s => ({ ...s, early_leave_threshold_min: Math.max(0, Number(e.target.value) || 0) }))}
+              className="input-nawi" />
+            <p className="text-[11px] text-muted-foreground mt-0.5">Logout &gt; N min before End</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Default Zone</label>
+            <select value={att.default_zone_id || ''} onChange={e => setAtt(s => ({ ...s, default_zone_id: e.target.value || null }))} className="input-nawi text-sm">
+              <option value="">— None (use any active office zone) —</option>
+              {zones.filter(z => z.is_active).map(z => (
+                <option key={z.id} value={z.id}>{z.name} ({z.zone_type}, {z.radius}m)</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Geofence master switches */}
+        <div className="flex flex-wrap gap-4 pt-1">
+          <label className="flex items-center gap-2 cursor-pointer text-sm">
+            <input type="checkbox" checked={att.enforce_geofence}
+              onChange={e => setAtt(s => ({ ...s, enforce_geofence: e.target.checked }))}
+              className="w-4 h-4 rounded border-border" />
+            <span>Enforce geofence on login</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer text-sm">
+            <input type="checkbox" checked={att.auto_logout_outside_zone}
+              onChange={e => setAtt(s => ({ ...s, auto_logout_outside_zone: e.target.checked }))}
+              className="w-4 h-4 rounded border-border" />
+            <span>Auto-logout if employee leaves zone</span>
+          </label>
+        </div>
+
         <div>
           <label className="block text-sm font-medium mb-2">Weekend Days</label>
           <div className="flex flex-wrap gap-2">
@@ -342,12 +395,32 @@ export default function GeofenceManagement() {
             <Users className="w-5 h-5 text-primary" />
             <h3 className="font-semibold font-display">All Employees ({employees.length})</h3>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <input
               value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Search employee…"
               className="input-nawi text-sm py-1.5 w-48"
             />
+            <select
+              onChange={async (e) => {
+                const zoneId = e.target.value;
+                if (!zoneId) return;
+                if (!confirm(`Assign ${filteredEmployees.length} visible employee(s) to this zone?`)) { e.target.value = ''; return; }
+                await Promise.all(filteredEmployees.map(emp =>
+                  supabase.from('profiles').update({ assigned_zone_id: zoneId === '__none__' ? null : zoneId }).eq('id', emp.id)
+                ));
+                toast.success(`Updated ${filteredEmployees.length} employee(s)`);
+                loadEmployees();
+                e.target.value = '';
+              }}
+              className="input-nawi text-sm py-1.5"
+              defaultValue=""
+              title="Bulk assign zone to all visible employees"
+            >
+              <option value="" disabled>Bulk assign zone…</option>
+              <option value="__none__">— Clear zones —</option>
+              {zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
+            </select>
             <button onClick={handleSaveOverrides} disabled={savingOv} className="btn-primary text-sm">
               <Save className="w-4 h-4" /> {savingOv ? 'Saving…' : 'Save Overrides'}
             </button>
@@ -427,6 +500,16 @@ export default function GeofenceManagement() {
                             </div>
                           </div>
                         )}
+                        <label className="flex items-center gap-2 mt-3 cursor-pointer text-xs">
+                          <input
+                            type="checkbox"
+                            checked={ov.enforce_geofence !== false}
+                            onChange={(e) => setEmpOverride(emp.user_id, { enforce_geofence: e.target.checked ? undefined : false })}
+                            className="w-4 h-4 rounded border-border"
+                          />
+                          <span>Enforce geofence for this employee</span>
+                          <span className="text-muted-foreground">(uncheck for sales/field staff who work outside)</span>
+                        </label>
                       </div>
 
                       {/* Schedule overrides */}

@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Edit, Save, X, Camera, MapPin, Power, PowerOff, Trash2 } from 'lucide-react';
+import { ArrowLeft, Edit, Save, X, MapPin, Power, PowerOff, Trash2, Clock, Shield } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { formatCurrency, formatDate, auditLog } from '@/lib/supabase-service';
 import StatusBadge from '@/components/ui/StatusBadge';
 import PasswordConfirmDialog from '@/components/PasswordConfirmDialog';
+import { getAttendanceSettings, getAttendanceOverrides, saveAttendanceOverrides, type EmployeeOverride } from '@/lib/settings';
 import { toast } from 'sonner';
 
 export default function EmployeeProfile() {
@@ -20,6 +21,11 @@ export default function EmployeeProfile() {
   const [leave, setLeave] = useState<any[]>([]);
   const [goals, setGoals] = useState<any[]>([]);
   const [pwdAction, setPwdAction] = useState<'save' | 'activate' | 'deactivate' | 'delete' | null>(null);
+  const [zones, setZones] = useState<any[]>([]);
+  const [globalAtt, setGlobalAtt] = useState<any>(null);
+  const [override, setOverride] = useState<EmployeeOverride>({});
+  const [savingZone, setSavingZone] = useState(false);
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -43,18 +49,24 @@ export default function EmployeeProfile() {
       setForm(profile);
 
       const userId = profile.user_id;
-      const [cRes, tRes, aRes, lRes, gRes] = await Promise.all([
+      const [cRes, tRes, aRes, lRes, gRes, zRes, ovAll, baseAtt] = await Promise.all([
         supabase.from('clients').select('*').or(`assigned_to.eq.${userId},created_by.eq.${userId}`),
         supabase.from('tasks').select('*').or(`assigned_to.eq.${userId},created_by.eq.${userId}`),
         supabase.from('attendance').select('*').eq('employee_id', userId).order('date', { ascending: false }).limit(50),
         supabase.from('leave_requests').select('*').eq('employee_id', userId).order('created_at', { ascending: false }),
         supabase.from('goals').select('*').or(`assigned_to.eq.${userId},assigned_to.is.null`),
+        supabase.from('geofence_zones').select('*').eq('is_active', true).order('name'),
+        getAttendanceOverrides(),
+        getAttendanceSettings(),
       ]);
       setClients(cRes.data || []);
       setTasks(tRes.data || []);
       setAttendance(aRes.data || []);
       setLeave(lRes.data || []);
       setGoals(gRes.data || []);
+      setZones(zRes.data || []);
+      setGlobalAtt(baseAtt);
+      setOverride(ovAll[userId] || {});
     };
     fetchAll();
   }, [id]);
@@ -98,7 +110,41 @@ export default function EmployeeProfile() {
     }
   };
 
-  const tabs = ['overview', 'clients', 'tasks', 'attendance', 'leave', 'goals'];
+  const handleAssignZone = async (zoneId: string | null) => {
+    setSavingZone(true);
+    const { error } = await supabase.from('profiles').update({ assigned_zone_id: zoneId }).eq('id', emp.id);
+    setSavingZone(false);
+    if (error) { toast.error('Failed to assign zone'); return; }
+    setEmp({ ...emp, assigned_zone_id: zoneId });
+    await auditLog('employee_zone_assigned', 'employee', emp.user_id, { zone_id: zoneId });
+    toast.success(zoneId ? 'Zone assigned' : 'Zone cleared');
+  };
+
+  const handleSaveSchedule = async () => {
+    setSavingSchedule(true);
+    const allOverrides = await getAttendanceOverrides();
+    const cleaned: EmployeeOverride = { ...override };
+    Object.keys(cleaned).forEach(k => {
+      const v = (cleaned as any)[k];
+      if (v === '' || v === undefined || v === null) delete (cleaned as any)[k];
+    });
+    const next = { ...allOverrides };
+    if (Object.keys(cleaned).length === 0) delete next[emp.user_id]; else next[emp.user_id] = cleaned;
+    const { error } = await saveAttendanceOverrides(next);
+    setSavingSchedule(false);
+    if (error) { toast.error('Save failed'); return; }
+    await auditLog('employee_schedule_updated', 'employee', emp.user_id, cleaned as any);
+    toast.success('Schedule saved');
+  };
+
+  const tabs = ['overview', 'schedule', 'clients', 'tasks', 'attendance', 'leave', 'goals'];
+  const assignedZone = zones.find(z => z.id === emp?.assigned_zone_id);
+  const effective = { ...(globalAtt || {}), ...override };
+
+  const getMapsEmbed = (lat: number, lng: number, radius?: number) => {
+    const zoom = radius ? Math.max(13, Math.min(18, 17 - Math.log2(radius / 50))) : 15;
+    return `https://maps.google.com/maps?q=${lat},${lng}&z=${Math.round(zoom)}&output=embed`;
+  };
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -117,9 +163,21 @@ export default function EmployeeProfile() {
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-xl font-bold text-foreground font-display">{emp.name}</h1>
           </div>
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
             <StatusBadge status={emp.status} />
             <span className="text-xs text-muted-foreground">Joined {formatDate(emp.created_at)}</span>
+            {assignedZone ? (
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium inline-flex items-center gap-1">
+                <MapPin className="w-3 h-3" /> {assignedZone.name} ({assignedZone.radius}m)
+              </span>
+            ) : (
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-warning/10 text-warning font-medium inline-flex items-center gap-1">
+                <MapPin className="w-3 h-3" /> No zone
+              </span>
+            )}
+            {Object.keys(override).length > 0 && (
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground font-medium">Custom schedule</span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -186,6 +244,137 @@ export default function EmployeeProfile() {
                 )}
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {tab === 'schedule' && (
+        <div className="space-y-4">
+          {/* ZONE CARD */}
+          <div className="card-nawi space-y-3">
+            <div className="flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-primary" />
+              <h3 className="font-semibold font-display">Geofence Zone</h3>
+              {savingZone && <span className="text-xs text-muted-foreground">Saving…</span>}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
+              <div className="md:col-span-1 space-y-2">
+                <label className="block text-xs text-muted-foreground">Assigned Zone</label>
+                <select
+                  value={emp.assigned_zone_id || ''}
+                  onChange={(e) => handleAssignZone(e.target.value || null)}
+                  className="input-nawi text-sm"
+                >
+                  <option value="">— No zone (login from anywhere) —</option>
+                  {zones.map(z => (
+                    <option key={z.id} value={z.id}>{z.name} ({z.zone_type}, {z.radius}m)</option>
+                  ))}
+                </select>
+                {assignedZone ? (
+                  <div className="text-xs text-muted-foreground space-y-0.5">
+                    <p>📍 {assignedZone.latitude.toFixed(6)}, {assignedZone.longitude.toFixed(6)}</p>
+                    <p>Radius: <span className="text-foreground font-medium">{assignedZone.radius}m</span> · Type: <span className="capitalize">{assignedZone.zone_type}</span></p>
+                    <a href={`https://www.google.com/maps?q=${assignedZone.latitude},${assignedZone.longitude}`} target="_blank" rel="noopener" className="text-primary underline">Open in Google Maps ↗</a>
+                  </div>
+                ) : (
+                  <p className="text-xs text-warning">No zone assigned — falls back to default zone or any active office zone.</p>
+                )}
+                <label className="flex items-center gap-2 cursor-pointer text-xs pt-2 border-t border-border">
+                  <input
+                    type="checkbox"
+                    checked={override.enforce_geofence !== false}
+                    onChange={(e) => setOverride({ ...override, enforce_geofence: e.target.checked ? undefined : false })}
+                    className="w-4 h-4 rounded border-border"
+                  />
+                  <Shield className="w-3.5 h-3.5" />
+                  <span>Enforce geofence on login</span>
+                </label>
+                <p className="text-[11px] text-muted-foreground pl-6">Uncheck for sales/field staff who work outside.</p>
+              </div>
+              {assignedZone && (
+                <div className="md:col-span-2 rounded-lg overflow-hidden border border-border">
+                  <iframe
+                    src={getMapsEmbed(assignedZone.latitude, assignedZone.longitude, assignedZone.radius)}
+                    className="w-full h-56" loading="lazy" title={assignedZone.name}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* SCHEDULE CARD */}
+          <div className="card-nawi space-y-4">
+            <div className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-primary" />
+              <h3 className="font-semibold font-display">Work Schedule</h3>
+              <span className="text-xs text-muted-foreground">— blank fields use the company default</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Work Start</label>
+                <input type="time" value={override.work_start || ''}
+                  onChange={(e) => setOverride({ ...override, work_start: e.target.value || undefined })}
+                  className="input-nawi text-sm" />
+                <p className="text-[10px] text-muted-foreground mt-0.5">Default: {globalAtt?.work_start}</p>
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Work End</label>
+                <input type="time" value={override.work_end || ''}
+                  onChange={(e) => setOverride({ ...override, work_end: e.target.value || undefined })}
+                  className="input-nawi text-sm" />
+                <p className="text-[10px] text-muted-foreground mt-0.5">Default: {globalAtt?.work_end}</p>
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Grace (min)</label>
+                <input type="number" min={0} max={120} value={override.grace_minutes ?? ''}
+                  onChange={(e) => setOverride({ ...override, grace_minutes: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0) })}
+                  className="input-nawi text-sm" />
+                <p className="text-[10px] text-muted-foreground mt-0.5">Default: {globalAtt?.grace_minutes}m</p>
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Half Day Below (h)</label>
+                <input type="number" min={0} max={12} step={0.5} value={override.half_day_after_hours ?? ''}
+                  onChange={(e) => setOverride({ ...override, half_day_after_hours: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0) })}
+                  className="input-nawi text-sm" />
+                <p className="text-[10px] text-muted-foreground mt-0.5">Default: {globalAtt?.half_day_after_hours}h</p>
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Full Day From (h)</label>
+                <input type="number" min={0} max={16} step={0.5} value={override.min_full_day_hours ?? ''}
+                  onChange={(e) => setOverride({ ...override, min_full_day_hours: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0) })}
+                  className="input-nawi text-sm" />
+                <p className="text-[10px] text-muted-foreground mt-0.5">Default: {globalAtt?.min_full_day_hours}h</p>
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Early Leave (min)</label>
+                <input type="number" min={0} max={120} value={override.early_leave_threshold_min ?? ''}
+                  onChange={(e) => setOverride({ ...override, early_leave_threshold_min: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0) })}
+                  className="input-nawi text-sm" />
+                <p className="text-[10px] text-muted-foreground mt-0.5">Default: {globalAtt?.early_leave_threshold_min}m</p>
+              </div>
+            </div>
+
+            {/* Effective preview */}
+            <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs space-y-1">
+              <p className="font-semibold text-foreground">Effective for {emp.name}:</p>
+              <p className="text-muted-foreground">⏰ {effective.work_start} → {effective.work_end} · Grace {effective.grace_minutes}m · Late after {effective.work_start}+{effective.grace_minutes}m</p>
+              <p className="text-muted-foreground">📊 Half Day &lt; {effective.half_day_after_hours}h · Full Day ≥ {effective.min_full_day_hours}h · Early Leave if logout {effective.early_leave_threshold_min}m before {effective.work_end}</p>
+              <p className="text-muted-foreground">📍 Geofence: {effective.enforce_geofence !== false ? 'enforced' : 'disabled (this employee)'} · Auto-logout: {effective.auto_logout_outside_zone ? 'on' : 'off'}</p>
+            </div>
+
+            <div className="flex gap-2">
+              <button onClick={handleSaveSchedule} disabled={savingSchedule} className="btn-primary text-sm">
+                <Save className="w-4 h-4" /> {savingSchedule ? 'Saving…' : 'Save Schedule'}
+              </button>
+              {Object.keys(override).length > 0 && (
+                <button
+                  onClick={() => setOverride({})}
+                  className="btn-outline text-sm text-destructive border-destructive/30"
+                >
+                  Reset to defaults
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

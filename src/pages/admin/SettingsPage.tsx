@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { getAttendanceSettings, saveAttendanceSettings, type AttendanceSettings } from '@/lib/settings';
+import { getAttendanceSettings, saveAttendanceSettings, DEFAULT_ATTENDANCE, type AttendanceSettings } from '@/lib/settings';
 import { auditLog } from '@/lib/supabase-service';
 import { Clock, Save, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -9,7 +9,7 @@ const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function SettingsPage() {
   const { user } = useAuth();
-  const [att, setAtt] = useState<AttendanceSettings>({ work_start: '09:00', work_end: '18:00', grace_minutes: 15, weekend_days: [5, 6] });
+  const [att, setAtt] = useState<AttendanceSettings>(DEFAULT_ATTENDANCE);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
