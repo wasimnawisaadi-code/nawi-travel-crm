@@ -296,6 +296,31 @@ export default function TeamChat() {
     } finally { setUploading(false); }
   };
 
+  const deleteMessage = async (msg: any) => {
+    if (msg.sender_id !== user?.id) { toast.error('You can only delete your own messages'); return; }
+    if (!confirm('Delete this message? This cannot be undone.')) return;
+    const { error } = await supabase.from('chat_messages').delete().eq('id', msg.id);
+    if (error) { toast.error(error.message); return; }
+    setMessages(prev => prev.filter(m => m.id !== msg.id));
+    toast.success('Message deleted');
+  };
+
+  const deleteGroup = async (group: any) => {
+    if (group.created_by !== user?.id) { toast.error('Only the group creator can delete it'); return; }
+    if (group.name === 'General') { toast.error('The General group cannot be deleted'); return; }
+    if (!confirm(`Delete group "${group.name}"? All messages will be lost.`)) return;
+    await supabase.from('chat_messages').delete().eq('group_id', group.id);
+    const { error } = await supabase.from('chat_groups').delete().eq('id', group.id);
+    if (error) { toast.error(error.message); return; }
+    setGroups(prev => prev.filter(g => g.id !== group.id));
+    if (activeChat === group.id) {
+      const remaining = groups.filter(g => g.id !== group.id);
+      if (remaining.length > 0) { setActiveChat(remaining[0].id); setActiveChatType('group'); }
+      else setActiveChat('');
+    }
+    toast.success('Group deleted');
+  };
+
   const createGroup = async () => {
     if (!groupForm.name.trim() || !user) return;
     const { data } = await supabase.from('chat_groups').insert([{
