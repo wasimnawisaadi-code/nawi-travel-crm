@@ -144,18 +144,6 @@ export default function GeofenceManagement() {
     loadEmployees();
   };
 
-  const toggleDay = (d: number) => {
-    setAtt(s => ({ ...s, weekend_days: s.weekend_days.includes(d) ? s.weekend_days.filter(x => x !== d) : [...s.weekend_days, d].sort() }));
-  };
-
-  const handleSaveAtt = async () => {
-    setSavingAtt(true);
-    const { error } = await saveAttendanceSettings(att, user?.id);
-    setSavingAtt(false);
-    if (error) { toast.error('Save failed'); return; }
-    toast.success('Default attendance rules saved');
-  };
-
   const getGoogleMapsEmbedUrl = (lat: string | number, lng: string | number, radius?: number) => {
     const zoom = radius ? Math.max(13, Math.min(18, 17 - Math.log2(Number(radius) / 50))) : 15;
     return `https://maps.google.com/maps?q=${lat},${lng}&z=${Math.round(zoom)}&output=embed`;
