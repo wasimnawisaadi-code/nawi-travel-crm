@@ -162,6 +162,11 @@ export default function EmployeeProfile() {
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-xl font-bold text-foreground font-display">{emp.name}</h1>
+            {empRole !== 'employee' && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 inline-flex items-center gap-1">
+                <Shield className="w-3 h-3" /> {empRole === 'superadmin' ? 'SUPERADMIN' : 'ADMIN'}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             <StatusBadge status={emp.status} />
@@ -181,12 +186,18 @@ export default function EmployeeProfile() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {emp.status === 'active' ? (
-            <button onClick={() => setPwdAction('deactivate')} className="btn-outline text-warning border-warning/30 hover:bg-warning/10"><PowerOff className="w-4 h-4" /> Deactivate</button>
+          {empRole === 'employee' ? (
+            <>
+              {emp.status === 'active' ? (
+                <button onClick={() => setPwdAction('deactivate')} className="btn-outline text-warning border-warning/30 hover:bg-warning/10"><PowerOff className="w-4 h-4" /> Deactivate</button>
+              ) : (
+                <button onClick={() => setPwdAction('activate')} className="btn-outline text-success border-success/30 hover:bg-success/10"><Power className="w-4 h-4" /> Activate</button>
+              )}
+              <button onClick={() => setPwdAction('delete')} className="btn-danger"><Trash2 className="w-4 h-4" /> Delete</button>
+            </>
           ) : (
-            <button onClick={() => setPwdAction('activate')} className="btn-outline text-success border-success/30 hover:bg-success/10"><Power className="w-4 h-4" /> Activate</button>
+            <span className="text-xs text-muted-foreground italic">Admin profile — protected from deactivation/deletion</span>
           )}
-          <button onClick={() => setPwdAction('delete')} className="btn-danger"><Trash2 className="w-4 h-4" /> Delete</button>
         </div>
       </div>
 
