@@ -86,28 +86,50 @@ export default function GeofenceManagement() {
   }).length;
 
   // ---- Zone CRUD ----
+  const openNewZone = () => {
+    setEditingZoneId(null);
+    setZForm({ name: '', latitude: 25.2048, longitude: 55.2708, radius: 100 });
+    setShowZoneForm(true);
+    // Try to centre on user's current location
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (p) => setZForm(f => ({ ...f, latitude: p.coords.latitude, longitude: p.coords.longitude })),
+        () => {}
+      );
+    }
+  };
+
+  const openEditZone = (z: Zone) => {
+    setEditingZoneId(z.id);
+    setZForm({ name: z.name, latitude: z.latitude, longitude: z.longitude, radius: z.radius });
+    setShowZoneForm(true);
+  };
+
   const useMyLocation = () => {
     if (!navigator.geolocation) return toast.error('Geolocation not supported');
     navigator.geolocation.getCurrentPosition(
-      (p) => setZForm(f => ({ ...f, latitude: p.coords.latitude.toFixed(6), longitude: p.coords.longitude.toFixed(6) })),
+      (p) => setZForm(f => ({ ...f, latitude: p.coords.latitude, longitude: p.coords.longitude })),
       () => toast.error('Could not get location')
     );
   };
 
-  const createZone = async () => {
-    if (!zForm.name.trim() || !zForm.latitude || !zForm.longitude) return toast.error('Fill name, lat, lng');
-    const { error } = await supabase.from('geofence_zones').insert({
+  const saveZone = async () => {
+    if (!zForm.name.trim()) return toast.error('Zone name is required');
+    const payload = {
       name: zForm.name.trim(),
       latitude: Number(zForm.latitude),
       longitude: Number(zForm.longitude),
       radius: Number(zForm.radius) || 100,
       zone_type: 'office',
       is_active: true,
-    });
+    };
+    const { error } = editingZoneId
+      ? await supabase.from('geofence_zones').update(payload).eq('id', editingZoneId)
+      : await supabase.from('geofence_zones').insert(payload);
     if (error) return toast.error(error.message);
-    toast.success('Zone created');
-    setZForm({ name: '', latitude: '', longitude: '', radius: '100' });
+    toast.success(editingZoneId ? 'Zone updated' : 'Zone created');
     setShowZoneForm(false);
+    setEditingZoneId(null);
     loadZones();
   };
 
