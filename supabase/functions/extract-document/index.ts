@@ -1,4 +1,4 @@
-// Document OCR — uses USER's own Google Cloud Vision + Gemini API key (GOOGLE_API_KEY)
+// Document OCR — uses Google Service Account (GOOGLE_CLOUD_SA_JSON) for Vision + Gemini
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
@@ -6,11 +6,74 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// Strip "data:image/...;base64," prefix if present
 function stripBase64Prefix(b64: string): string {
   const idx = b64.indexOf(",");
   return idx >= 0 ? b64.slice(idx + 1) : b64;
 }
+
+// ============ Service Account → OAuth Access Token ============
+let cachedToken: { token: string; exp: number } | null = null;
+
+function b64url(data: ArrayBuffer | Uint8Array | string): string {
+  let bytes: Uint8Array;
+  if (typeof data === 'string') bytes = new TextEncoder().encode(data);
+  else if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
+  else bytes = data;
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function pemToPkcs8(pem: string): ArrayBuffer {
+  const b64 = pem.replace(/-----BEGIN PRIVATE KEY-----/, '')
+    .replace(/-----END PRIVATE KEY-----/, '').replace(/\s+/g, '');
+  const bin = atob(b64);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return buf.buffer;
+}
+
+async function getAccessToken(): Promise<{ token: string; projectId: string }> {
+  const saJson = Deno.env.get('GOOGLE_CLOUD_SA_JSON');
+  if (!saJson) throw new Error('GOOGLE_CLOUD_SA_JSON not configured');
+  const sa = JSON.parse(saJson);
+
+  if (cachedToken && cachedToken.exp > Date.now() + 60_000) {
+    return { token: cachedToken.token, projectId: sa.project_id };
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const header = { alg: 'RS256', typ: 'JWT' };
+  const claim = {
+    iss: sa.client_email,
+    scope: 'https://www.googleapis.com/auth/cloud-platform',
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: now + 3600,
+    iat: now,
+  };
+  const signingInput = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(claim))}`;
+
+  const key = await crypto.subtle.importKey(
+    'pkcs8', pemToPkcs8(sa.private_key),
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']
+  );
+  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(signingInput));
+  const jwt = `${signingInput}.${b64url(sig)}`;
+
+  const tokRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt,
+    }),
+  });
+  if (!tokRes.ok) throw new Error(`Token exchange failed: ${await tokRes.text()}`);
+  const tok = await tokRes.json();
+  cachedToken = { token: tok.access_token, exp: Date.now() + (tok.expires_in * 1000) };
+  return { token: tok.access_token, projectId: sa.project_id };
+}
+// ============ End helper ============
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -23,20 +86,17 @@ serve(async (req) => {
       });
     }
 
-    const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
-    if (!GOOGLE_API_KEY) {
-      return new Response(JSON.stringify({ error: "GOOGLE_API_KEY not configured" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
+    const { token, projectId } = await getAccessToken();
     const cleanB64 = stripBase64Prefix(imageBase64);
 
-    // Step 1: Google Cloud Vision OCR — extract raw text from image
-    const visionUrl = `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_API_KEY}`;
-    const visionRes = await fetch(visionUrl, {
+    // Step 1: Vision API OCR
+    const visionRes = await fetch("https://vision.googleapis.com/v1/images:annotate", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+        "x-goog-user-project": projectId,
+      },
       body: JSON.stringify({
         requests: [{
           image: { content: cleanB64 },
@@ -49,8 +109,8 @@ serve(async (req) => {
       const err = await visionRes.text();
       console.error("Vision API error:", visionRes.status, err);
       const userMsg = visionRes.status === 403
-        ? "Google API key invalid or Cloud Vision API not enabled."
-        : `Vision API error: ${err.slice(0, 200)}`;
+        ? "Cloud Vision API not enabled, or service account lacks the role 'Cloud Vision API User'."
+        : `Vision API error: ${err.slice(0, 300)}`;
       return new Response(JSON.stringify({ error: userMsg }), {
         status: visionRes.status, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -65,7 +125,7 @@ serve(async (req) => {
       });
     }
 
-    // Step 2: Gemini — structure the OCR text into our schema
+    // Step 2: Gemini via Vertex AI — structure the OCR text
     const prompt = `You are a document data extractor for Nawi Saadi Travel & Tourism (UAE).
 Document type: ${docType || "unknown"}. Service context: ${service || "unknown"}${serviceSubcategory ? ` (${serviceSubcategory})` : ""}.
 
@@ -81,10 +141,16 @@ ${rawText}
 
 Return JSON only.`;
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`;
+    const location = 'us-central1';
+    const model = 'gemini-2.0-flash-001';
+    const geminiUrl = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
+
     const geminiRes = await fetch(geminiUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: {
@@ -97,7 +163,6 @@ Return JSON only.`;
     if (!geminiRes.ok) {
       const err = await geminiRes.text();
       console.error("Gemini error:", geminiRes.status, err);
-      // Still return raw text so user isn't blocked
       return new Response(JSON.stringify({
         success: true, data: { otherDetails: { rawText } },
         warning: "Structuring failed, returning raw OCR text",
