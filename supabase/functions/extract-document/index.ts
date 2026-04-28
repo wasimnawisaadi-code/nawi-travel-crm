@@ -11,6 +11,100 @@ function stripBase64Prefix(b64: string): string {
   return idx >= 0 ? b64.slice(idx + 1) : b64;
 }
 
+function normalizeDate(value: string): string | null {
+  const cleaned = value.replace(/[.,]/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleaned) return null;
+
+  const numericMatch = cleaned.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/);
+  if (numericMatch) {
+    const day = Number(numericMatch[1]);
+    const month = Number(numericMatch[2]);
+    const year = Number(numericMatch[3].length === 2 ? `20${numericMatch[3]}` : numericMatch[3]);
+    if (day && month && year) {
+      const d = new Date(Date.UTC(year, month - 1, day));
+      if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    }
+  }
+
+  const direct = new Date(cleaned);
+  if (!Number.isNaN(direct.getTime())) return direct.toISOString().slice(0, 10);
+  return null;
+}
+
+function extractByLabel(rawText: string, labels: string[]): string | null {
+  const escaped = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const regex = new RegExp(`(?:${escaped.join("|")})\\s*[:\-]?\\s*([^\n]{2,80})`, "i");
+  const match = rawText.match(regex);
+  return match?.[1]?.replace(/^[^A-Z0-9+]+/i, '').trim() || null;
+}
+
+function extractByPattern(rawText: string, pattern: RegExp): string | null {
+  const match = rawText.match(pattern);
+  return match?.[1]?.trim() || null;
+}
+
+function heuristicExtract(rawText: string): Record<string, unknown> {
+  const passportNo = extractByLabel(rawText, ["Passport No", "Passport Number", "Document No"]) ||
+    extractByPattern(rawText, /passport(?:\s+no|\s+number)?\s*[:\-]?\s*([A-Z0-9]{6,12})/i);
+  const fullName = extractByLabel(rawText, ["Name", "Surname", "Full Name", "Given Name"]) ||
+    extractByPattern(rawText, /(?:name|surname)\s*[:\-]?\s*([A-Z][A-Z\s]{3,60})/i);
+  const nationality = extractByLabel(rawText, ["Nationality"]) ||
+    extractByPattern(rawText, /nationality\s*[:\-]?\s*([A-Za-z ]{3,40})/i);
+  const dateOfBirth = normalizeDate(
+    extractByLabel(rawText, ["Date of Birth", "Birth Date", "DOB"]) ||
+    extractByPattern(rawText, /(?:date of birth|birth date|dob)\s*[:\-]?\s*([^\n]{4,20})/i) ||
+    ""
+  );
+  const passportExpiry = normalizeDate(
+    extractByLabel(rawText, ["Date of Expiry", "Expiry Date", "Passport Expiry"]) ||
+    extractByPattern(rawText, /(?:date of expiry|expiry date|passport expiry)\s*[:\-]?\s*([^\n]{4,20})/i) ||
+    ""
+  );
+  const passportIssueDate = normalizeDate(
+    extractByLabel(rawText, ["Date of Issue", "Issue Date", "Passport Issue Date"]) ||
+    extractByPattern(rawText, /(?:date of issue|issue date|passport issue date)\s*[:\-]?\s*([^\n]{4,20})/i) ||
+    ""
+  );
+  const emiratesId = extractByLabel(rawText, ["ID Number", "Emirates ID", "Identity Number"]) ||
+    extractByPattern(rawText, /(?:784-\d{4}-\d{7}-\d|\d{3}-\d{4}-\d{7}-\d)/i);
+  const gender = extractByLabel(rawText, ["Sex", "Gender"]);
+  const visaNumber = extractByLabel(rawText, ["Visa No", "Visa Number"]);
+  const visaExpiry = normalizeDate(extractByLabel(rawText, ["Visa Expiry", "Visa Expiration"] ) || "");
+  const phoneNumber = extractByPattern(rawText, /(\+?\d[\d\s\-]{7,20}\d)/);
+  const email = extractByPattern(rawText, /([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i);
+
+  return {
+    fullName: fullName || null,
+    passportNo: passportNo || null,
+    nationality: nationality || null,
+    dateOfBirth,
+    passportExpiry,
+    passportIssueDate,
+    placeOfBirth: extractByLabel(rawText, ["Place of Birth"]) || null,
+    gender: gender || null,
+    emiratesId: emiratesId || null,
+    visaNumber: visaNumber || null,
+    visaExpiry,
+    visaType: extractByLabel(rawText, ["Visa Type"]) || null,
+    sponsor: extractByLabel(rawText, ["Sponsor"]) || null,
+    profession: extractByLabel(rawText, ["Profession", "Occupation"]) || null,
+    address: extractByLabel(rawText, ["Address"]) || null,
+    phoneNumber: phoneNumber || null,
+    email: email || null,
+    bloodGroup: extractByLabel(rawText, ["Blood Group", "Blood Type"]) || null,
+    maritalStatus: extractByLabel(rawText, ["Marital Status"]) || null,
+    fatherName: extractByLabel(rawText, ["Father Name", "Father's Name"]) || null,
+    motherName: extractByLabel(rawText, ["Mother Name", "Mother's Name"]) || null,
+    issuingAuthority: extractByLabel(rawText, ["Authority", "Issuing Authority", "Place of Issue"]) || null,
+    documentNumber: extractByLabel(rawText, ["Document No", "Document Number"]) || passportNo || null,
+    otherDetails: {
+      rawText,
+      emiratesIdExpiry: normalizeDate(extractByLabel(rawText, ["ID Expiry", "Emirates ID Expiry"]) || "") || null,
+      extractionMode: "heuristic_fallback",
+    },
+  };
+}
+
 // ============ Service Account → OAuth Access Token ============
 let cachedToken: { token: string; exp: number } | null = null;
 
@@ -74,6 +168,27 @@ async function getAccessToken(): Promise<{ token: string; projectId: string }> {
   return { token: tok.access_token, projectId: sa.project_id };
 }
 // ============ End helper ============
+
+async function structureWithApiKey(prompt: string): Promise<string> {
+  const apiKey = Deno.env.get('GOOGLE_API_KEY');
+  if (!apiKey) throw new Error('GOOGLE_API_KEY not configured');
+
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.1,
+        responseMimeType: 'application/json',
+      },
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Google AI error: ${await res.text()}`);
+  const json = await res.json();
+  return json.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -141,36 +256,55 @@ ${rawText}
 
 Return JSON only.`;
 
-    const location = 'us-central1';
-    const model = 'gemini-2.0-flash-001';
-    const geminiUrl = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
+    let text = "{}";
+    try {
+      const location = 'us-central1';
+      const model = 'gemini-2.0-flash-001';
+      const geminiUrl = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
 
-    const geminiRes = await fetch(geminiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.1,
-          responseMimeType: "application/json",
+      const geminiRes = await fetch(geminiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
         },
-      }),
-    });
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.1,
+            responseMimeType: "application/json",
+          },
+        }),
+      });
 
-    if (!geminiRes.ok) {
-      const err = await geminiRes.text();
-      console.error("Gemini error:", geminiRes.status, err);
-      return new Response(JSON.stringify({
-        success: true, data: { otherDetails: { rawText } },
-        warning: "Structuring failed, returning raw OCR text",
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (!geminiRes.ok) {
+        const err = await geminiRes.text();
+        console.error("Vertex Gemini error:", geminiRes.status, err);
+        if (geminiRes.status !== 403) {
+          return new Response(JSON.stringify({
+            success: true,
+            data: heuristicExtract(rawText),
+            warning: "Structured AI extraction is unavailable, so OCR fallback extraction was used",
+          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+
+        text = await structureWithApiKey(prompt);
+      } else {
+        const geminiJson = await geminiRes.json();
+        text = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+      }
+    } catch (error) {
+      console.error('Gemini fallback error:', error);
+      try {
+        text = await structureWithApiKey(prompt);
+      } catch {
+        return new Response(JSON.stringify({
+          success: true,
+          data: heuristicExtract(rawText),
+          warning: "Structured AI extraction is unavailable, so OCR fallback extraction was used",
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
     }
-
-    const geminiJson = await geminiRes.json();
-    const text = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
 
     let extracted: Record<string, unknown> = {};
     try {

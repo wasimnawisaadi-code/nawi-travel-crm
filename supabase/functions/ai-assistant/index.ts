@@ -95,6 +95,29 @@ async function getAccessToken(scope: string): Promise<string> {
 }
 // ============ End Service Account helper ============
 
+async function callGeminiWithApiKey(messages: Array<{ role: string; content: string }>) {
+  const apiKey = Deno.env.get('GOOGLE_API_KEY');
+  if (!apiKey) throw new Error('GOOGLE_API_KEY not configured');
+
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: toGeminiMessages(messages),
+      generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Google AI error: ${errText.slice(0, 300)}`);
+  }
+
+  const json = await res.json();
+  return json.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || '').join('') || '';
+}
+
 function toGeminiMessages(messages: Array<{ role: string; content: string }>) {
   return messages.map(m => ({
     role: m.role === 'assistant' ? 'model' : 'user',
@@ -113,82 +136,57 @@ Deno.serve(async (req) => {
       });
     }
 
-    const saJson = Deno.env.get('GOOGLE_CLOUD_SA_JSON');
-    if (!saJson) {
-      return new Response(JSON.stringify({ error: 'GOOGLE_CLOUD_SA_JSON not configured' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    let aiText = '';
+    try {
+      const saJson = Deno.env.get('GOOGLE_CLOUD_SA_JSON');
+      if (!saJson) throw new Error('GOOGLE_CLOUD_SA_JSON not configured');
+      const sa = JSON.parse(saJson);
+      const projectId = sa.project_id;
+      const accessToken = await getAccessToken('https://www.googleapis.com/auth/cloud-platform');
+      const location = 'us-central1';
+      const model = 'gemini-2.0-flash-001';
+      const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
+
+      const aiRes = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents: toGeminiMessages(messages),
+          generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
+        }),
       });
-    }
-    const sa = JSON.parse(saJson);
-    const projectId = sa.project_id;
-    const accessToken = await getAccessToken('https://www.googleapis.com/auth/cloud-platform');
 
-    // Use Vertex AI Gemini endpoint (works with service accounts; us-central1 region)
-    const location = 'us-central1';
-    const model = 'gemini-2.0-flash-001';
-    const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:streamGenerateContent?alt=sse`;
-
-    const aiRes = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents: toGeminiMessages(messages),
-        generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
-      }),
-    });
-
-    if (!aiRes.ok || !aiRes.body) {
-      const errText = await aiRes.text();
-      console.error('Gemini error:', aiRes.status, errText);
-      const userMsg = aiRes.status === 429
-        ? 'Rate limited by Google. Try again shortly.'
-        : aiRes.status === 403
-        ? 'Vertex AI API not enabled on your Google Cloud project, or service account lacks aiplatform.user role.'
-        : `Google AI error: ${errText.slice(0, 300)}`;
-      return new Response(JSON.stringify({ error: userMsg }), {
-        status: aiRes.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const reader = aiRes.body.getReader();
-    const decoder = new TextDecoder();
-    const encoder = new TextEncoder();
-
-    const stream = new ReadableStream({
-      async start(controller) {
-        let buffer = '';
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            let nlIdx: number;
-            while ((nlIdx = buffer.indexOf('\n')) !== -1) {
-              const line = buffer.slice(0, nlIdx).trim();
-              buffer = buffer.slice(nlIdx + 1);
-              if (!line.startsWith('data:')) continue;
-              const data = line.slice(5).trim();
-              if (!data) continue;
-              try {
-                const json = JSON.parse(data);
-                const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (text) {
-                  const out = { choices: [{ delta: { content: text } }] };
-                  controller.enqueue(encoder.encode(`data: ${JSON.stringify(out)}\n\n`));
-                }
-              } catch { /* ignore */ }
-            }
-          }
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-        } catch (e) {
-          console.error('stream error', e);
-        } finally {
-          controller.close();
+      if (!aiRes.ok) {
+        const errText = await aiRes.text();
+        console.error('Vertex Gemini error:', aiRes.status, errText);
+        if (aiRes.status !== 403) {
+          const userMsg = aiRes.status === 429
+            ? 'Rate limited by Google. Try again shortly.'
+            : `Google AI error: ${errText.slice(0, 300)}`;
+          return new Response(JSON.stringify({ error: userMsg }), {
+            status: aiRes.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
         }
+        aiText = await callGeminiWithApiKey(messages);
+      } else {
+        const json = await aiRes.json();
+        aiText = json.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || '').join('') || '';
+      }
+    } catch (error) {
+      console.error('Vertex fallback error:', error);
+      aiText = await callGeminiWithApiKey(messages);
+    }
+
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: aiText } }] })}\n\n`));
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+        controller.close();
       },
     });
 
