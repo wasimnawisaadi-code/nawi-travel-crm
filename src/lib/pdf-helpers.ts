@@ -25,14 +25,20 @@ async function loadLogoDataUrl(): Promise<string | null> {
 export async function drawBrandHeader(doc: jsPDF, title: string): Promise<number> {
   const logo = await loadLogoDataUrl();
   if (logo) {
-    try { doc.addImage(logo, 'PNG', 18, 12, 22, 22); } catch { /* ignore */ }
+    try {
+      // Preserve logo aspect ratio (source ~1279x874 → ratio ~1.46)
+      const props: any = (doc as any).getImageProperties ? (doc as any).getImageProperties(logo) : { width: 1279, height: 874 };
+      const targetH = 20;
+      const targetW = (props.width / props.height) * targetH;
+      doc.addImage(logo, 'PNG', 18, 10, targetW, targetH, undefined, 'FAST');
+    } catch (e) { console.warn('Logo render failed', e); }
   }
   doc.setFontSize(16);
   doc.setTextColor(5, 47, 89); // navy
-  doc.text('NAWI SAADI TRAVEL & TOURISM', 44, 22);
+  doc.text('NAWI SAADI TRAVEL & TOURISM', 60, 22);
   doc.setFontSize(9);
   doc.setTextColor(120);
-  doc.text('Travel & Tourism Services', 44, 28);
+  doc.text('Travel & Tourism Services', 60, 28);
   doc.setDrawColor(5, 47, 89);
   doc.setLineWidth(0.4);
   doc.line(18, 38, 192, 38);
