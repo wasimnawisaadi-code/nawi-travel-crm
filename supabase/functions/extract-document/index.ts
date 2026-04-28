@@ -15,25 +15,27 @@ function normalizeDate(value: string): string | null {
   const cleaned = value.replace(/[.,]/g, " ").replace(/\s+/g, " ").trim();
   if (!cleaned) return null;
 
+  const numericMatch = cleaned.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/);
+  if (numericMatch) {
+    const day = Number(numericMatch[1]);
+    const month = Number(numericMatch[2]);
+    const year = Number(numericMatch[3].length === 2 ? `20${numericMatch[3]}` : numericMatch[3]);
+    if (day && month && year) {
+      const d = new Date(Date.UTC(year, month - 1, day));
+      if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    }
+  }
+
   const direct = new Date(cleaned);
   if (!Number.isNaN(direct.getTime())) return direct.toISOString().slice(0, 10);
-
-  const match = cleaned.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/);
-  if (!match) return null;
-
-  const day = Number(match[1]);
-  const month = Number(match[2]);
-  const year = Number(match[3].length === 2 ? `20${match[3]}` : match[3]);
-  if (!day || !month || !year) return null;
-  const d = new Date(Date.UTC(year, month - 1, day));
-  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+  return null;
 }
 
 function extractByLabel(rawText: string, labels: string[]): string | null {
   const escaped = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   const regex = new RegExp(`(?:${escaped.join("|")})\\s*[:\-]?\\s*([^\n]{2,80})`, "i");
   const match = rawText.match(regex);
-  return match?.[1]?.trim() || null;
+  return match?.[1]?.replace(/^[^A-Z0-9+]+/i, '').trim() || null;
 }
 
 function extractByPattern(rawText: string, pattern: RegExp): string | null {
