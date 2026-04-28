@@ -136,49 +136,16 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Use Generative Language API with API key (most reliable). Vertex requires model enablement per project.
     let aiText = '';
     try {
-      const saJson = Deno.env.get('GOOGLE_CLOUD_SA_JSON');
-      if (!saJson) throw new Error('GOOGLE_CLOUD_SA_JSON not configured');
-      const sa = JSON.parse(saJson);
-      const projectId = sa.project_id;
-      const accessToken = await getAccessToken('https://www.googleapis.com/auth/cloud-platform');
-      const location = 'us-central1';
-      const model = 'gemini-2.0-flash-001';
-      const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
-
-      const aiRes = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-          contents: toGeminiMessages(messages),
-          generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
-        }),
-      });
-
-      if (!aiRes.ok) {
-        const errText = await aiRes.text();
-        console.error('Vertex Gemini error:', aiRes.status, errText);
-        if (aiRes.status !== 403) {
-          const userMsg = aiRes.status === 429
-            ? 'Rate limited by Google. Try again shortly.'
-            : `Google AI error: ${errText.slice(0, 300)}`;
-          return new Response(JSON.stringify({ error: userMsg }), {
-            status: aiRes.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-        aiText = await callGeminiWithApiKey(messages);
-      } else {
-        const json = await aiRes.json();
-        aiText = json.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || '').join('') || '';
-      }
-    } catch (error) {
-      console.error('Vertex fallback error:', error);
       aiText = await callGeminiWithApiKey(messages);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Gemini API key call failed:', msg);
+      return new Response(JSON.stringify({ error: msg }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     const encoder = new TextEncoder();
