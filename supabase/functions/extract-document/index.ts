@@ -1,3 +1,4 @@
+// Document OCR — uses USER's own Google Cloud Vision + Gemini API key (GOOGLE_API_KEY)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
@@ -5,171 +6,117 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// Strip "data:image/...;base64," prefix if present
+function stripBase64Prefix(b64: string): string {
+  const idx = b64.indexOf(",");
+  return idx >= 0 ? b64.slice(idx + 1) : b64;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
     const { imageBase64, docType, service, serviceSubcategory } = await req.json();
-
     if (!imageBase64) {
       return new Response(JSON.stringify({ error: "No image provided" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      return new Response(JSON.stringify({ error: "AI service not configured" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
+    if (!GOOGLE_API_KEY) {
+      return new Response(JSON.stringify({ error: "GOOGLE_API_KEY not configured" }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const systemPrompt = `You are a document data extraction assistant for a travel & tourism company (Nawi Saadi Travel & Tourism, UAE).
-You will receive an image of a document. Extract ALL relevant information from the document.
+    const cleanB64 = stripBase64Prefix(imageBase64);
 
-The document type is: ${docType || "unknown"}
-The service context is: ${service || "unknown"} ${serviceSubcategory ? `(${serviceSubcategory})` : ""}
-
-Extract and return a JSON object with these fields (use null for fields you cannot find):
-- fullName: Full name as shown on document
-- passportNo: Passport number
-- nationality: Nationality/country
-- dateOfBirth: Date of birth (YYYY-MM-DD format)
-- passportExpiry: Passport expiry date (YYYY-MM-DD format)
-- passportIssueDate: Passport issue date (YYYY-MM-DD format)
-- placeOfBirth: Place of birth
-- gender: Gender (Male/Female)
-- emiratesId: Emirates ID number
-- visaNumber: Visa number
-- visaExpiry: Visa expiry date (YYYY-MM-DD format)
-- visaType: Type of visa
-- sponsor: Sponsor name
-- profession: Profession/occupation
-- address: Address
-- phoneNumber: Phone number
-- email: Email address
-- bloodGroup: Blood group
-- maritalStatus: Marital status
-- fatherName: Father's name
-- motherName: Mother's name
-- issuingAuthority: Issuing authority
-- documentNumber: Any document/reference number
-- otherDetails: Any other relevant details as key-value pairs
-
-IMPORTANT: Only include fields that you can actually read from the document. Return valid JSON only.`;
-
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    // Step 1: Google Cloud Vision OCR — extract raw text from image
+    const visionUrl = `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_API_KEY}`;
+    const visionRes = await fetch(visionUrl, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Extract all information from this document image. Return ONLY valid JSON.",
-              },
-              {
-                type: "image_url",
-                image_url: { url: imageBase64 },
-              },
-            ],
-          },
-        ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "extract_document_data",
-              description: "Extract structured data from a document image",
-              parameters: {
-                type: "object",
-                properties: {
-                  fullName: { type: "string", description: "Full name" },
-                  passportNo: { type: "string", description: "Passport number" },
-                  nationality: { type: "string", description: "Nationality" },
-                  dateOfBirth: { type: "string", description: "Date of birth YYYY-MM-DD" },
-                  passportExpiry: { type: "string", description: "Passport expiry YYYY-MM-DD" },
-                  passportIssueDate: { type: "string", description: "Passport issue date YYYY-MM-DD" },
-                  placeOfBirth: { type: "string", description: "Place of birth" },
-                  gender: { type: "string", enum: ["Male", "Female"] },
-                  emiratesId: { type: "string", description: "Emirates ID number" },
-                  visaNumber: { type: "string", description: "Visa number" },
-                  visaExpiry: { type: "string", description: "Visa expiry YYYY-MM-DD" },
-                  visaType: { type: "string", description: "Type of visa" },
-                  sponsor: { type: "string", description: "Sponsor name" },
-                  profession: { type: "string", description: "Profession" },
-                  address: { type: "string", description: "Address" },
-                  phoneNumber: { type: "string", description: "Phone number" },
-                  email: { type: "string", description: "Email" },
-                  bloodGroup: { type: "string", description: "Blood group" },
-                  maritalStatus: { type: "string", description: "Marital status" },
-                  fatherName: { type: "string", description: "Father name" },
-                  motherName: { type: "string", description: "Mother name" },
-                  issuingAuthority: { type: "string", description: "Issuing authority" },
-                  documentNumber: { type: "string", description: "Document number" },
-                  otherDetails: {
-                    type: "object",
-                    description: "Any other relevant details",
-                    additionalProperties: { type: "string" },
-                  },
-                },
-              },
-            },
-          },
-        ],
-        tool_choice: { type: "function", function: { name: "extract_document_data" } },
+        requests: [{
+          image: { content: cleanB64 },
+          features: [{ type: "DOCUMENT_TEXT_DETECTION", maxResults: 1 }],
+        }],
       }),
     });
 
-    if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limited. Please try again in a moment." }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "AI credits exhausted. Please add funds." }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      const errText = await response.text();
-      console.error("AI gateway error:", response.status, errText);
-      return new Response(JSON.stringify({ error: "AI extraction failed" }), {
-        status: 500,
+    if (!visionRes.ok) {
+      const err = await visionRes.text();
+      console.error("Vision API error:", visionRes.status, err);
+      const userMsg = visionRes.status === 403
+        ? "Google API key invalid or Cloud Vision API not enabled."
+        : `Vision API error: ${err.slice(0, 200)}`;
+      return new Response(JSON.stringify({ error: userMsg }), {
+        status: visionRes.status, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const visionJson = await visionRes.json();
+    const rawText = visionJson.responses?.[0]?.fullTextAnnotation?.text || "";
+
+    if (!rawText) {
+      return new Response(JSON.stringify({ success: true, data: {}, warning: "No text detected in image" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const result = await response.json();
-    let extracted = {};
+    // Step 2: Gemini — structure the OCR text into our schema
+    const prompt = `You are a document data extractor for Nawi Saadi Travel & Tourism (UAE).
+Document type: ${docType || "unknown"}. Service context: ${service || "unknown"}${serviceSubcategory ? ` (${serviceSubcategory})` : ""}.
 
-    // Parse tool call response
-    const toolCall = result.choices?.[0]?.message?.tool_calls?.[0];
-    if (toolCall?.function?.arguments) {
-      try {
-        extracted = JSON.parse(toolCall.function.arguments);
-      } catch {
-        // Try parsing from content
-        const content = result.choices?.[0]?.message?.content || "";
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) extracted = JSON.parse(jsonMatch[0]);
+Below is the OCR text extracted from the document. Extract structured data and return ONLY a JSON object (no prose, no markdown fences) with these fields (use null when not found):
+fullName, passportNo, nationality, dateOfBirth (YYYY-MM-DD), passportExpiry (YYYY-MM-DD), passportIssueDate (YYYY-MM-DD), placeOfBirth, gender (Male/Female), emiratesId, visaNumber, visaExpiry (YYYY-MM-DD), visaType, sponsor, profession, address, phoneNumber, email, bloodGroup, maritalStatus, fatherName, motherName, issuingAuthority, documentNumber.
+
+Also include "otherDetails" as an object of any extra key/value pairs you find.
+
+OCR TEXT:
+"""
+${rawText}
+"""
+
+Return JSON only.`;
+
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`;
+    const geminiRes = await fetch(geminiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: "application/json",
+        },
+      }),
+    });
+
+    if (!geminiRes.ok) {
+      const err = await geminiRes.text();
+      console.error("Gemini error:", geminiRes.status, err);
+      // Still return raw text so user isn't blocked
+      return new Response(JSON.stringify({
+        success: true, data: { otherDetails: { rawText } },
+        warning: "Structuring failed, returning raw OCR text",
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    const geminiJson = await geminiRes.json();
+    const text = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+
+    let extracted: Record<string, unknown> = {};
+    try {
+      extracted = JSON.parse(text);
+    } catch {
+      const match = text.match(/\{[\s\S]*\}/);
+      if (match) {
+        try { extracted = JSON.parse(match[0]); } catch { extracted = { otherDetails: { rawText } }; }
+      } else {
+        extracted = { otherDetails: { rawText } };
       }
-    } else {
-      // Fallback: parse from content
-      const content = result.choices?.[0]?.message?.content || "";
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) extracted = JSON.parse(jsonMatch[0]);
     }
 
     return new Response(JSON.stringify({ success: true, data: extracted }), {
