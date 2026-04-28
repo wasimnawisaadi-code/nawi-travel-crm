@@ -35,10 +35,10 @@ export async function drawBrandHeader(doc: jsPDF, title: string): Promise<number
   }
   doc.setFontSize(16);
   doc.setTextColor(5, 47, 89); // navy
-  doc.text('NAWI SAADI TRAVEL & TOURISM', 44, 22);
+  doc.text('NAWI SAADI TRAVEL & TOURISM', 60, 22);
   doc.setFontSize(9);
   doc.setTextColor(120);
-  doc.text('Travel & Tourism Services', 44, 28);
+  doc.text('Travel & Tourism Services', 60, 28);
   doc.setDrawColor(5, 47, 89);
   doc.setLineWidth(0.4);
   doc.line(18, 38, 192, 38);
