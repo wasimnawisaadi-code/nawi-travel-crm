@@ -11,6 +11,98 @@ function stripBase64Prefix(b64: string): string {
   return idx >= 0 ? b64.slice(idx + 1) : b64;
 }
 
+function normalizeDate(value: string): string | null {
+  const cleaned = value.replace(/[.,]/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleaned) return null;
+
+  const direct = new Date(cleaned);
+  if (!Number.isNaN(direct.getTime())) return direct.toISOString().slice(0, 10);
+
+  const match = cleaned.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/);
+  if (!match) return null;
+
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3].length === 2 ? `20${match[3]}` : match[3]);
+  if (!day || !month || !year) return null;
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
+function extractByLabel(rawText: string, labels: string[]): string | null {
+  const escaped = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const regex = new RegExp(`(?:${escaped.join("|")})\\s*[:\-]?\\s*([^\n]{2,80})`, "i");
+  const match = rawText.match(regex);
+  return match?.[1]?.trim() || null;
+}
+
+function extractByPattern(rawText: string, pattern: RegExp): string | null {
+  const match = rawText.match(pattern);
+  return match?.[1]?.trim() || null;
+}
+
+function heuristicExtract(rawText: string): Record<string, unknown> {
+  const passportNo = extractByLabel(rawText, ["Passport No", "Passport Number", "Document No"]) ||
+    extractByPattern(rawText, /passport(?:\s+no|\s+number)?\s*[:\-]?\s*([A-Z0-9]{6,12})/i);
+  const fullName = extractByLabel(rawText, ["Name", "Surname", "Full Name", "Given Name"]) ||
+    extractByPattern(rawText, /(?:name|surname)\s*[:\-]?\s*([A-Z][A-Z\s]{3,60})/i);
+  const nationality = extractByLabel(rawText, ["Nationality"]) ||
+    extractByPattern(rawText, /nationality\s*[:\-]?\s*([A-Za-z ]{3,40})/i);
+  const dateOfBirth = normalizeDate(
+    extractByLabel(rawText, ["Date of Birth", "Birth Date", "DOB"]) ||
+    extractByPattern(rawText, /(?:date of birth|birth date|dob)\s*[:\-]?\s*([^\n]{4,20})/i) ||
+    ""
+  );
+  const passportExpiry = normalizeDate(
+    extractByLabel(rawText, ["Date of Expiry", "Expiry Date", "Passport Expiry"]) ||
+    extractByPattern(rawText, /(?:date of expiry|expiry date|passport expiry)\s*[:\-]?\s*([^\n]{4,20})/i) ||
+    ""
+  );
+  const passportIssueDate = normalizeDate(
+    extractByLabel(rawText, ["Date of Issue", "Issue Date", "Passport Issue Date"]) ||
+    extractByPattern(rawText, /(?:date of issue|issue date|passport issue date)\s*[:\-]?\s*([^\n]{4,20})/i) ||
+    ""
+  );
+  const emiratesId = extractByLabel(rawText, ["ID Number", "Emirates ID", "Identity Number"]) ||
+    extractByPattern(rawText, /(?:784-\d{4}-\d{7}-\d|\d{3}-\d{4}-\d{7}-\d)/i);
+  const gender = extractByLabel(rawText, ["Sex", "Gender"]);
+  const visaNumber = extractByLabel(rawText, ["Visa No", "Visa Number"]);
+  const visaExpiry = normalizeDate(extractByLabel(rawText, ["Visa Expiry", "Visa Expiration"] ) || "");
+  const phoneNumber = extractByPattern(rawText, /(\+?\d[\d\s\-]{7,20}\d)/);
+  const email = extractByPattern(rawText, /([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i);
+
+  return {
+    fullName: fullName || null,
+    passportNo: passportNo || null,
+    nationality: nationality || null,
+    dateOfBirth,
+    passportExpiry,
+    passportIssueDate,
+    placeOfBirth: extractByLabel(rawText, ["Place of Birth"]) || null,
+    gender: gender || null,
+    emiratesId: emiratesId || null,
+    visaNumber: visaNumber || null,
+    visaExpiry,
+    visaType: extractByLabel(rawText, ["Visa Type"]) || null,
+    sponsor: extractByLabel(rawText, ["Sponsor"]) || null,
+    profession: extractByLabel(rawText, ["Profession", "Occupation"]) || null,
+    address: extractByLabel(rawText, ["Address"]) || null,
+    phoneNumber: phoneNumber || null,
+    email: email || null,
+    bloodGroup: extractByLabel(rawText, ["Blood Group", "Blood Type"]) || null,
+    maritalStatus: extractByLabel(rawText, ["Marital Status"]) || null,
+    fatherName: extractByLabel(rawText, ["Father Name", "Father's Name"]) || null,
+    motherName: extractByLabel(rawText, ["Mother Name", "Mother's Name"]) || null,
+    issuingAuthority: extractByLabel(rawText, ["Authority", "Issuing Authority", "Place of Issue"]) || null,
+    documentNumber: extractByLabel(rawText, ["Document No", "Document Number"]) || passportNo || null,
+    otherDetails: {
+      rawText,
+      emiratesIdExpiry: normalizeDate(extractByLabel(rawText, ["ID Expiry", "Emirates ID Expiry"]) || "") || null,
+      extractionMode: "heuristic_fallback",
+    },
+  };
+}
+
 // ============ Service Account → OAuth Access Token ============
 let cachedToken: { token: string; exp: number } | null = null;
 
@@ -164,8 +256,9 @@ Return JSON only.`;
       const err = await geminiRes.text();
       console.error("Gemini error:", geminiRes.status, err);
       return new Response(JSON.stringify({
-        success: true, data: { otherDetails: { rawText } },
-        warning: "Structuring failed, returning raw OCR text",
+        success: true,
+        data: heuristicExtract(rawText),
+        warning: "Structured AI extraction is unavailable, so OCR fallback extraction was used",
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
