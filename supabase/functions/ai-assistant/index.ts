@@ -1,4 +1,4 @@
-// Nawi AI Assistant — uses USER's own Google Gemini API key (GOOGLE_API_KEY)
+// Nawi AI Assistant — uses Google Service Account (GOOGLE_CLOUD_SA_JSON) for Gemini
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -33,7 +33,68 @@ const SYSTEM_PROMPT = `You are "Nawi AI" — the advanced in-app assistant for *
 - Never claim to perform actions yourself — guide the user to the right page.
 `;
 
-// Convert OpenAI-style messages to Gemini format
+// ============ Service Account → OAuth Access Token ============
+let cachedToken: { token: string; exp: number } | null = null;
+
+function b64url(data: ArrayBuffer | Uint8Array | string): string {
+  let bytes: Uint8Array;
+  if (typeof data === 'string') bytes = new TextEncoder().encode(data);
+  else if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
+  else bytes = data;
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function pemToPkcs8(pem: string): ArrayBuffer {
+  const b64 = pem.replace(/-----BEGIN PRIVATE KEY-----/, '')
+    .replace(/-----END PRIVATE KEY-----/, '').replace(/\s+/g, '');
+  const bin = atob(b64);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return buf.buffer;
+}
+
+async function getAccessToken(scope: string): Promise<string> {
+  if (cachedToken && cachedToken.exp > Date.now() + 60_000) return cachedToken.token;
+
+  const saJson = Deno.env.get('GOOGLE_CLOUD_SA_JSON');
+  if (!saJson) throw new Error('GOOGLE_CLOUD_SA_JSON not configured');
+  const sa = JSON.parse(saJson);
+
+  const now = Math.floor(Date.now() / 1000);
+  const header = { alg: 'RS256', typ: 'JWT' };
+  const claim = {
+    iss: sa.client_email,
+    scope,
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: now + 3600,
+    iat: now,
+  };
+  const signingInput = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(claim))}`;
+
+  const key = await crypto.subtle.importKey(
+    'pkcs8', pemToPkcs8(sa.private_key),
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']
+  );
+  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(signingInput));
+  const jwt = `${signingInput}.${b64url(sig)}`;
+
+  const tokRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt,
+    }),
+  });
+  if (!tokRes.ok) throw new Error(`Token exchange failed: ${await tokRes.text()}`);
+  const tok = await tokRes.json();
+  cachedToken = { token: tok.access_token, exp: Date.now() + (tok.expires_in * 1000) };
+  return tok.access_token;
+}
+// ============ End Service Account helper ============
+
 function toGeminiMessages(messages: Array<{ role: string; content: string }>) {
   return messages.map(m => ({
     role: m.role === 'assistant' ? 'model' : 'user',
@@ -52,19 +113,27 @@ Deno.serve(async (req) => {
       });
     }
 
-    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
-    if (!GOOGLE_API_KEY) {
-      return new Response(JSON.stringify({ error: 'GOOGLE_API_KEY not configured' }), {
+    const saJson = Deno.env.get('GOOGLE_CLOUD_SA_JSON');
+    if (!saJson) {
+      return new Response(JSON.stringify({ error: 'GOOGLE_CLOUD_SA_JSON not configured' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    const sa = JSON.parse(saJson);
+    const projectId = sa.project_id;
+    const accessToken = await getAccessToken('https://www.googleapis.com/auth/cloud-platform');
 
-    const model = 'gemini-2.0-flash';
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${GOOGLE_API_KEY}`;
+    // Use Vertex AI Gemini endpoint (works with service accounts; us-central1 region)
+    const location = 'us-central1';
+    const model = 'gemini-2.0-flash-001';
+    const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:streamGenerateContent?alt=sse`;
 
     const aiRes = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
         contents: toGeminiMessages(messages),
@@ -78,14 +147,13 @@ Deno.serve(async (req) => {
       const userMsg = aiRes.status === 429
         ? 'Rate limited by Google. Try again shortly.'
         : aiRes.status === 403
-        ? 'Google API key invalid or Generative Language API not enabled.'
-        : `Google AI error: ${errText.slice(0, 200)}`;
+        ? 'Vertex AI API not enabled on your Google Cloud project, or service account lacks aiplatform.user role.'
+        : `Google AI error: ${errText.slice(0, 300)}`;
       return new Response(JSON.stringify({ error: userMsg }), {
         status: aiRes.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Transform Gemini SSE → OpenAI-style SSE so the existing client parser works
     const reader = aiRes.body.getReader();
     const decoder = new TextDecoder();
     const encoder = new TextEncoder();
@@ -129,6 +197,7 @@ Deno.serve(async (req) => {
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Unknown error';
+    console.error('ai-assistant error', msg);
     return new Response(JSON.stringify({ error: msg }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

@@ -1,5 +1,5 @@
-// Sync leads from public Google Sheets (WhatsApp / Instagram / Messenger)
-// Sheets are exported as CSV via gviz endpoint. Dedup by source+unique_key.
+// Sync leads from Google Sheets via Service Account (GOOGLE_SHEETS_SA_JSON)
+// Sheets must be shared (Viewer) with the service account email.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -17,15 +17,65 @@ function csvUrl(id: string, gid: string) {
   return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
 }
 
-// Gid → sheet tab name map (filled lazily from Sheets API metadata)
+// ============ Service Account → OAuth Access Token ============
+let cachedToken: { token: string; exp: number } | null = null;
+
+function b64url(data: ArrayBuffer | Uint8Array | string): string {
+  let bytes: Uint8Array;
+  if (typeof data === 'string') bytes = new TextEncoder().encode(data);
+  else if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
+  else bytes = data;
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function pemToPkcs8(pem: string): ArrayBuffer {
+  const b64 = pem.replace(/-----BEGIN PRIVATE KEY-----/, '')
+    .replace(/-----END PRIVATE KEY-----/, '').replace(/\s+/g, '');
+  const bin = atob(b64);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return buf.buffer;
+}
+
+async function getSheetsAccessToken(): Promise<string | null> {
+  const saJson = Deno.env.get('GOOGLE_SHEETS_SA_JSON');
+  if (!saJson) return null;
+  if (cachedToken && cachedToken.exp > Date.now() + 60_000) return cachedToken.token;
+  const sa = JSON.parse(saJson);
+  const now = Math.floor(Date.now() / 1000);
+  const signingInput = `${b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))}.${b64url(JSON.stringify({
+    iss: sa.client_email,
+    scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: now + 3600, iat: now,
+  }))}`;
+  const key = await crypto.subtle.importKey('pkcs8', pemToPkcs8(sa.private_key),
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(signingInput));
+  const jwt = `${signingInput}.${b64url(sig)}`;
+  const tokRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: jwt,
+    }),
+  });
+  if (!tokRes.ok) { console.error('Sheets token exchange failed', await tokRes.text()); return null; }
+  const tok = await tokRes.json();
+  cachedToken = { token: tok.access_token, exp: Date.now() + (tok.expires_in * 1000) };
+  return tok.access_token;
+}
+
 const SHEET_TAB_CACHE: Record<string, string> = {};
 
-async function getTabName(spreadsheetId: string, gid: string, apiKey: string): Promise<string | null> {
+async function getTabName(spreadsheetId: string, gid: string, token: string): Promise<string | null> {
   const cacheKey = `${spreadsheetId}:${gid}`;
   if (SHEET_TAB_CACHE[cacheKey]) return SHEET_TAB_CACHE[cacheKey];
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties&key=${apiKey}`;
-  const res = await fetch(url);
-  if (!res.ok) return null;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) { console.error('getTabName failed', res.status, await res.text()); return null; }
   const json = await res.json();
   const sheet = json.sheets?.find((s: any) => String(s.properties?.sheetId) === String(gid));
   const title = sheet?.properties?.title || null;
@@ -33,13 +83,11 @@ async function getTabName(spreadsheetId: string, gid: string, apiKey: string): P
   return title;
 }
 
-// Fetch via Google Sheets API (uses GOOGLE_API_KEY) — works for sheets shared "Anyone with link"
-async function fetchViaSheetsApi(spreadsheetId: string, gid: string, apiKey: string): Promise<string[][] | null> {
-  const tab = await getTabName(spreadsheetId, gid, apiKey);
+async function fetchViaSheetsApi(spreadsheetId: string, gid: string, token: string): Promise<string[][] | null> {
+  const tab = await getTabName(spreadsheetId, gid, token);
   if (!tab) return null;
-  const range = encodeURIComponent(tab);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?key=${apiKey}`;
-  const res = await fetch(url);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${tab}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) {
     console.error("Sheets API error", res.status, await res.text());
     return null;
@@ -93,18 +141,17 @@ function toBool(s: string): boolean {
   return /^(true|yes|1)$/i.test(s.trim());
 }
 
-async function fetchAndParse(spreadsheetId: string, gid: string, apiKey: string | undefined): Promise<Record<string, string>[]> {
-  // Prefer Google Sheets API when GOOGLE_API_KEY is configured
-  if (apiKey) {
-    const rows = await fetchViaSheetsApi(spreadsheetId, gid, apiKey);
+async function fetchAndParse(spreadsheetId: string, gid: string, token: string | null): Promise<Record<string, string>[]> {
+  if (token) {
+    const rows = await fetchViaSheetsApi(spreadsheetId, gid, token);
     if (rows && rows.length >= 2) {
       const headers = rows[0];
       return rows.slice(1).map(r => rowToObject(headers, r));
     }
   }
-  // Fallback: public CSV export
+  // Fallback: public CSV export (only works for sheets shared as "Anyone with link")
   const res = await fetch(csvUrl(spreadsheetId, gid), { redirect: "follow" });
-  if (!res.ok) throw new Error(`Sheet fetch failed ${res.status}`);
+  if (!res.ok) throw new Error(`Sheet fetch failed ${res.status}. Share the sheet with the service account email or make it public.`);
   const text = await res.text();
   const all = parseCSV(text);
   if (all.length < 2) return [];
@@ -180,10 +227,10 @@ Deno.serve(async (req) => {
   const summary = { whatsapp: { new: 0, updated: 0 }, instagram: { new: 0, updated: 0 }, messenger: { new: 0, updated: 0 } };
 
   try {
-    const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
+    const sheetsToken = await getSheetsAccessToken();
     for (const source of Object.keys(SHEETS) as Array<keyof typeof SHEETS>) {
       const { id, gid } = SHEETS[source];
-      const rows = await fetchAndParse(id, gid, GOOGLE_API_KEY);
+      const rows = await fetchAndParse(id, gid, sheetsToken);
 
       for (const row of rows) {
         const lead = buildLead(source, row);
