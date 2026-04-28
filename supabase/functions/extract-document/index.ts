@@ -167,6 +167,27 @@ async function getAccessToken(): Promise<{ token: string; projectId: string }> {
 }
 // ============ End helper ============
 
+async function structureWithApiKey(prompt: string): Promise<string> {
+  const apiKey = Deno.env.get('GOOGLE_API_KEY');
+  if (!apiKey) throw new Error('GOOGLE_API_KEY not configured');
+
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.1,
+        responseMimeType: 'application/json',
+      },
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Google AI error: ${await res.text()}`);
+  const json = await res.json();
+  return json.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -233,37 +254,55 @@ ${rawText}
 
 Return JSON only.`;
 
-    const location = 'us-central1';
-    const model = 'gemini-2.0-flash-001';
-    const geminiUrl = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
+    let text = "{}";
+    try {
+      const location = 'us-central1';
+      const model = 'gemini-2.0-flash-001';
+      const geminiUrl = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
 
-    const geminiRes = await fetch(geminiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.1,
-          responseMimeType: "application/json",
+      const geminiRes = await fetch(geminiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
         },
-      }),
-    });
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.1,
+            responseMimeType: "application/json",
+          },
+        }),
+      });
 
-    if (!geminiRes.ok) {
-      const err = await geminiRes.text();
-      console.error("Gemini error:", geminiRes.status, err);
-      return new Response(JSON.stringify({
-        success: true,
-        data: heuristicExtract(rawText),
-        warning: "Structured AI extraction is unavailable, so OCR fallback extraction was used",
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (!geminiRes.ok) {
+        const err = await geminiRes.text();
+        console.error("Vertex Gemini error:", geminiRes.status, err);
+        if (geminiRes.status !== 403) {
+          return new Response(JSON.stringify({
+            success: true,
+            data: heuristicExtract(rawText),
+            warning: "Structured AI extraction is unavailable, so OCR fallback extraction was used",
+          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+
+        text = await structureWithApiKey(prompt);
+      } else {
+        const geminiJson = await geminiRes.json();
+        text = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+      }
+    } catch (error) {
+      console.error('Gemini fallback error:', error);
+      try {
+        text = await structureWithApiKey(prompt);
+      } catch {
+        return new Response(JSON.stringify({
+          success: true,
+          data: heuristicExtract(rawText),
+          warning: "Structured AI extraction is unavailable, so OCR fallback extraction was used",
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
     }
-
-    const geminiJson = await geminiRes.json();
-    const text = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
 
     let extracted: Record<string, unknown> = {};
     try {
