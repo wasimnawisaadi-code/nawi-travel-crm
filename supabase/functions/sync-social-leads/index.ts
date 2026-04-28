@@ -17,6 +17,37 @@ function csvUrl(id: string, gid: string) {
   return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
 }
 
+// Gid → sheet tab name map (filled lazily from Sheets API metadata)
+const SHEET_TAB_CACHE: Record<string, string> = {};
+
+async function getTabName(spreadsheetId: string, gid: string, apiKey: string): Promise<string | null> {
+  const cacheKey = `${spreadsheetId}:${gid}`;
+  if (SHEET_TAB_CACHE[cacheKey]) return SHEET_TAB_CACHE[cacheKey];
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties&key=${apiKey}`;
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  const json = await res.json();
+  const sheet = json.sheets?.find((s: any) => String(s.properties?.sheetId) === String(gid));
+  const title = sheet?.properties?.title || null;
+  if (title) SHEET_TAB_CACHE[cacheKey] = title;
+  return title;
+}
+
+// Fetch via Google Sheets API (uses GOOGLE_API_KEY) — works for sheets shared "Anyone with link"
+async function fetchViaSheetsApi(spreadsheetId: string, gid: string, apiKey: string): Promise<string[][] | null> {
+  const tab = await getTabName(spreadsheetId, gid, apiKey);
+  if (!tab) return null;
+  const range = encodeURIComponent(tab);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?key=${apiKey}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    console.error("Sheets API error", res.status, await res.text());
+    return null;
+  }
+  const json = await res.json();
+  return (json.values as string[][]) || [];
+}
+
 // Minimal CSV parser (handles quoted fields with commas + escaped quotes)
 function parseCSV(text: string): string[][] {
   const rows: string[][] = [];
@@ -62,8 +93,17 @@ function toBool(s: string): boolean {
   return /^(true|yes|1)$/i.test(s.trim());
 }
 
-async function fetchAndParse(url: string) {
-  const res = await fetch(url, { redirect: "follow" });
+async function fetchAndParse(spreadsheetId: string, gid: string, apiKey: string | undefined): Promise<Record<string, string>[]> {
+  // Prefer Google Sheets API when GOOGLE_API_KEY is configured
+  if (apiKey) {
+    const rows = await fetchViaSheetsApi(spreadsheetId, gid, apiKey);
+    if (rows && rows.length >= 2) {
+      const headers = rows[0];
+      return rows.slice(1).map(r => rowToObject(headers, r));
+    }
+  }
+  // Fallback: public CSV export
+  const res = await fetch(csvUrl(spreadsheetId, gid), { redirect: "follow" });
   if (!res.ok) throw new Error(`Sheet fetch failed ${res.status}`);
   const text = await res.text();
   const all = parseCSV(text);
@@ -140,9 +180,10 @@ Deno.serve(async (req) => {
   const summary = { whatsapp: { new: 0, updated: 0 }, instagram: { new: 0, updated: 0 }, messenger: { new: 0, updated: 0 } };
 
   try {
+    const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
     for (const source of Object.keys(SHEETS) as Array<keyof typeof SHEETS>) {
       const { id, gid } = SHEETS[source];
-      const rows = await fetchAndParse(csvUrl(id, gid));
+      const rows = await fetchAndParse(id, gid, GOOGLE_API_KEY);
 
       for (const row of rows) {
         const lead = buildLead(source, row);

@@ -1,4 +1,4 @@
-// CRM AI Assistant — uses Lovable AI Gateway (no API key needed)
+// Nawi AI Assistant — uses USER's own Google Gemini API key (GOOGLE_API_KEY)
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -11,36 +11,35 @@ const SYSTEM_PROMPT = `You are "Nawi AI" — the advanced in-app assistant for *
 - **Superadmins / Admins**: full access. Manage employees, payroll, geofences, goals, broadcasts, audit logs, settings, all clients.
 - **Employees (Office / Sales)**: manage own clients & leads, attendance (geofence or photo verification), leave requests, daily status report (DSR), important dates, quotations, team chat.
 
-# CRM MODULES (know them deeply)
-1. **Auth & Profiles** — Email/password login. First user must be granted superadmin via SQL. Roles in \`user_roles\` table (\`superadmin\`, \`admin\`, \`employee\`). Profile types: Office (geofenced check-in) vs Sales (photo verification).
-2. **Clients** — Created via Add Client Wizard (mandatory duplicate Search first). Service categories: Visa, Ticket, Hotel, Tour Package, Insurance, Other. AI OCR auto-fills passport/Emirates ID via \`extract-document\` edge function. Documents stored in \`documents\` bucket (private). Photos in \`photos\` bucket. Strict RLS: employees only see clients they created/were assigned.
-3. **Quotations** — Built inside Client Profile. PDF via jsPDF with branded header logo. Sent through wa.me deep link.
-4. **Leads (Social Leads)** — Synced via \`sync-social-leads\` edge function. Proofs in \`lead-proofs\` bucket.
-5. **Attendance** — Office: geofence radius check-in (lat/lng + zone). Sales: selfie + location photo upload. UAE working week: Sun–Thu work, **Fri & Sat weekend**. 22 working days/month.
-6. **Leave** — Annual, Sick, Unpaid. Sick tiers: first 15 days **full pay**, next 15 days **half pay**, beyond that **unpaid**.
-7. **Payroll** — Late deduction kicks in after **3 late days**, charged at **25% of daily rate** per extra late day. Daily rate = monthly salary ÷ 22.
-8. **Important Dates** — Passport expiry, visa expiry, Emirates ID expiry, birthdays. Urgency: ≤7 days = critical, ≤30 = warning. Auto WhatsApp reminders via \`send-date-reminders\` cron.
-9. **DSR (Daily Status Report)** — Editable grid; admins assign templates.
-10. **Team Chat** — Realtime via Supabase channels. Media in \`chat-media\` bucket. Unread badges.
-11. **Goals, Broadcasts, Audit Log, Reports, Operations Calendar, Performance Leaderboard** — admin tooling.
+# CRM MODULES
+1. **Auth & Profiles** — Email/password login. First user must be granted superadmin via SQL. Roles in user_roles table.
+2. **Clients** — Add Client Wizard with mandatory duplicate Search. AI OCR auto-fills passport/Emirates ID. Strict RLS.
+3. **Quotations** — PDF via jsPDF with branded logo. Sent through wa.me deep link.
+4. **Leads (Social Leads)** — Synced from Google Sheets (WhatsApp/Instagram/Messenger).
+5. **Attendance** — Office: geofence. Sales: selfie + location. Sun-Thu work, Fri-Sat weekend. 22 working days/month.
+6. **Leave** — Sick tiers: first 15 days full pay, next 15 half pay, beyond unpaid.
+7. **Payroll** — Late deduction after 3 late days at 25% daily rate. Daily rate = monthly salary / 22.
+8. **Important Dates** — Passport/visa/Emirates ID expiry, birthdays. Auto WhatsApp reminders.
+9. **DSR, Team Chat, Goals, Broadcasts, Audit Log, Reports, Operations Calendar, Performance Leaderboard.**
 
-# UAE LABOR RULES (apply when relevant)
-- Working month = 22 days. Weekend = Fri & Sat.
-- Sick leave tiers above. Late penalty above.
-- Currency **AED**. Dates **DD MMM YYYY**.
+# UAE LABOR RULES
+- Working month = 22 days. Weekend = Fri & Sat. Currency AED. Dates DD MMM YYYY.
 
 # HOW TO ANSWER
-- Be concise but **complete**. Use **markdown**: headings, bullets, **bold**, tables, fenced code blocks for SQL/code.
-- For "how do I…" questions, give numbered steps with the exact menu path (e.g. *Sidebar → Clients → Add Client*).
-- For drafting (WhatsApp, email, quotation summary): produce ready-to-send copy in a code block.
-- For payroll/leave math: show the formula, then the result.
-- For SQL/Supabase questions: give safe, parameterized examples.
-- For travel/visa/tourism questions outside CRM: answer briefly at a general level (never legal advice) and tie it back to which CRM module helps.
-- Never claim to perform actions yourself — point the user to the right page.
-- If unsure, say so and suggest where to verify (Settings, Audit Log, or admin).
-
-You are knowledgeable, friendly, and direct. Aim for the most useful answer in the fewest words.
+- Concise, complete, markdown-formatted (headings, bullets, tables, code blocks).
+- Step-by-step menu paths (e.g. *Sidebar → Clients → Add Client*).
+- For drafts (WhatsApp/email/quotation): ready-to-send copy in code block.
+- For payroll/leave math: show formula then result.
+- Never claim to perform actions yourself — guide the user to the right page.
 `;
+
+// Convert OpenAI-style messages to Gemini format
+function toGeminiMessages(messages: Array<{ role: string; content: string }>) {
+  return messages.map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }));
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
@@ -53,47 +52,79 @@ Deno.serve(async (req) => {
       });
     }
 
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      return new Response(JSON.stringify({ error: 'AI not configured' }), {
+    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
+    if (!GOOGLE_API_KEY) {
+      return new Response(JSON.stringify({ error: 'GOOGLE_API_KEY not configured' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const aiRes = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const model = 'gemini-2.0-flash';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${GOOGLE_API_KEY}`;
+
+    const aiRes = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-pro',
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          ...messages,
-        ],
-        stream: true,
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: toGeminiMessages(messages),
+        generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
       }),
     });
 
-    if (!aiRes.ok) {
+    if (!aiRes.ok || !aiRes.body) {
       const errText = await aiRes.text();
-      if (aiRes.status === 429) {
-        return new Response(JSON.stringify({ error: 'Rate limited. Try again shortly.' }), {
-          status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-      if (aiRes.status === 402) {
-        return new Response(JSON.stringify({ error: 'AI credits exhausted. Add credits in Lovable settings.' }), {
-          status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-      return new Response(JSON.stringify({ error: errText }), {
+      console.error('Gemini error:', aiRes.status, errText);
+      const userMsg = aiRes.status === 429
+        ? 'Rate limited by Google. Try again shortly.'
+        : aiRes.status === 403
+        ? 'Google API key invalid or Generative Language API not enabled.'
+        : `Google AI error: ${errText.slice(0, 200)}`;
+      return new Response(JSON.stringify({ error: userMsg }), {
         status: aiRes.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    return new Response(aiRes.body, {
+    // Transform Gemini SSE → OpenAI-style SSE so the existing client parser works
+    const reader = aiRes.body.getReader();
+    const decoder = new TextDecoder();
+    const encoder = new TextEncoder();
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        let buffer = '';
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            let nlIdx: number;
+            while ((nlIdx = buffer.indexOf('\n')) !== -1) {
+              const line = buffer.slice(0, nlIdx).trim();
+              buffer = buffer.slice(nlIdx + 1);
+              if (!line.startsWith('data:')) continue;
+              const data = line.slice(5).trim();
+              if (!data) continue;
+              try {
+                const json = JSON.parse(data);
+                const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (text) {
+                  const out = { choices: [{ delta: { content: text } }] };
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify(out)}\n\n`));
+                }
+              } catch { /* ignore */ }
+            }
+          }
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+        } catch (e) {
+          console.error('stream error', e);
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
       headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
     });
   } catch (e) {
