@@ -99,23 +99,37 @@ async function callGeminiWithApiKey(messages: Array<{ role: string; content: str
   const apiKey = Deno.env.get('GOOGLE_API_KEY');
   if (!apiKey) throw new Error('GOOGLE_API_KEY not configured');
 
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      contents: toGeminiMessages(messages),
-      generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
-    }),
-  });
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
+  let lastErr = '';
+  let lastStatus = 0;
 
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Google AI error: ${errText.slice(0, 300)}`);
+  for (const model of models) {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: toGeminiMessages(messages),
+        generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
+      }),
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      return json.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || '').join('') || '';
+    }
+
+    lastErr = await res.text();
+    lastStatus = res.status;
+    console.error(`Gemini ${model} failed [${res.status}]:`, lastErr.slice(0, 200));
+    // Only try next model on overload; abort on auth/quota errors
+    if (res.status !== 503 && res.status !== 500) break;
   }
 
-  const json = await res.json();
-  return json.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || '').join('') || '';
+  if (lastStatus === 503) {
+    throw new Error('All Gemini models are currently overloaded. Please try again in a moment.');
+  }
+  throw new Error(`Google AI error: ${lastErr.slice(0, 300)}`);
 }
 
 function toGeminiMessages(messages: Array<{ role: string; content: string }>) {
