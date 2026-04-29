@@ -137,7 +137,7 @@ export default function EmployeeProfile() {
     toast.success('Schedule saved');
   };
 
-  const tabs = ['overview', 'schedule', 'clients', 'tasks', 'attendance', 'leave', 'goals'];
+  const tabs = ['overview', 'clients', 'tasks', 'attendance', 'leave', 'goals'];
   const assignedZone = zones.find(z => z.id === emp?.assigned_zone_id);
   const effective = { ...(globalAtt || {}), ...override };
 
