@@ -11,14 +11,14 @@ import { toast } from 'sonner';
 
 export default function EmployeeList() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isSuperAdmin } = useAuth();
   const [employees, setEmployees] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [pwdAction, setPwdAction] = useState<{ type: 'delete'; emp: any } | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [form, setForm] = useState({
     name: '', mobile: '', email: '', password: '',
-    passportNo: '', emiratesId: '', photo: '',
+    passportNo: '', emiratesId: '', photo: '', makeAdmin: false,
   });
 
   const [adminMap, setAdminMap] = useState<Record<string, 'admin' | 'superadmin'>>({});
