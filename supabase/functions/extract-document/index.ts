@@ -169,25 +169,60 @@ async function getAccessToken(): Promise<{ token: string; projectId: string }> {
 }
 // ============ End helper ============
 
-async function structureWithApiKey(prompt: string): Promise<string> {
+async function callGeminiVisionStructured(prompt: string, imageB64: string, mimeType: string): Promise<string> {
   const apiKey = Deno.env.get('GOOGLE_API_KEY');
   if (!apiKey) throw new Error('GOOGLE_API_KEY not configured');
 
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.1,
-        responseMimeType: 'application/json',
-      },
-    }),
-  });
+  // Try multiple models — fall through on 503/500/404
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite'];
+  let lastErr = '';
+  for (const m of models) {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          role: 'user',
+          parts: [
+            { text: prompt },
+            { inline_data: { mime_type: mimeType, data: imageB64 } },
+          ],
+        }],
+        generationConfig: { temperature: 0.05, responseMimeType: 'application/json' },
+      }),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      return json.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    }
+    lastErr = `${res.status} ${(await res.text()).slice(0, 200)}`;
+    if (![404, 500, 503].includes(res.status)) break;
+  }
+  throw new Error(`Gemini vision failed: ${lastErr}`);
+}
 
-  if (!res.ok) throw new Error(`Google AI error: ${await res.text()}`);
-  const json = await res.json();
-  return json.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+async function structureWithApiKey(prompt: string): Promise<string> {
+  const apiKey = Deno.env.get('GOOGLE_API_KEY');
+  if (!apiKey) throw new Error('GOOGLE_API_KEY not configured');
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite'];
+  let lastErr = '';
+  for (const m of models) {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
+      }),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      return json.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    }
+    lastErr = `${res.status} ${(await res.text()).slice(0, 200)}`;
+    if (![404, 500, 503].includes(res.status)) break;
+  }
+  throw new Error(`Gemini text failed: ${lastErr}`);
 }
 
 serve(async (req) => {
@@ -240,68 +275,50 @@ serve(async (req) => {
       });
     }
 
-    // Step 2: Gemini via Vertex AI — structure the OCR text
-    const prompt = `You are a document data extractor for Nawi Saadi Travel & Tourism (UAE).
-Document type: ${docType || "unknown"}. Service context: ${service || "unknown"}${serviceSubcategory ? ` (${serviceSubcategory})` : ""}.
+    // Step 2: Vision-aware AI structuring — pass BOTH the OCR text AND the original image
+    // so the model can read fields the OCR may have missed (MRZ, faded stamps, etc.)
+    const prompt = `You are an expert document data extractor for Nawi Saadi Travel & Tourism (UAE).
+Document type hint: ${docType || "unknown"}. Service context: ${service || "unknown"}${serviceSubcategory ? ` (${serviceSubcategory})` : ""}.
 
-Below is the OCR text extracted from the document. Extract structured data and return ONLY a JSON object (no prose, no markdown fences) with these fields (use null when not found):
-fullName, passportNo, nationality, dateOfBirth (YYYY-MM-DD), passportExpiry (YYYY-MM-DD), passportIssueDate (YYYY-MM-DD), placeOfBirth, gender (Male/Female), emiratesId, visaNumber, visaExpiry (YYYY-MM-DD), visaType, sponsor, profession, address, phoneNumber, email, bloodGroup, maritalStatus, fatherName, motherName, issuingAuthority, documentNumber.
+You will receive (1) raw OCR text from Google Vision and (2) the original document image. Use BOTH together — prefer what you can clearly see in the image when the OCR text is wrong, and use the OCR text to disambiguate when the image is unclear.
 
-Also include "otherDetails" as an object of any extra key/value pairs you find.
+First, infer the actual document type (passport / visa / Emirates ID / driving license / ticket / invoice / other). Then extract structured data and return ONLY a JSON object (no prose, no markdown fences) with these fields (use null when not found, never invent data):
 
-OCR TEXT:
+documentType (one of: passport, visa, emirates_id, driving_license, ticket, invoice, other),
+fullName, firstName, lastName, passportNo, nationality, dateOfBirth (YYYY-MM-DD), passportExpiry (YYYY-MM-DD), passportIssueDate (YYYY-MM-DD), placeOfBirth, gender (Male/Female), emiratesId, visaNumber, visaExpiry (YYYY-MM-DD), visaType, sponsor, profession, address, phoneNumber, email, bloodGroup, maritalStatus, fatherName, motherName, issuingAuthority, documentNumber, mrz1, mrz2.
+
+For passports: if a Machine Readable Zone (MRZ) is visible at the bottom, parse it and reconcile with the visual data — it is the most authoritative source for name, passport no, nationality, DOB, sex and expiry.
+
+For Emirates ID: extract the 15-digit ID in the format XXX-XXXX-XXXXXXX-X.
+
+Validate dates: never return a DOB after today, never return an expiry before issue date.
+
+Also include "otherDetails" with any extra fields you find (e.g. ticket PNR, flight number, seat, hotel booking reference, invoice total).
+
+OCR TEXT (raw):
 """
 ${rawText}
 """
 
-Return JSON only.`;
+Return strict JSON only.`;
 
     let text = "{}";
     try {
-      const location = 'us-central1';
-      const model = 'gemini-2.0-flash-001';
-      const geminiUrl = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
-
-      const geminiRes = await fetch(geminiUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.1,
-            responseMimeType: "application/json",
-          },
-        }),
-      });
-
-      if (!geminiRes.ok) {
-        const err = await geminiRes.text();
-        console.error("Vertex Gemini error:", geminiRes.status, err);
-        if (geminiRes.status !== 403) {
-          return new Response(JSON.stringify({
-            success: true,
-            data: heuristicExtract(rawText),
-            warning: "Structured AI extraction is unavailable, so OCR fallback extraction was used",
-          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        }
-
-        text = await structureWithApiKey(prompt);
-      } else {
-        const geminiJson = await geminiRes.json();
-        text = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-      }
-    } catch (error) {
-      console.error('Gemini fallback error:', error);
+      // Primary path: vision-aware Gemini via public API key (no Vertex flakiness)
+      const mime = imageBase64.startsWith('data:')
+        ? imageBase64.slice(5, imageBase64.indexOf(';'))
+        : 'image/jpeg';
+      text = await callGeminiVisionStructured(prompt, cleanB64, mime);
+    } catch (visionErr) {
+      console.error('Vision-aware Gemini failed, falling back to text-only:', visionErr);
       try {
         text = await structureWithApiKey(prompt);
-      } catch {
+      } catch (textErr) {
+        console.error('Text-only Gemini failed too, using heuristics:', textErr);
         return new Response(JSON.stringify({
           success: true,
           data: heuristicExtract(rawText),
-          warning: "Structured AI extraction is unavailable, so OCR fallback extraction was used",
+          warning: "AI extraction unavailable — used regex fallback. Please review fields carefully.",
         }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
     }

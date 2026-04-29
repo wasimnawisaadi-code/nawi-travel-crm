@@ -11,14 +11,14 @@ import { toast } from 'sonner';
 
 export default function EmployeeList() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isSuperAdmin } = useAuth();
   const [employees, setEmployees] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [pwdAction, setPwdAction] = useState<{ type: 'delete'; emp: any } | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [form, setForm] = useState({
     name: '', mobile: '', email: '', password: '',
-    passportNo: '', emiratesId: '', photo: '',
+    passportNo: '', emiratesId: '', photo: '', makeAdmin: false,
   });
 
   const [adminMap, setAdminMap] = useState<Record<string, 'admin' | 'superadmin'>>({});
@@ -109,12 +109,13 @@ export default function EmployeeList() {
       photo_url: form.photo || null,
     }).eq('user_id', authData.user.id);
 
-    // Assign employee role
-    await supabase.from('user_roles').insert([{ user_id: authData.user.id, role: 'employee' as any }]);
+    // Assign role — admins only when superadmin enabled the toggle
+    const role = (isSuperAdmin && form.makeAdmin) ? 'admin' : 'employee';
+    await supabase.from('user_roles').insert([{ user_id: authData.user.id, role: role as any }]);
 
-    await auditLog('employee_created', 'employee', authData.user.id, { name: form.name });
+    await auditLog(role === 'admin' ? 'admin_created' : 'employee_created', 'employee', authData.user.id, { name: form.name, role });
     setShowCreateForm(false);
-    setForm({ name: '', mobile: '', email: '', password: '', passportNo: '', emiratesId: '', photo: '' });
+    setForm({ name: '', mobile: '', email: '', password: '', passportNo: '', emiratesId: '', photo: '', makeAdmin: false });
     load();
   };
 
@@ -229,10 +230,30 @@ export default function EmployeeList() {
                 <div><label className="block text-sm font-medium mb-1">Emirates ID</label><input value={form.emiratesId} onChange={(e) => setForm({ ...form, emiratesId: e.target.value })} className="input-nawi" /></div>
               </div>
 
+              {isSuperAdmin && (
+                <label className="flex items-start gap-3 p-3 rounded-lg border border-primary/30 bg-primary/5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.makeAdmin}
+                    onChange={(e) => setForm({ ...form, makeAdmin: e.target.checked })}
+                    className="w-4 h-4 mt-0.5"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-1.5 text-sm font-medium text-primary">
+                      <Shield className="w-4 h-4" /> Create as Admin
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Admins have full access to all clients, employees, payroll & settings. Only the original superadmin can create other admins.
+                    </p>
+                  </div>
+                </label>
+              )}
 
               <div className="flex justify-end gap-3 pt-2">
                 <button type="button" onClick={() => setShowCreateForm(false)} className="btn-outline">Cancel</button>
-                <button type="submit" className="btn-primary">Create Employee</button>
+                <button type="submit" className="btn-primary">
+                  {isSuperAdmin && form.makeAdmin ? 'Create Admin' : 'Create Employee'}
+                </button>
               </div>
             </form>
           </div>

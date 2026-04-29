@@ -97,7 +97,7 @@ export default function PayrollManagement() {
       const finalSalary = Math.max(0, baseSalary - totalDeductions);
 
       const displayId = await generateDisplayId('PAY');
-      await supabase.from('payroll').insert({
+      const { error: insErr } = await supabase.from('payroll').insert({
         display_id: displayId, employee_id: emp.user_id, year_month: yearMonth, base_salary: baseSalary,
         present_days: presentDays, late_days: lateDays, paid_leave_days: paidLeaveDays, sick_leave: sickLeave, unpaid_leave: unpaidLeave, absent_days: absentDays,
         total_hours: Math.round(totalHours),
@@ -107,6 +107,8 @@ export default function PayrollManagement() {
         bonus: 0, allowances: 0, overtime: 0,
         final_salary: Math.round(finalSalary), status: 'Draft',
       });
+      // 23505 = duplicate (employee already has payroll for this month) — safely ignore
+      if (insErr && (insErr as any).code !== '23505') console.warn('payroll insert:', insErr.message);
     }
     load();
     toast.success('Payroll auto-calculated. You can now edit any field manually.');
