@@ -154,7 +154,16 @@ export async function generateDailyNotifications(userId: string, isAdmin: boolea
   }
 
   if (inserts.length > 0) {
-    await supabase.from('notifications').insert(inserts);
+    // In-memory dedup as well (same client+type only once)
+    const seen = new Set<string>();
+    const unique = inserts.filter(n => {
+      const k = `${n.user_id}|${n.type}|${n.client_id || '-'}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    const { error } = await supabase.from('notifications').insert(unique);
+    if (error && (error as any).code !== '23505') console.warn('daily notif insert:', error.message);
   }
 
   // Admin morning summary — runs once per day for admins
