@@ -169,25 +169,60 @@ async function getAccessToken(): Promise<{ token: string; projectId: string }> {
 }
 // ============ End helper ============
 
-async function structureWithApiKey(prompt: string): Promise<string> {
+async function callGeminiVisionStructured(prompt: string, imageB64: string, mimeType: string): Promise<string> {
   const apiKey = Deno.env.get('GOOGLE_API_KEY');
   if (!apiKey) throw new Error('GOOGLE_API_KEY not configured');
 
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.1,
-        responseMimeType: 'application/json',
-      },
-    }),
-  });
+  // Try multiple models — fall through on 503/500/404
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite'];
+  let lastErr = '';
+  for (const m of models) {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          role: 'user',
+          parts: [
+            { text: prompt },
+            { inline_data: { mime_type: mimeType, data: imageB64 } },
+          ],
+        }],
+        generationConfig: { temperature: 0.05, responseMimeType: 'application/json' },
+      }),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      return json.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    }
+    lastErr = `${res.status} ${(await res.text()).slice(0, 200)}`;
+    if (![404, 500, 503].includes(res.status)) break;
+  }
+  throw new Error(`Gemini vision failed: ${lastErr}`);
+}
 
-  if (!res.ok) throw new Error(`Google AI error: ${await res.text()}`);
-  const json = await res.json();
-  return json.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+async function structureWithApiKey(prompt: string): Promise<string> {
+  const apiKey = Deno.env.get('GOOGLE_API_KEY');
+  if (!apiKey) throw new Error('GOOGLE_API_KEY not configured');
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite'];
+  let lastErr = '';
+  for (const m of models) {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
+      }),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      return json.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    }
+    lastErr = `${res.status} ${(await res.text()).slice(0, 200)}`;
+    if (![404, 500, 503].includes(res.status)) break;
+  }
+  throw new Error(`Gemini text failed: ${lastErr}`);
 }
 
 serve(async (req) => {
