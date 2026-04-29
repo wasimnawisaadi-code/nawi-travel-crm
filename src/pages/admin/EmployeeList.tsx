@@ -109,12 +109,13 @@ export default function EmployeeList() {
       photo_url: form.photo || null,
     }).eq('user_id', authData.user.id);
 
-    // Assign employee role
-    await supabase.from('user_roles').insert([{ user_id: authData.user.id, role: 'employee' as any }]);
+    // Assign role — admins only when superadmin enabled the toggle
+    const role = (isSuperAdmin && form.makeAdmin) ? 'admin' : 'employee';
+    await supabase.from('user_roles').insert([{ user_id: authData.user.id, role: role as any }]);
 
-    await auditLog('employee_created', 'employee', authData.user.id, { name: form.name });
+    await auditLog(role === 'admin' ? 'admin_created' : 'employee_created', 'employee', authData.user.id, { name: form.name, role });
     setShowCreateForm(false);
-    setForm({ name: '', mobile: '', email: '', password: '', passportNo: '', emiratesId: '', photo: '' });
+    setForm({ name: '', mobile: '', email: '', password: '', passportNo: '', emiratesId: '', photo: '', makeAdmin: false });
     load();
   };
 
