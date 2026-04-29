@@ -134,15 +134,34 @@ export default function ImportantDates() {
     const rows: DateRow[] = [];
     clients.forEach((c: any) => {
       const dates = (c.important_dates || {}) as Record<string, string>;
-      Object.entries(dates).forEach(([label, val]) => {
-        if (!val || label === 'passportNo') return;
+      // Dedupe: collapse multiple keys mapping to the same category for the same client.
+      // E.g. "DOB", "Date of Birth", "Birth Date" → keep only one (earliest non-empty value),
+      // and standardize the displayed label to the canonical name.
+      const CANONICAL: Record<string, string> = {
+        birthday: 'Date of Birth',
+        passport: 'Passport Expiry',
+        visa: 'Visa Expiry',
+        emiratesId: 'Emirates ID Expiry',
+      };
+      const seenByCategory = new Set<string>();
+      // Sort entries so duplicates with empty values lose to ones with values
+      const entries = Object.entries(dates)
+        .filter(([label, val]) => val && label !== 'passportNo');
+      entries.forEach(([label, val]) => {
         const cat = detectCategory(label);
-        const days = getDaysFor(label, val);
+        // For categories that should be unique per client, only keep the first occurrence
+        if (CANONICAL[cat.key]) {
+          const dedupKey = `${c.id}::${cat.key}`;
+          if (seenByCategory.has(dedupKey)) return;
+          seenByCategory.add(dedupKey);
+        }
+        const displayLabel = CANONICAL[cat.key] || label;
+        const days = getDaysFor(displayLabel, val);
         const status: DateRow['status'] = days < 0 ? 'overdue' : days <= 2 ? 'urgent' : days <= 30 ? 'warning' : 'safe';
         rows.push({
           clientId: c.id, clientName: c.name, mobile: c.mobile, email: c.email,
           nationality: c.nationality, service: c.service,
-          label, category: cat.key, emoji: cat.emoji, color: cat.color,
+          label: displayLabel, category: cat.key, emoji: cat.emoji, color: cat.color,
           date: val, days, status,
         });
       });
