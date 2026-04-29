@@ -12,8 +12,17 @@ export type NotifyPayload = {
 export async function notify(p: NotifyPayload | NotifyPayload[]) {
   const arr = Array.isArray(p) ? p : [p];
   if (arr.length === 0) return;
-  await supabase.from('notifications').insert(
-    arr.map(n => ({
+  // DB has a unique index per (user, type, client, day) — duplicates are silently ignored.
+  // We also dedupe in-memory before insert to avoid one-batch dupes.
+  const seen = new Set<string>();
+  const unique = arr.filter(n => {
+    const k = `${n.user_id}|${n.type || 'general'}|${n.client_id || '-'}|${n.title}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  const { error } = await supabase.from('notifications').insert(
+    unique.map(n => ({
       user_id: n.user_id,
       title: n.title,
       message: n.message || '',
@@ -21,6 +30,8 @@ export async function notify(p: NotifyPayload | NotifyPayload[]) {
       client_id: n.client_id ?? null,
     }))
   );
+  // Ignore duplicate-key errors (23505) — they mean dedup worked.
+  if (error && error.code !== '23505') console.warn('notify insert error:', error.message);
 }
 
 /** Notify all admins. */
